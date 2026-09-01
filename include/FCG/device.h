@@ -1,0 +1,145 @@
+
+#ifndef __FCG_GPU_H__
+#define __FCG_GPU_H__
+
+
+//////
+//
+// Includes
+//
+
+// C++ STL
+#include <memory>
+#include <set>
+#include <optional>
+
+// Local includes
+#include "FCG/export.h"
+
+
+
+//////
+//
+// Forward declarations
+//
+
+// Opaque SDL3 types
+struct SDL_GPUDevice;
+
+// Framework types
+namespace fcg {
+	class Window;
+}
+
+
+
+//////
+//
+// Namespaces open
+//
+
+/// The library top-level namespace.
+namespace fcg {
+
+
+
+//////
+//
+// Classes
+//
+
+/// An SDL GPU device that can be shared by all windows and applets.
+///
+/// This class owns the device. It is created with all common shader formats enabled, so that SDL picks the most
+/// appropriate backend (Vulkan, Direct3D 12, Metal) for the current platform. Since all rendering in the framework
+/// goes through this single device, GPU resources (textures, buffers, pipelines) can be freely shared between all
+/// windows – e.g. an applet can render into a texture in its own window and use that texture while drawing into the
+/// main window.
+///
+/// The device must outlive all \ref Window instances that it was used to render into.
+class FCG_FRAMEWORK_EXPORT Device
+{
+	/// Zero-overhead key to access our pseudo-private constructors. Pseudo-private because we don't want them used
+	/// outside our own internals, but they have to be public because otherwise they can't be used by STL functions
+	/// which we use internally (like \c std::make_optional). WHY C++??? WHYYYYYYY??????!?!?!!!11
+	class PrivateConstructorKey final {
+		friend Device;
+		constexpr PrivateConstructorKey() noexcept = default;
+	};
+
+
+public:
+
+	////
+	// Object construction/destruction
+
+	/// Construct wrapping the given SDL GPU device handle (pseudo-private, for internal use only)
+	explicit Device(PrivateConstructorKey, SDL_GPUDevice *handle)
+		: m_handle(handle)
+	{}
+
+	/// Create the shared GPU device.
+	/// \returns The device, or `std::nullopt` if GPU device creation failed.
+	[[nodiscard]] static auto create () -> std::optional<Device>;
+
+	/// The destructor. Waits for the GPU to finish all pending work, then destroys the device.
+	~Device();
+
+	/// \c Device is not copyable.
+	Device(const Device&) = delete;
+
+	/// \c Device is not copy-assignable.
+	auto operator= (const Device&) -> Device& = delete;
+
+
+	////
+	// Accessors
+
+	/// The raw SDL GPU device handle.
+	[[nodiscard]] auto handle () const -> SDL_GPUDevice*;
+
+
+	////
+	// Methods
+
+	/// Wait until the GPU has finished all pending work.
+	void waitIdle () const;
+
+	/// Claim the given window for this device.
+	///
+	/// \param window The window to claim. Must outlive the device.
+	///
+	/// \returns `true` if the window was successfully claimed, `false` if the claim failed because of some runtime
+	/// error (typically inside SDL).
+	[[nodiscard]] auto claimWindow (std::unique_ptr<Window> &window) -> bool;
+
+	/// Remove claim to the given window for this device.
+	///
+	/// \param window The window to remove the claim for. Must have been previously claimed by this device.
+	void unclaimWindow (std::unique_ptr<Window> &window);
+
+
+private:
+
+	////
+	// Fields
+
+	/// The SDL GPU device handle.
+	SDL_GPUDevice *m_handle = nullptr;
+
+	/// List of currently claimed windows.
+	std::set<Window*> m_claimedWindows;
+};
+
+
+
+//////
+//
+// Namespaces close
+//
+
+// namespace fcg
+}
+
+
+#endif  // ifndef __FCG_GPU_H__

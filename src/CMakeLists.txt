@@ -1,0 +1,24 @@
+
+# Collect sources
+set(SOURCES
+	device.cpp
+	frame.cpp
+	player.cpp
+	run.cpp
+	window.cpp
+)
+
+# Collect interface headers
+set(HEADERS
+	${CMAKE_SOURCE_DIR}/include/FCG/applet.h
+	${CMAKE_SOURCE_DIR}/include/FCG/device.h
+	${CMAKE_SOURCE_DIR}/include/FCG/frame.h
+	${CMAKE_SOURCE_DIR}/include/FCG/player.h
+	${CMAKE_SOURCE_DIR}/include/FCG/run.h
+	${CMAKE_SOURCE_DIR}/include/FCG/util.h
+	${CMAKE_SOURCE_DIR}/include/FCG/window.h
+)
+
+# Add to our target
+target_sources(Core PRIVATE ${SOURCES})
+target_sources(Core PRIVATE ${HEADERS})

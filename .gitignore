@@ -1,0 +1,7 @@
+
+# CMake build folders
+build*
+cmake-build*
+
+# IDE settings files
+.idea
