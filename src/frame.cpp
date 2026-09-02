@@ -42,7 +42,7 @@ Frame::~Frame()
 		std::stringstream msgstream;
 		msgstream << "Frame is being destroyed while in flight";
 		auto msg = msgstream.str();
-		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, msg.c_str());
+		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 
 		// Unrecoverable
 		exit(EXIT_FAILURE);
@@ -56,7 +56,7 @@ void Frame::end ()
 		std::stringstream msgstream;
 		msgstream << "Frame is being ended while a render pass is being recorded";
 		auto msg = msgstream.str();
-		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, msg.c_str());
+		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 		throw std::logic_error(msg);
 	}
 
@@ -74,7 +74,7 @@ auto Frame::beginRenderPass (const glm::fvec4 &clearColor) -> SDL_GPURenderPass*
 		std::stringstream msgstream;
 		msgstream << "Trying to begin a new frame render pass to the frame target while one is already being recorded";
 		auto msg = msgstream.str();
-		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, msg.c_str());
+		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 		throw std::logic_error(msg);
 	}
 
@@ -94,7 +94,7 @@ auto Frame::beginRenderPass (const glm::fvec4 &clearColor) -> SDL_GPURenderPass*
 	depthStencilTarget.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
 	m_renderPass = SDL_BeginGPURenderPass(m_commandBuffer, &colorTarget, 1, &depthStencilTarget);
 	if (!m_renderPass)
-		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Beginning the frame render pass failed: %s", SDL_GetError());
+		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Beginning the frame render pass failed: %s", SDL_GetError());
 	return m_renderPass;
 }
 
@@ -105,7 +105,7 @@ auto Frame::beginOverlayRenderPass () -> SDL_GPURenderPass*
 		std::stringstream msgstream;
 		msgstream << "Trying to begin an overlay render pass while another one is still being recorded";
 		auto msg = msgstream.str();
-		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, msg.c_str());
+		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 		throw std::logic_error(msg);
 	}
 
@@ -118,7 +118,7 @@ auto Frame::beginOverlayRenderPass () -> SDL_GPURenderPass*
 	colorTarget.store_op = SDL_GPU_STOREOP_STORE;
 	m_renderPass = SDL_BeginGPURenderPass(m_commandBuffer, &colorTarget, 1, nullptr);
 	if (!m_renderPass)
-		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Beginning the overlay render pass failed: %s", SDL_GetError());
+		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Beginning the overlay render pass failed: %s", SDL_GetError());
 	return m_renderPass;
 }
 
@@ -129,7 +129,7 @@ void Frame::endRenderPass ()
 		std::stringstream msgstream;
 		msgstream << "Trying to end a frame render pass when none is active";
 		auto msg = msgstream.str();
-		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, msg.c_str());
+		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 		throw std::logic_error(msg);
 	}
 	SDL_EndGPURenderPass(m_renderPass);

@@ -143,7 +143,7 @@ FCG_FRAMEWORK_EXPORT int run (std::initializer_list<std::unique_ptr<fcg::Applet>
 				// Initialize all applets
 				for (auto &applet : applets) {
 					SDL_LogInfo(
-						SDL_LOG_CATEGORY_APPLICATION, "Player: initializing applet %x (\"%s\")",
+						SDL_LOG_CATEGORY_APPLICATION, "Player: initializing applet %p (\"%s\")",
 						applet.get(), applet->name().c_str()
 					);
 					applet->init(device, player);

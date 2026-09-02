@@ -10,6 +10,7 @@
 
 // C++ STL
 #include <memory>
+#include <optional>
 #include <initializer_list>
 
 // Local includes
