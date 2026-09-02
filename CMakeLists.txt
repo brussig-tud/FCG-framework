@@ -7,7 +7,7 @@ project(${FCG_PROJECT_NAME})
 # Library version
 set(FCG_FRAMEWORK_VERSION 0.0.1)
 set(FCG_FRAMEWORK_SOVERSION 0)
-set(FCG_CXX_STANDARD cxx_std_26)
+set(FCG_CXX_STANDARD cxx_std_23)
 
 # Pre-configuration.
 set(CMAKE_DEBUG_POSTFIX d)
