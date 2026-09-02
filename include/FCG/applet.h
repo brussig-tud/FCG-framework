@@ -9,8 +9,9 @@
 //
 
 // C++ STL
-#include <concepts>
+#include <string>
 #include <memory>
+#include <concepts>
 
 // GLM library
 #include <glm/glm.hpp>
