@@ -86,8 +86,9 @@ public:
 	/// \param player Reference to the central applet player.
 	virtual void onViewportResize (Device &device, const glm::uvec2 &oldViewportSize, Player &player) = 0;
 
-	/// Define all *ImGui* widgets/drawings the applet wants.
-	/// TODO: integrate ImGui into the FCG framework. Don't touch now, left for later.
+	/// Define all *ImGui* widgets the applet wants. The framework *ImGui* context is current during this call, so
+	/// applets can issue `ImGui::` calls directly. Rendering of the resulting draw data is handled by the
+	/// framework – applets must not call `ImGui::Render` themselves.
 	///
 	/// \param player Reference to the central applet player.
 	virtual void gui (Player &player) = 0;

@@ -10,6 +10,9 @@
 // SDL3 library
 #include <SDL3/SDL.h>
 
+// Dear ImGui
+#include <imgui.h>
+
 // FCG Framework
 #include <FCG/applet.h>
 #include <FCG/player.h>
@@ -63,8 +66,14 @@ public:
 		// Nothing to initialize yet – this is where GPU resources would be created on the provided device.
 	}
 
-	void gui (fcg::Player &player) override {
-		// No GUI in this applet yet.
+	void gui (fcg::Player &player) override
+	{
+		// Show a small window displaying the current dimensions of the main viewport
+		ImGui::SetNextWindowSize({ 0, 0 }, ImGuiCond_FirstUseEver);
+		ImGui::Begin("Simple Shapes");
+		const auto viewportSize = player.mainViewportSize();
+		ImGui::Text("Viewport: %u x %u", viewportSize.x, viewportSize.y);
+		ImGui::End();
 	}
 
 	void update (fcg::Player &player) override {

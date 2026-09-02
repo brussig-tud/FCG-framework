@@ -43,7 +43,7 @@ auto Window::create (const WindowSettings &settings) -> std::unique_ptr<Window>
 	// Create the SDL window
 	SDL_Window *handle = SDL_CreateWindow(
 		settings.title.c_str(), (int)settings.width, (int)settings.height,
-		settings.resizable ? SDL_WINDOW_RESIZABLE : (SDL_WindowFlags)0
+		(settings.resizable ? SDL_WINDOW_RESIZABLE : (SDL_WindowFlags)0) | SDL_WINDOW_HIGH_PIXEL_DENSITY
 	);
 	if (!handle) {
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Creating the window failed: %s", SDL_GetError());
@@ -117,7 +117,7 @@ void Window::unclaim (Device &device)
 	if (depthTexture) {
 		SDL_ReleaseGPUTexture(device.handle(), depthTexture);
 		depthTexture = nullptr;
-		m_viewportSize.y = m_viewportSize.x = 0;
+		m_depthTextureSize = glm::uvec2(0);
 	}
 	SDL_ReleaseWindowFromGPUDevice(device.handle(), m_handle);
 	m_device = nullptr;
@@ -176,7 +176,7 @@ auto Window::beginFrame (Device &device) -> Frame*
 
 	// Make sure we have a depth buffer matching the swapchain texture in size. It only gets recreated when the size
 	// actually changed (e.g. after a window resize).
-	if (!depthTexture || swapchainSize != m_viewportSize)
+	if (!depthTexture || swapchainSize != m_depthTextureSize)
 	{
 		// Releasing the old depth buffer is safe even if previously submitted frames are still using it, SDL defers
 		// destruction until the GPU is done with it
@@ -201,8 +201,11 @@ auto Window::beginFrame (Device &device) -> Frame*
 			SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, msg.c_str());
 			throw std::runtime_error(msg);
 		}
-		m_viewportSize = swapchainSize;
+		m_depthTextureSize = swapchainSize;
 	}
+
+	// The viewport dimensions always reflect the size of the most recently acquired swapchain texture
+	m_viewportSize = swapchainSize;
 
 	// Begin frame and return
 	m_frame.emplace(Frame::PrivateConstructorKey{}, cmdBuffer, swapchainTexture, depthTexture);
@@ -225,6 +228,26 @@ void Window::endFrame ()
 
 	// The frame landed
 	m_frame.reset();
+}
+
+auto Window::pollViewportSize (std::optional<glm::uvec2> &oldSize) -> bool
+{
+	// Query the current drawable size – the size in pixels is what matches the swapchain and thus the viewport
+	glm::uvec2 newSize(0);
+	if (!SDL_GetWindowSizeInPixels(m_handle, (int*)&newSize.x, (int*)&newSize.y)) {
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Querying the window size in pixels failed: %s", SDL_GetError());
+		oldSize.reset();
+		return false;
+	}
+
+	// Update on change only
+	if (newSize == m_viewportSize) {
+		oldSize.reset();
+		return false;
+	}
+	oldSize = m_viewportSize;
+	m_viewportSize = newSize;
+	return true;
 }
 
 void Window::setTitle (const std::string &title) {

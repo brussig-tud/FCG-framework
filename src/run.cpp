@@ -15,6 +15,7 @@
 // Local includes
 #include "FCG/run.h"
 #include "FCG/device.h"
+#include "FCG/gui.h"
 #include "FCG/player.h"
 #include "FCG/window.h"
 
@@ -37,8 +38,11 @@ namespace fcg {
 namespace {
 
 	/// Handle a single SDL event for the central framework window.
-	void handleEvent (const SDL_Event &event, Window &window)
+	void handleEvent (const SDL_Event &event, Window &window, Gui &gui)
 	{
+		// Always feed the GUI so ImGui can react to input
+		gui.processEvent(event);
+
 		switch (event.type)
 		{
 			// Global quit request (e.g. from the OS)
@@ -52,10 +56,19 @@ namespace {
 					window.requestClose();
 				break;
 
-			// A key was pressed – the escape key closes our window
+			// A key was pressed – the escape key closes our window, unless the GUI is currently capturing text input
+			// (in which case the key belongs to the text field being edited)
 			case SDL_EVENT_KEY_DOWN:
-				if (event.key.windowID == window.id() && event.key.key == SDLK_ESCAPE)
+				if (event.key.windowID == window.id() && event.key.key == SDLK_ESCAPE && !gui.wantsTextInput())
 					window.requestClose();
+				break;
+
+			// The display scale changed (system DPI setting or window moved to a monitor with different scaling) –
+			// re-apply the content scale to the GUI style
+			case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+			case SDL_EVENT_WINDOW_DISPLAY_CHANGED:
+				if (event.window.windowID == window.id())
+					gui.updateContentScale(window);
 				break;
 
 			default:
@@ -90,9 +103,8 @@ FCG_FRAMEWORK_EXPORT int run (std::initializer_list<std::unique_ptr<fcg::Applet>
 		return EXIT_FAILURE;
 	}
 
-	// Scope for the shared GPU device and the central window – they are guaranteed to be cleaned up before
-	// SDL_Quit() is called below. Note the declaration order: the window must be destroyed before the GPU
-	// device it renders with.
+	// Scope for the shared GPU device and the central window – they are guaranteed to be cleaned up before SDL_Quit()
+	// is called below. Note the declaration order: the window must be destroyed before the GPU device it renders with.
 	int exitCode = EXIT_SUCCESS;
 	{
 		// Create the GPU device shared by all windows and applets
@@ -107,10 +119,28 @@ FCG_FRAMEWORK_EXPORT int run (std::initializer_list<std::unique_ptr<fcg::Applet>
 		else
 		{
 			auto &device = maybeDevice.value();
+
+			// Create the player that the applets will interact with
 			Player player(window.get());
-			if (device.claimWindow(window))
+
+			// Claim the window for the GPU device, then create the framework GUI on top of it. The GUI instance is
+			// destroyed at scope exit, before the window is unclaimed below.
+			std::unique_ptr<Gui> gui;
+			if (device.claimWindow(window)) {
+				gui = Gui::create(device, *window);
+				if (!gui) {
+					SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "Initializing the framework GUI failed");
+					exitCode = EXIT_FAILURE;
+					window->requestClose();
+				}
+			}
+			else {
+				exitCode = EXIT_FAILURE;
+				window->requestClose();
+			}
+			if (gui)
 			{
-				// Create the player that the applets will interact with, and initialize all applets
+				// Initialize all applets
 				for (auto &applet : applets) {
 					SDL_LogInfo(
 						SDL_LOG_CATEGORY_APPLICATION, "Player: initializing applet %x (\"%s\")",
@@ -122,35 +152,49 @@ FCG_FRAMEWORK_EXPORT int run (std::initializer_list<std::unique_ptr<fcg::Applet>
 				// Info trace
 				SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: startup complete.");
 			}
-			else {
-				exitCode = EXIT_FAILURE;
-				window->requestClose();
-			}
 
-			// The main loop – runs until the window is closed. By default it blocks while waiting for
-			// events; while at least one applet requests continuous redraws, the next iteration is
-			// instead started as soon as possible.
+			// The main loop – runs until the window is closed. By default it blocks while waiting for events; while at
+			// least one applet requests continuous redraws, the next iteration is instead started as soon as possible.
+			// ImGui is immediate-mode, so input events processed in one frame only manifest in the next frame (and
+			// the resulting layout settles one frame after that) – hence every event burst is followed by additional
+			// redraws, tracked via the pending redraws counter. It is initialized to 2 so the first frames are drawn
+			// right after startup instead of only after some external event unblocks the loop.
+			unsigned pendingRedraws = 2;
 			while (!window->shouldClose())
 			{
 				// Event handling
-				if (player.continuousRedrawRequested())
+				if (player.continuousRedrawRequested() || pendingRedraws > 0)
 				{
-					// Continuous redraw mode: process all pending events without blocking
+					// Non-blocking mode: process all pending events without waiting. Any event could change GUI
+					// state, so schedule follow-up redraws to let the GUI fully manifest the results.
 					SDL_Event event;
-					while (SDL_PollEvent(&event))
-						handleEvent(event, *window);
+					bool handledAnyEvent = false;
+					while (SDL_PollEvent(&event)) {
+						handleEvent(event, *window, *gui);
+						handledAnyEvent = true;
+					}
+					if (handledAnyEvent)
+						pendingRedraws = 2;
+					else if (pendingRedraws > 0)
+						--pendingRedraws;
 				}
 				else
 				{
-					// Blocking mode: wait for the next event, then drain any burst of events that has
-					// accumulated in the queue in the meantime
+					// Blocking mode: wait for the next event, then drain any burst of events that has accumulated in
+					// the queue in the meantime. While the GUI needs periodic redraws (e.g. for a blinking text caret),
+					// the wait times out after the redraw interval so the GUI stays animated even without input.
+					const int waitTimeoutMs = gui->needsPeriodicRedraw() ? Gui::periodicRedrawIntervalMs : -1;
 					SDL_Event event;
-					if (SDL_WaitEvent(&event)) {
-						handleEvent(event, *window);
+					if (SDL_WaitEventTimeout(&event, waitTimeoutMs)) {
+						handleEvent(event, *window, *gui);
 						while (SDL_PollEvent(&event))
-							handleEvent(event, *window);
+							handleEvent(event, *window, *gui);
+						// The GUI reacts to input with one frame of latency, so schedule follow-up redraws
+						pendingRedraws = 2;
 					}
-					else {
+					else if (waitTimeoutMs < 0) {
+						// An error while waiting without timeout is fatal – a timeout is not, it just means the
+						// periodic redraw interval expired with no events pending
 						SDL_LogError(
 							SDL_LOG_CATEGORY_APPLICATION, "Waiting for events failed: %s", SDL_GetError()
 						);
@@ -163,20 +207,34 @@ FCG_FRAMEWORK_EXPORT int run (std::initializer_list<std::unique_ptr<fcg::Applet>
 				if (window->shouldClose())
 					break;
 
-				// Update applet state and let them define their GUI
+				// The window may have been resized since the last frame – in blocking mode rendering does not
+				// necessarily happen right after a resize event, so keep the viewport dimensions fresh
+				std::optional<glm::uvec2> oldViewportSize;
+				if (window->pollViewportSize(oldViewportSize))
+					for (auto &applet : applets)
+						applet->onViewportResize(device, oldViewportSize.value(), player);
+
+				// Begin the GUI frame, then update applet state and let them define their GUI
+				gui->newFrame();
 				for (auto &applet : applets) {
 					applet->gui(player);
 					applet->update(player);
 				}
 
-				// Render a frame: all applets draw one after another into the same render pass
-				// targeting the window's swapchain texture
+				// Render a frame: all applets draw into the primary render pass (with depth buffer), then the GUI is
+				// rendered on top in a separate overlay pass without depth attachment. The ImGui SDL GPU backend
+				// creates pipelines without a depth-stencil target, so it must be recorded into a pass that has none.
 				auto frame = window->beginFrame(device);
+				gui->prepareRender(frame);
 				if (frame)
 				{
 					if (auto *renderPass = frame->beginRenderPass(player.clearColor())) {
 						for (auto &applet : applets)
 							applet->render(device, renderPass, player);
+						frame->endRenderPass();
+					}
+					if (auto *overlayPass = frame->beginOverlayRenderPass()) {
+						gui->renderDrawData(frame->commandBuffer(), overlayPass);
 						frame->endRenderPass();
 					}
 					window->endFrame();

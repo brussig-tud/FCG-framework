@@ -98,6 +98,30 @@ auto Frame::beginRenderPass (const glm::fvec4 &clearColor) -> SDL_GPURenderPass*
 	return m_renderPass;
 }
 
+auto Frame::beginOverlayRenderPass () -> SDL_GPURenderPass*
+{
+	// Don't begin another render pass while one is still active
+	if (m_renderPass) {
+		std::stringstream msgstream;
+		msgstream << "Trying to begin an overlay render pass while another one is still being recorded";
+		auto msg = msgstream.str();
+		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, msg.c_str());
+		throw std::logic_error(msg);
+	}
+
+	// Set up a render pass targeting the current swapchain texture without a depth buffer, preserving the color
+	// contents already rendered by the applets. This matches the render-pass layout of the ImGui SDL GPU backend,
+	// which creates pipelines without a depth-stencil target.
+	SDL_GPUColorTargetInfo colorTarget = { };
+	colorTarget.texture = m_targetTexture;
+	colorTarget.load_op = SDL_GPU_LOADOP_LOAD;
+	colorTarget.store_op = SDL_GPU_STOREOP_STORE;
+	m_renderPass = SDL_BeginGPURenderPass(m_commandBuffer, &colorTarget, 1, nullptr);
+	if (!m_renderPass)
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Beginning the overlay render pass failed: %s", SDL_GetError());
+	return m_renderPass;
+}
+
 void Frame::endRenderPass ()
 {
 	// Can't end the current render pass if there is none

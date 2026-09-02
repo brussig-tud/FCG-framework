@@ -122,6 +122,17 @@ public:
 		return m_viewportSize;
 	}
 
+	/// Update the stored viewport dimensions from the current window drawable size. In a blocking main loop,
+	/// rendering does not necessarily happen right after a resize event, so this should be polled once per
+	/// iteration to keep the viewport dimensions fresh for users that query them outside of rendering (e.g.
+	/// for displaying them in the GUI).
+	///
+	/// \param oldSize Receives the dimensions before the update when they changed, or is reset to `std::nullopt`
+	///                when they didn't.
+	///
+	/// \returns `true` if the viewport size changed, `false` otherwise.
+	auto pollViewportSize (std::optional<glm::uvec2> &oldSize) -> bool;
+
 
 	////
 	// Methods
@@ -189,11 +200,15 @@ private:
 	/// A depth buffer suitable for rendering to the swapchain images of this \c Window.
 	SDL_GPUTexture *depthTexture = nullptr;
 
+	/// The size of the current \ref depthTexture, if any. Tracked separately from \ref m_viewportSize because the depth
+	/// buffer only needs to be recreated when the actual swapchain texture size changes.
+	glm::uvec2 m_depthTextureSize = { 0, 0 };
+
 	/// The current frame in flight, if any
 	std::optional<Frame> m_frame;
 
 	/// The current dimensions of the viewport of this \c Window.
-	glm::uvec2 m_viewportSize;
+	glm::uvec2 m_viewportSize = { 0, 0 };
 
 	/// Whether closing the window was requested.
 	bool closeRequested = false;

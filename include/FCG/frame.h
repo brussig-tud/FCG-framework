@@ -95,18 +95,37 @@ public:
 
 
 	////
+	// Accessors
+
+	/// The command buffer of this frame. Needs to be passed to some GPU API functions that must be called outside
+	/// of a render pass (e.g. the ImGui SDL GPU backend for uploading GUI vertex/index data).
+	[[nodiscard]] auto commandBuffer () const -> SDL_GPUCommandBuffer* {
+		return m_commandBuffer;
+	}
+
+
+	////
 	// Methods
 
 	/// Obtain a render pass targeting this frame's target texture. Render calls that should appear in this frame must
 	/// be recorded into a pass obtained this way. The pass includes a depth buffer that gets cleared to the far
 	/// plane (depth value 1), ready for standard depth testing.
 	///
-	/// Needs to be paired with a call to \ref endRenderPass before this frame is finished.
+	/// Needs to be paired with a call to \ref endRenderPass before another pass can be begun.
 	///
 	/// \param clearColor The color to clear the color target of the render pass with.
 	///
 	/// \returns The render pass, or `nullptr` if pass creation failed.
 	auto beginRenderPass (const glm::fvec4 &clearColor) -> SDL_GPURenderPass*;
+
+	/// Obtain a render pass targeting this frame's target texture without a depth buffer. The existing color
+	/// contents are preserved (load op `LOAD`), so this pass can be used to overlay the GUI on top of rendering
+	/// performed in the primary \ref beginRenderPass pass.
+	///
+	/// Needs to be paired with a call to \ref endRenderPass before this frame is finished.
+	///
+	/// \returns The render pass, or `nullptr` if pass creation failed.
+	auto beginOverlayRenderPass () -> SDL_GPURenderPass*;
 
 	/// End the current render pass, marking this frame as not having a currently ongoing render pass being recorded
 	/// (and thus making it safe to \link end fcg::Window::endFrame \endlink. The main reason for requiring a call to
