@@ -31,8 +31,9 @@ struct SDL_GPURenderPass;
 
 // Framework types
 namespace fcg {
-	class Player;
 	class Device;
+	class RenderState;
+	class Player;
 	class Applet;
 }
 
@@ -126,11 +127,14 @@ public:
 	/// Perform all rendering the applet might want to do.
 	///
 	/// \param device The active SDL GPU device that is used for rendering.
+	/// \param renderState The current render state.
 	/// \param renderPass A render pass targeting the current swapchain texture of the main window. Record all draw
 	///                   calls that should appear on the window into this pass. The pass is begun before and ended
 	///                   after all applets had their turn by the framework – do not end (or re-begin) it yourself.
 	/// \param player Reference to the central applet player.
-	virtual void render (Device &device, SDL_GPURenderPass *renderPass, Player &player) = 0;
+	virtual void render (
+		Device &device, RenderState &renderState, SDL_GPURenderPass *renderPass, Player &player
+	) = 0;
 };
 
 /// The concept of behaving like an \ref Applet.

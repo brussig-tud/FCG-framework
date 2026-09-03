@@ -119,7 +119,9 @@ public:
 		shapes[selectedShape]->update(device);
 	}
 
-	void render (fcg::Device &device, SDL_GPURenderPass *renderPass, fcg::Player &player) override {
+	void render (
+		fcg::Device &device, fcg::RenderState &renderState, SDL_GPURenderPass *renderPass, fcg::Player &player
+	) override {
 		// Nothing to draw yet. GPU buffers for the selected shape are ready in
 		// shape.vertexBuffer() / shape.indexBuffer() and will be rendered once we have shader handling.
 	}

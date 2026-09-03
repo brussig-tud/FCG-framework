@@ -16,9 +16,11 @@
 // Local includes
 #include "FCG/run.h"
 #include "FCG/device.h"
+#include "FCG/renderstate.h"
 #include "FCG/gui.h"
 #include "FCG/player.h"
 #include "FCG/window.h"
+
 
 
 //////
@@ -233,9 +235,10 @@ FCG_FRAMEWORK_EXPORT int run (
 				gui->prepareRender(frame);
 				if (frame)
 				{
+					auto rs = RenderState(device);
 					if (auto *renderPass = frame->beginRenderPass(player.clearColor())) {
 						for (auto &applet : applets)
-							applet->render(device, renderPass, player);
+							applet->render(device, rs, renderPass, player);
 						frame->endRenderPass();
 					}
 					if (auto *overlayPass = frame->beginOverlayRenderPass()) {
