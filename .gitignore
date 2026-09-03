@@ -1,7 +1,9 @@
-
 # CMake build folders
 build*
 cmake-build*
 
 # IDE settings files
 .idea
+
+/.cache/
+/imgui.ini
