@@ -96,7 +96,9 @@ public:
 	// Accessors
 
 	/// The raw SDL GPU device handle.
-	[[nodiscard]] auto handle () const -> SDL_GPUDevice*;
+	[[nodiscard]] inline auto handle () const -> SDL_GPUDevice* {
+		return m_handle;
+	}
 
 
 	////

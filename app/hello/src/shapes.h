@@ -25,15 +25,8 @@
 // Forward declarations
 //
 
-/// Opaque SDL GPU buffer type (defined in SDL headers, deliberately not included here).
+// Opaque SDL3 types
 struct SDL_GPUBuffer;
-
-
-
-//////
-//
-// Namespaces open
-//
 
 // Forward declarations
 namespace fcg {
@@ -65,10 +58,9 @@ using SS = SimpleShapes;
 
 /// Abstract interface of all simple shapes.
 ///
-/// Shape implementations generate procedural geometry in CPU-side buffers and call
-/// \ref uploadGeometry to move the data to the GPU. Concrete shapes only need to worry
-/// about the geometry; the actual SDL GPU buffer creation/upload code is centralized
-/// in the base class so it can be reused across all shapes.
+/// Shape implementations generate procedural geometry in CPU-side buffers and call \ref uploadGeometry to move the data
+/// to the GPU. Concrete shapes only need to worry about the geometry; the actual SDL GPU buffer creation/upload code is
+/// centralized in this base class and can be reused by all concrete shapes.
 class SimpleShape
 {
 public:
@@ -78,15 +70,15 @@ public:
 
 	/// Vertex layout used by all simple shapes for now.
 	struct Vertex {
-		glm::vec3 position;
-		glm::vec3 normal;
+		glm::vec4 position;
+		glm::vec4 normal;
 	};
 
 
 	////
 	// Construction / destruction
 
-	/// Virtual destructor. Releases any GPU buffers that were created via \ref uploadGeometry.
+	/// Virtual base destructor. Releases any GPU buffers that were created via \ref uploadGeometry.
 	virtual ~SimpleShape();
 
 
@@ -94,37 +86,37 @@ public:
 	// Methods
 
 	/// Human-readable name of this shape.
-	[[nodiscard]] virtual auto name() const -> const char* = 0;
+	[[nodiscard]] virtual auto name () const -> const char* = 0;
 
 	/// Show the shape-specific GUI widgets in the current *Dear ImGui* window.
 	/// Implementations should call \ref markDirty whenever a parameter changes.
-	virtual void gui(fcg::Player &player) = 0;
+	virtual void gui () = 0;
 
 	/// Re-generate the geometry and upload it to the GPU.
 	/// Called by the applet whenever \ref dirty returns `true`.
-	virtual void rebuild(fcg::Device &device) = 0;
+	virtual void rebuild (fcg::Device &device) = 0;
 
 
 	////
 	// Accessors
 
 	/// Whether the shape's parameters have changed since the last \ref rebuild.
-	[[nodiscard]] auto dirty() const -> bool {
+	[[nodiscard]] auto dirty () const -> bool {
 		return m_dirty;
 	}
 
 	/// The GPU vertex buffer, or `nullptr` if \ref rebuild has not been called successfully yet.
-	[[nodiscard]] auto vertexBuffer() const -> SDL_GPUBuffer* {
+	[[nodiscard]] auto vertexBuffer () const -> SDL_GPUBuffer* {
 		return m_vertexBuffer;
 	}
 
 	/// The GPU index buffer, or `nullptr` if \ref rebuild has not been called successfully yet.
-	[[nodiscard]] auto indexBuffer() const -> SDL_GPUBuffer* {
+	[[nodiscard]] auto indexBuffer () const -> SDL_GPUBuffer* {
 		return m_indexBuffer;
 	}
 
 	/// Number of indices currently stored in \ref indexBuffer.
-	[[nodiscard]] auto numIndices() const -> std::size_t {
+	[[nodiscard]] auto numIndices () const -> std::size_t {
 		return m_numIndices;
 	}
 
@@ -170,7 +162,7 @@ private:
 
 	/// Cached GPU device handle, captured on first \ref uploadGeometry so the destructor can release
 	/// buffers without requiring an explicit device reference.
-	SDL_GPUDevice *m_device = nullptr;
+	fcg::Device *device = nullptr;
 
 	/// GPU vertex buffer handle.
 	SDL_GPUBuffer *m_vertexBuffer = nullptr;

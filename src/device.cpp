@@ -72,10 +72,6 @@ Device::~Device ()
 	}
 }
 
-auto Device::handle () const -> SDL_GPUDevice* {
-	return m_handle;
-}
-
 void Device::waitIdle () const {
 	SDL_WaitForGPUIdle(m_handle);
 }

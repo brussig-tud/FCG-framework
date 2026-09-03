@@ -44,12 +44,12 @@ namespace {
 //
 
 SimpleShape::~SimpleShape() {
-	if (m_device != nullptr) {
+	if (device != nullptr) {
 		if (m_vertexBuffer != nullptr) {
-			SDL_ReleaseGPUBuffer(m_device, m_vertexBuffer);
+			SDL_ReleaseGPUBuffer(device->handle(), m_vertexBuffer);
 		}
 		if (m_indexBuffer != nullptr) {
-			SDL_ReleaseGPUBuffer(m_device, m_indexBuffer);
+			SDL_ReleaseGPUBuffer(device->handle(), m_indexBuffer);
 		}
 	}
 }
@@ -59,21 +59,19 @@ void SimpleShape::uploadGeometry(
 	const void *vertexData, std::size_t vertexDataSize,
 	const std::uint32_t *indexData, std::size_t numIndices
 ) {
-	SDL_GPUDevice *gpuDevice = device.handle();
-
 	// Cache the device pointer so the destructor can release buffers later.
-	m_device = gpuDevice;
+	this->device = &device;
 
 	// Create new GPU buffers. We build new ones first, then release the old ones after waiting for
 	// the GPU to be idle, so any in-flight draw commands still see valid memory.
 	SDL_GPUBuffer *newVertexBuffer = createBuffer(
-		gpuDevice, vertexDataSize,
+		device.handle(), vertexDataSize,
 		SDL_GPU_BUFFERUSAGE_VERTEX
 	);
 
 	const std::size_t indexDataSize = numIndices * sizeof(std::uint32_t);
 	SDL_GPUBuffer *newIndexBuffer = createBuffer(
-		gpuDevice, indexDataSize,
+		device.handle(), indexDataSize,
 		SDL_GPU_BUFFERUSAGE_INDEX
 	);
 
@@ -83,15 +81,15 @@ void SimpleShape::uploadGeometry(
 			.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
 			.size = static_cast<Uint32>(vertexDataSize)
 		};
-		SDL_GPUTransferBuffer *transferBuffer = SDL_CreateGPUTransferBuffer(gpuDevice, &transferInfo);
+		SDL_GPUTransferBuffer *transferBuffer = SDL_CreateGPUTransferBuffer(device.handle(), &transferInfo);
 		if (transferBuffer != nullptr) {
-			void *dst = SDL_MapGPUTransferBuffer(gpuDevice, transferBuffer, false);
+			void *dst = SDL_MapGPUTransferBuffer(device.handle(), transferBuffer, false);
 			if (dst != nullptr) {
 				std::memcpy(dst, vertexData, vertexDataSize);
-				SDL_UnmapGPUTransferBuffer(gpuDevice, transferBuffer);
+				SDL_UnmapGPUTransferBuffer(device.handle(), transferBuffer);
 			}
 
-			SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(gpuDevice);
+			SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(device.handle());
 			SDL_GPUCopyPass *copyPass = SDL_BeginGPUCopyPass(cmd);
 			const SDL_GPUTransferBufferLocation src = { .transfer_buffer = transferBuffer, .offset = 0 };
 			const SDL_GPUBufferRegion dstRegion = {
@@ -102,7 +100,7 @@ void SimpleShape::uploadGeometry(
 			SDL_UploadToGPUBuffer(copyPass, &src, &dstRegion, false);
 			SDL_EndGPUCopyPass(copyPass);
 			SDL_SubmitGPUCommandBuffer(cmd);
-			SDL_ReleaseGPUTransferBuffer(gpuDevice, transferBuffer);
+			SDL_ReleaseGPUTransferBuffer(device.handle(), transferBuffer);
 		}
 	}
 
@@ -112,15 +110,15 @@ void SimpleShape::uploadGeometry(
 			.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
 			.size = static_cast<Uint32>(indexDataSize)
 		};
-		SDL_GPUTransferBuffer *transferBuffer = SDL_CreateGPUTransferBuffer(gpuDevice, &transferInfo);
+		SDL_GPUTransferBuffer *transferBuffer = SDL_CreateGPUTransferBuffer(device.handle(), &transferInfo);
 		if (transferBuffer != nullptr) {
-			void *dst = SDL_MapGPUTransferBuffer(gpuDevice, transferBuffer, false);
+			void *dst = SDL_MapGPUTransferBuffer(device.handle(), transferBuffer, false);
 			if (dst != nullptr) {
 				std::memcpy(dst, indexData, indexDataSize);
-				SDL_UnmapGPUTransferBuffer(gpuDevice, transferBuffer);
+				SDL_UnmapGPUTransferBuffer(device.handle(), transferBuffer);
 			}
 
-			SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(gpuDevice);
+			SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(device.handle());
 			SDL_GPUCopyPass *copyPass = SDL_BeginGPUCopyPass(cmd);
 			const SDL_GPUTransferBufferLocation src = { .transfer_buffer = transferBuffer, .offset = 0 };
 			const SDL_GPUBufferRegion dstRegion = {
@@ -131,7 +129,7 @@ void SimpleShape::uploadGeometry(
 			SDL_UploadToGPUBuffer(copyPass, &src, &dstRegion, false);
 			SDL_EndGPUCopyPass(copyPass);
 			SDL_SubmitGPUCommandBuffer(cmd);
-			SDL_ReleaseGPUTransferBuffer(gpuDevice, transferBuffer);
+			SDL_ReleaseGPUTransferBuffer(device.handle(), transferBuffer);
 		}
 	}
 
@@ -139,10 +137,10 @@ void SimpleShape::uploadGeometry(
 	device.waitIdle();
 
 	if (m_vertexBuffer != nullptr) {
-		SDL_ReleaseGPUBuffer(gpuDevice, m_vertexBuffer);
+		SDL_ReleaseGPUBuffer(device.handle(), m_vertexBuffer);
 	}
 	if (m_indexBuffer != nullptr) {
-		SDL_ReleaseGPUBuffer(gpuDevice, m_indexBuffer);
+		SDL_ReleaseGPUBuffer(device.handle(), m_indexBuffer);
 	}
 
 	m_vertexBuffer = newVertexBuffer;

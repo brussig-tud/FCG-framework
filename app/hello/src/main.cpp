@@ -109,7 +109,7 @@ public:
 		ImGui::Separator();
 
 		// GUI for the currently selected shape's parameters.
-		m_shapes[m_selected]->gui(player);
+		m_shapes[m_selected]->gui();
 
 		ImGui::End();
 	}
