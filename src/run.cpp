@@ -112,7 +112,7 @@ FCG_FRAMEWORK_EXPORT int run (std::initializer_list<std::unique_ptr<fcg::Applet>
 
 		// Create the central window that all applets will render into
 		auto window = maybeDevice ? Window::create(WindowSettings {
-			.title = std::move(settings.mainWindowTitle.value_or("FCG Player"))
+			.title = std::move(settings.mainWindowTitle).value_or("FCG Player")
 		}) : nullptr;
 		if (!window)
 			exitCode = EXIT_FAILURE;
@@ -144,7 +144,7 @@ FCG_FRAMEWORK_EXPORT int run (std::initializer_list<std::unique_ptr<fcg::Applet>
 				for (auto &applet : applets) {
 					SDL_LogInfo(
 						SDL_LOG_CATEGORY_APPLICATION, "Player: initializing applet %p (\"%s\")",
-						applet.get(), applet->name().c_str()
+						(void*)applet.get(), applet->name().c_str()
 					);
 					applet->init(device, player);
 				}

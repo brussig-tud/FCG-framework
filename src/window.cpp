@@ -15,10 +15,6 @@
 #include "FCG/frame.h"
 #include "FCG/window.h"
 
-#include <map>
-
-#include "FCG/util.h"
-
 
 //////
 //
@@ -60,7 +56,7 @@ Window::~Window ()
 {
 	// Windows must always outlive devices that claim them.
 	if (m_device) {
-		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Window %p destroyed while claimed by a device", m_handle);
+		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Window %p destroyed while claimed by a device", (void*)m_handle);
 		exit(EXIT_FAILURE); // unrecoverable
 	}
 
