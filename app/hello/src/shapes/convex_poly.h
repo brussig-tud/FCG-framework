@@ -54,7 +54,7 @@ public:
 		return "Convex Polygon";
 	}
 
-	void gui (fcg::Device &device) override
+	void gui () override
 	{
 		bool changed = false;
 
@@ -82,45 +82,18 @@ public:
 		}
 
 		if (changed) {
-			rebuild(device);
+			markDirty();
 		}
 	}
 
-	void rebuild (fcg::Device &device)
+	void rebuild (fcg::Device &device) override
 	{
-		// Prepare storage
-		vertices.clear();
-		indices.clear();
-		const auto n = (std::size_t)numVertices;
-		vertices.reserve(n);
-
-		// Generate vertices
-		constexpr float twoPi = 2*3.14159265358979f;
-		for (std::size_t i=0; i<n; ++i)
-		{
-			const float angle = twoPi * static_cast<float>(i) / static_cast<float>(n);
-			vertices.push_back(Vertex{
-				.position = glm::vec4(
-					radius * std::cos(angle),
-					radius * std::sin(angle),
-					.0f, 1.f
-				),
-				.normal = glm::vec4(.0f, .0f, 1.f, .0f)
-			});
-		}
-
-		// Generate indices for triangle fan: (0, i, i+1) for i = 1..n-2
-		for (uint32_t i=1; i+1<n; ++i) {
-			indices.push_back(0);
-			indices.push_back(i);
-			indices.push_back(i+1);
-		}
-
-		// Upload
+		generate();
 		uploadGeometry(
 			device, vertices.data(), vertices.size() * sizeof(Vertex),
 			indices.data(), indices.size()
 		);
+		clearDirty();
 	}
 
 
@@ -147,6 +120,42 @@ private:
 
 	/// CPU-side index buffer.
 	std::vector<std::uint32_t> indices;
+
+
+	////
+	// Methods
+
+	/// Recompute `m_vertices` and `m_indices` from the current parameters.
+	void generate()
+	{
+		// Prepare storage
+		vertices.clear();
+		indices.clear();
+		const auto n = std::size_t(numVertices);
+		vertices.reserve(n);
+
+		// Generate vertices
+		constexpr float twoPi = 2*3.14159265358979f;
+		for (std::size_t i=0; i<n; ++i)
+		{
+			const float angle = twoPi * static_cast<float>(i) / static_cast<float>(n);
+			vertices.push_back(Vertex{
+				.position = glm::vec4(
+					radius * std::cos(angle),
+					radius * std::sin(angle),
+					.0f, 1.f
+				),
+				.normal = glm::vec4(.0f, .0f, 1.f, .0f)
+			});
+		}
+
+		// Generate indices for triangle fan: (0, i, i+1) for i = 1..n-2
+		for (uint32_t i=1; i+1<n; ++i) {
+			indices.push_back(0);
+			indices.push_back(i);
+			indices.push_back(i);
+		}
+	}
 };
 
 

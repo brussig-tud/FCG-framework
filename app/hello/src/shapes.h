@@ -89,11 +89,21 @@ public:
 	[[nodiscard]] virtual auto name () const -> const char* = 0;
 
 	/// Show the shape-specific GUI widgets in the current *Dear ImGui* window.
-	virtual void gui (fcg::Device &device) = 0;
+	/// Implementations should call \ref markDirty whenever a parameter changes.
+	virtual void gui () = 0;
+
+	/// Re-generate the geometry and upload it to the GPU.
+	/// Called by the applet whenever \ref dirty returns `true`.
+	virtual void rebuild (fcg::Device &device) = 0;
 
 
 	////
 	// Accessors
+
+	/// Whether the shape's parameters have changed since the last \ref rebuild.
+	[[nodiscard]] auto dirty () const -> bool {
+		return m_dirty;
+	}
 
 	/// The GPU vertex buffer, or `nullptr` if \ref rebuild has not been called successfully yet.
 	[[nodiscard]] auto vertexBuffer () const -> SDL_GPUBuffer* {
@@ -114,12 +124,22 @@ public:
 protected:
 
 	////
-	// Methods
+	// State management
+
+	/// Mark the shape as needing a rebuild.
+	void markDirty () {
+		m_dirty = true;
+	}
+
+	/// Clear the dirty flag. Implementations should call this after a successful \ref rebuild.
+	void clearDirty () {
+		m_dirty = false;
+	}
 
 	/// Upload vertex/index data to the GPU, replacing any buffers that were previously created.
 	///
-	/// This helper centralizes all SDL GPU buffer management so that concrete shapes do not need to do the repetitive
-	/// low-level work.
+	/// This helper centralizes all SDL GPU buffer management so that concrete shapes do not need
+	/// to include SDL headers or deal with transfer buffers directly.
 	///
 	/// \param device        The active FCG device wrapper.
 	/// \param vertexData    Raw pointer to the vertex data.
@@ -136,6 +156,9 @@ private:
 
 	////
 	// Fields
+
+	/// Dirty flag: parameters changed, geometry needs to be regenerated.
+	bool m_dirty = true;
 
 	/// Cached GPU device handle, captured on first \ref uploadGeometry so the destructor can release
 	/// buffers without requiring an explicit device reference.
