@@ -183,6 +183,7 @@ install(
 	FILE FCG-${type}-targets.cmake
 	COMPONENT FCG_Development
 )
+include(CMakePackageConfigHelpers)
 write_basic_package_version_file(
 	"FCGConfigVersion.cmake"
 	VERSION ${FCG_FRAMEWORK_VERSION}
