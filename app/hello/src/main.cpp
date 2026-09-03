@@ -115,10 +115,8 @@ public:
 	}
 
 	void update (fcg::Device &device, fcg::Player &player) override {
-		auto &shape = *m_shapes[m_selected];
-		if (shape.dirty()) {
-			shape.rebuild(device);
-		}
+		// Make sure our shape is up-to-date and ready to render
+		m_shapes[m_selected]->update(device);
 	}
 
 	void render (fcg::Device &device, SDL_GPURenderPass *renderPass, fcg::Player &player) override {
