@@ -88,7 +88,7 @@ auto Player::shouldClose () const -> bool
 	return m_window && m_window->shouldClose();
 }
 
-auto Player::mainViewportSize() const -> glm::uvec2 {
+auto Player::viewportSize() const -> glm::uvec2 {
 	return m_window ? m_window->viewportSize() : glm::uvec2(0);
 }
 

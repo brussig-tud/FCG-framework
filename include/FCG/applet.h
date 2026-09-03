@@ -101,7 +101,7 @@ public:
 
 	/// Called whenever the main viewport of the player (i.e., the one that the render passes provided to \ref render
 	/// are targeting) changes dimensions. To get the new dimensions, applets should query
-	/// \ref fcg::Player::mainViewportSize
+	/// \ref fcg::Player::viewportSize
 	///
 	/// \param device The active SDL GPU device that is used for rendering.
 	/// \param oldViewportSize The dimensions of the main viewport before the most recent resizing

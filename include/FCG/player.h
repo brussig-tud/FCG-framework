@@ -119,7 +119,7 @@ public:
 	[[nodiscard]] auto clearColor () const -> const glm::fvec4& { return m_clearColor; }
 
 	/// Reference the current dimensions of the main window viewport.
-	[[nodiscard]] auto mainViewportSize () const -> glm::uvec2;
+	[[nodiscard]] auto viewportSize () const -> glm::uvec2;
 
 
 private:
