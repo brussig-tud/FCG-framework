@@ -1,7 +1,4 @@
 
-# Include source subdirectories
-include_directories(shapes)
-
 # Collect sources
 set(SOURCES
 	main.cpp
@@ -11,6 +8,7 @@ set(SOURCES
 # Collect headers
 set(HEADERS
 	shapes.h
+	shapes/convex_poly.h
 )
 
 # Add to our target
