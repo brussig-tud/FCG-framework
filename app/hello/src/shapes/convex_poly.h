@@ -126,7 +126,7 @@ private:
 	// Methods
 
 	/// Recompute `m_vertices` and `m_indices` from the current parameters.
-	void generate()
+	void generate ()
 	{
 		// Prepare storage
 		vertices.clear();
@@ -140,11 +140,7 @@ private:
 		{
 			const float angle = twoPi * static_cast<float>(i) / static_cast<float>(n);
 			vertices.push_back(Vertex{
-				.position = glm::vec4(
-					radius * std::cos(angle),
-					radius * std::sin(angle),
-					.0f, 1.f
-				),
+				.position = glm::vec4(radius * std::cos(angle), radius * std::sin(angle), .0f, 1.f),
 				.normal = glm::vec4(.0f, .0f, 1.f, .0f)
 			});
 		}
@@ -153,7 +149,7 @@ private:
 		for (uint32_t i=1; i+1<n; ++i) {
 			indices.push_back(0);
 			indices.push_back(i);
-			indices.push_back(i);
+			indices.push_back(i+1);
 		}
 	}
 };
