@@ -63,7 +63,7 @@ struct PlayerSettings {
 /// "successful" execution is platform-dependent, but will always be equal to \c EXIT_SUCCESS as defined in the platform
 /// C standard library.
 FCG_FRAMEWORK_EXPORT int run (
-	std::initializer_list<std::unique_ptr<Applet>> applets,
+	std::initializer_list<std::unique_ptr<AppletFactory>> appletFactories,
 	PlayerSettings &&settings = PlayerSettings()
 );
 
@@ -71,10 +71,10 @@ FCG_FRAMEWORK_EXPORT int run (
 /// wrapper around \ref fcg::run(std::initializer_list<std::unique_ptr<fcg::Applet>>, fcg::PlayerSettings&&).
 ///
 /// \return See \ref fcg::run(std::initializer_list<std::unique_ptr<fcg::Applet>>, fcg::PlayerSettings&&).
-template<AppletConcept... A>
-inline int run (std::unique_ptr<A>&&... applets) {
+template<AppletFactoryConcept... A>
+inline int run (std::unique_ptr<A>&&... appletFactories) {
 	// Forward to runtime-polymorphic fcg::run.
-	return run({std::move(applets)...});
+	return run({std::move(appletFactories)...});
 }
 
 /// Run with the given \ref fcg::Applet instances and custom initial settings for the applet player. This is a
@@ -82,10 +82,10 @@ inline int run (std::unique_ptr<A>&&... applets) {
 /// \ref fcg::run(std::initializer_list<std::unique_ptr<fcg::Applet>>, fcg::PlayerSettings&&).
 ///
 /// \return See \ref fcg::run(std::initializer_list<std::unique_ptr<fcg::Applet>>, fcg::PlayerSettings&&).
-template<AppletConcept... A>
-inline int run (PlayerSettings &&settings, std::unique_ptr<A>&&... applets) {
+template<AppletFactoryConcept... A>
+inline int run (PlayerSettings &&settings, std::unique_ptr<A>&&... appletFactories) {
 	// Forward to runtime-polymorphic fcg::run.
-	return run({std::move(applets)...}, std::move(settings));
+	return run({std::move(appletFactories)...}, std::move(settings));
 }
 
 /// Run with default-constructed applets and optional initial settings for the applet player. This is a convenience
@@ -94,10 +94,10 @@ inline int run (PlayerSettings &&settings, std::unique_ptr<A>&&... applets) {
 /// \param settings See \ref fcg::run(std::initializer_list<std::unique_ptr<fcg::Applet>>, fcg::PlayerSettings&&).
 ///
 /// \return See \ref fcg::run(std::initializer_list<std::unique_ptr<fcg::Applet>>, fcg::PlayerSettings&&).
-template<AppletConcept... A>
+template<AppletFactoryConcept... A>
 inline int run (PlayerSettings &&settings = PlayerSettings()) {
 	// Forward to run with pre-constructed applets.
-	return run(std::move(settings), A::create()...);
+	return run(std::move(settings), std::make_unique<A>()...);
 }
 
 

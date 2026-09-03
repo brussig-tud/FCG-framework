@@ -5,6 +5,7 @@
 //
 
 // C++ STL
+#include <array>
 #include <memory>
 
 // SDL3 library
@@ -18,6 +19,10 @@
 #include <FCG/player.h>
 #include <FCG/run.h>
 
+// Local includes
+#include <shapes.h>
+
+
 
 //////
 //
@@ -25,29 +30,44 @@
 //
 
 // Our demo applet.
-class SimpleShapeApplet : public fcg::Applet
+class SimpleShapesApplet : public fcg::Applet
 {
-protected:
+public:
 
 	////
-	// Object construction
+	// Types
 
-	/// Protected default constructor.
-	SimpleShapeApplet() = default;
+	/// The applet factory
+	struct Factory : public fcg::AppletFactory
+	{
+		//////
+		// Object construction/destruction
+
+		/// The destructor.
+		virtual ~Factory () = default;
 
 
-public:
+		////
+		// Interface: fcg::AppletFactory
+
+		auto create () -> std::unique_ptr<fcg::Applet> override {
+			return std::make_unique<SimpleShapesApplet>();
+		}
+	};
+
 
 	////
 	// Object construction/destruction
 
-	/// Default-construct as required by the \ref fcg::AppletConcept.
-	static std::unique_ptr<SimpleShapeApplet> create () {
-		return std::unique_ptr<SimpleShapeApplet>(new SimpleShapeApplet());
-	}
+	/// Default constructor.
+	SimpleShapesApplet()
+		: m_shapes{ {
+			std::make_unique<ConvexPolygon>()
+		} }
+	{}
 
 	/// The destructor.
-	~SimpleShapeApplet() override = default;
+	~SimpleShapesApplet() override = default;
 
 
 	////
@@ -63,27 +83,60 @@ public:
 	}
 
 	void init (fcg::Device &device, fcg::Player &player) override {
-		// Nothing to initialize yet – this is where GPU resources would be created on the provided device.
+		// Nothing to initialize here. Shapes are lazy-rebuilt in update() when their dirty flag
+		// (set by default) is set.
 	}
 
-	void gui (fcg::Player &player) override
+	void gui (fcg::Device &device, fcg::Player &player) override
 	{
-		// Show a small window displaying the current dimensions of the main viewport
 		ImGui::SetNextWindowSize({ 0, 0 }, ImGuiCond_FirstUseEver);
 		ImGui::Begin("Simple Shapes");
-		const auto viewportSize = player.mainViewportSize();
-		ImGui::Text("Viewport: %u x %u", viewportSize.x, viewportSize.y);
+
+		// Shape selection combo box.
+		if (ImGui::BeginCombo("Shape", m_shapes[m_selected]->name())) {
+			for (unsigned i=0; i<(unsigned)SS::NUM; ++i) {
+				const bool isSelected = (i == static_cast<std::size_t>(m_selected));
+				if (ImGui::Selectable(m_shapes[i]->name(), isSelected)) {
+					m_selected = static_cast<int>(i);
+				}
+				if (isSelected) {
+					ImGui::SetItemDefaultFocus();
+				}
+			}
+			ImGui::EndCombo();
+		}
+
+		ImGui::Separator();
+
+		// GUI for the currently selected shape's parameters.
+		m_shapes[m_selected]->gui(player);
+
 		ImGui::End();
 	}
 
-	void update (fcg::Player &player) override {
-		// Nothing to update yet. If you start animating something here, keep the main loop running via
-		// player.pushContinuousRedraw(), and balance it with player.popContinuousRedraw() once the animation is done.
+	void update (fcg::Device &device, fcg::Player &player) override {
+		auto &shape = *m_shapes[m_selected];
+		if (shape.dirty()) {
+			shape.rebuild(device);
+		}
 	}
 
 	void render (fcg::Device &device, SDL_GPURenderPass *renderPass, fcg::Player &player) override {
-		// Nothing to draw yet.
+		// Nothing to draw yet. GPU buffers for the selected shape are ready in
+		// shape.vertexBuffer() / shape.indexBuffer() and will be rendered once we have shader handling.
 	}
+
+
+protected:
+
+	////
+	// Fields
+
+	/// All available simple shapes, instantiated once.
+	std::unique_ptr<SimpleShape> m_shapes[(size_t)SS::NUM];
+
+	/// Index of the currently selected shape in \ref m_shapes.
+	int m_selected = 0;
 };
 
 
@@ -96,5 +149,5 @@ public:
 /// Program entry point.
 int main () {
 	// Run with our demo applets
-	return fcg::run<SimpleShapeApplet>(fcg::PlayerSettings{.mainWindowTitle="Hello FCG!"});
+	return fcg::run<SimpleShapesApplet::Factory>(fcg::PlayerSettings{.mainWindowTitle="Hello FCG!"});
 }

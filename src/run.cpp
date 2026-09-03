@@ -7,6 +7,7 @@
 // C++ STL
 #include <cstdlib>
 #include <memory>
+#include <vector>
 #include <initializer_list>
 
 // SDL3
@@ -32,67 +33,64 @@ namespace fcg {
 
 //////
 //
-// Local functions
-//
-
-namespace {
-
-	/// Handle a single SDL event for the central framework window.
-	void handleEvent (const SDL_Event &event, Window &window, Gui &gui)
-	{
-		// Always feed the GUI so ImGui can react to input
-		gui.processEvent(event);
-
-		switch (event.type)
-		{
-			// Global quit request (e.g. from the OS)
-			case SDL_EVENT_QUIT:
-				window.requestClose();
-				break;
-
-			// Our window was asked to close (e.g. via its title bar close button)
-			case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-				if (event.window.windowID == window.id())
-					window.requestClose();
-				break;
-
-			// A key was pressed – the escape key closes our window, unless the GUI is currently capturing text input
-			// (in which case the key belongs to the text field being edited)
-			case SDL_EVENT_KEY_DOWN:
-				if (event.key.windowID == window.id() && event.key.key == SDLK_ESCAPE && !gui.wantsTextInput())
-					window.requestClose();
-				break;
-
-			// The display scale changed (system DPI setting or window moved to a monitor with different scaling) –
-			// re-apply the content scale to the GUI style
-			case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
-			case SDL_EVENT_WINDOW_DISPLAY_CHANGED:
-				if (event.window.windowID == window.id())
-					gui.updateContentScale(window);
-				break;
-
-			default:
-				break;
-		}
-	}
-
-} // unnamed namespace
-
-
-
-//////
-//
 // Functions
 //
 
-/// Run the given application(s).
-FCG_FRAMEWORK_EXPORT int run (std::initializer_list<std::unique_ptr<fcg::Applet>> applets, PlayerSettings &&settings)
+// Local anonymous namespace
+namespace {
+
+/// Handle a single SDL event for the central framework window.
+void handleEvent (const SDL_Event &event, Window &window, Gui &gui, Player &player)
 {
+	// Always feed the GUI so ImGui can react to input
+	gui.processEvent(event);
+
+	switch (event.type)
+	{
+		// Global quit request (e.g. from the OS)
+		case SDL_EVENT_QUIT:
+			player.requestClose();
+			break;
+
+		// Our window was asked to close (e.g. via its title bar close button)
+		case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+			if (event.window.windowID == window.id())
+				player.requestClose();
+			break;
+
+		// A key was pressed – the escape key closes our window, unless the GUI is currently capturing text input
+		// (in which case the key belongs to the text field being edited)
+		case SDL_EVENT_KEY_DOWN:
+			if (event.key.windowID == window.id() && event.key.key == SDLK_ESCAPE && !gui.wantsTextInput())
+				player.requestClose();
+			break;
+
+		// The display scale changed (system DPI setting or window moved to a monitor with different scaling) –
+		// re-apply the content scale to the GUI style
+		case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+		case SDL_EVENT_WINDOW_DISPLAY_CHANGED:
+			if (event.window.windowID == window.id())
+				gui.updateContentScale(window);
+			break;
+
+		default:
+			break;
+	}
+}
+
+// Local anonymous namespace close
+}
+
+
+/// Run the given application(s).
+FCG_FRAMEWORK_EXPORT int run (
+	std::initializer_list<std::unique_ptr<AppletFactory>> appletFactories, PlayerSettings &&settings
+){
 	// Info trace
 	SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: starting up...");
 
 	// Bail out early if there is nothing to run
-	if (applets.size() < 1) {
+	if (appletFactories.size() < 1) {
 		SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "fcg::run() was called without applets – nothing to do");
 		return EXIT_SUCCESS;
 	}
@@ -118,10 +116,17 @@ FCG_FRAMEWORK_EXPORT int run (std::initializer_list<std::unique_ptr<fcg::Applet>
 			exitCode = EXIT_FAILURE;
 		else
 		{
+			// We now have a working device
 			auto &device = maybeDevice.value();
 
 			// Create the player that the applets will interact with
 			Player player(window.get());
+
+			// Create the applet instances from their factories.
+			std::vector<std::unique_ptr<Applet>> applets; applets.reserve(appletFactories.size());
+			for (auto &factory : appletFactories) {
+				applets.push_back(factory->create());
+			}
 
 			// Claim the window for the GPU device, then create the framework GUI on top of it. The GUI instance is
 			// destroyed at scope exit, before the window is unclaimed below.
@@ -131,12 +136,12 @@ FCG_FRAMEWORK_EXPORT int run (std::initializer_list<std::unique_ptr<fcg::Applet>
 				if (!gui) {
 					SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "Initializing the framework GUI failed");
 					exitCode = EXIT_FAILURE;
-					window->requestClose();
+					player.requestClose();
 				}
 			}
 			else {
 				exitCode = EXIT_FAILURE;
-				window->requestClose();
+				player.requestClose();
 			}
 			if (gui)
 			{
@@ -160,7 +165,7 @@ FCG_FRAMEWORK_EXPORT int run (std::initializer_list<std::unique_ptr<fcg::Applet>
 			// redraws, tracked via the pending redraws counter. It is initialized to 2 so the first frames are drawn
 			// right after startup instead of only after some external event unblocks the loop.
 			unsigned pendingRedraws = 2;
-			while (!window->shouldClose())
+			while (!player.shouldClose())
 			{
 				// Event handling
 				if (player.continuousRedrawRequested() || pendingRedraws > 0)
@@ -170,7 +175,7 @@ FCG_FRAMEWORK_EXPORT int run (std::initializer_list<std::unique_ptr<fcg::Applet>
 					SDL_Event event;
 					bool handledAnyEvent = false;
 					while (SDL_PollEvent(&event)) {
-						handleEvent(event, *window, *gui);
+						handleEvent(event, *window, *gui, player);
 						handledAnyEvent = true;
 					}
 					if (handledAnyEvent)
@@ -186,9 +191,9 @@ FCG_FRAMEWORK_EXPORT int run (std::initializer_list<std::unique_ptr<fcg::Applet>
 					const int waitTimeoutMs = gui->needsPeriodicRedraw() ? Gui::periodicRedrawIntervalMs : -1;
 					SDL_Event event;
 					if (SDL_WaitEventTimeout(&event, waitTimeoutMs)) {
-						handleEvent(event, *window, *gui);
+						handleEvent(event, *window, *gui, player);
 						while (SDL_PollEvent(&event))
-							handleEvent(event, *window, *gui);
+							handleEvent(event, *window, *gui, player);
 						// The GUI reacts to input with one frame of latency, so schedule follow-up redraws
 						pendingRedraws = 2;
 					}
@@ -199,12 +204,12 @@ FCG_FRAMEWORK_EXPORT int run (std::initializer_list<std::unique_ptr<fcg::Applet>
 							SDL_LOG_CATEGORY_APPLICATION, "Waiting for events failed: %s", SDL_GetError()
 						);
 						exitCode = EXIT_FAILURE;
-						window->requestClose();
+						player.requestClose();
 					}
 				}
 
 				// Stop early if the window was requested to close while handling events
-				if (window->shouldClose())
+				if (player.shouldClose())
 					break;
 
 				// The window may have been resized since the last frame – in blocking mode rendering does not
@@ -217,8 +222,8 @@ FCG_FRAMEWORK_EXPORT int run (std::initializer_list<std::unique_ptr<fcg::Applet>
 				// Begin the GUI frame, then update applet state and let them define their GUI
 				gui->newFrame();
 				for (auto &applet : applets) {
-					applet->gui(player);
-					applet->update(player);
+					applet->gui(device, player);
+					applet->update(device, player);
 				}
 
 				// Render a frame: all applets draw into the primary render pass (with depth buffer), then the GUI is

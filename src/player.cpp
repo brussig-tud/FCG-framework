@@ -69,6 +69,25 @@ auto Player::continuousRedrawRequested () const -> bool {
 	return m_numContinuousRedrawRequests > 0;
 }
 
+void Player::requestClose ()
+{
+	m_closeRequested.store(true);
+
+	if (!m_window) {
+		// A player without a window still records the request so callers can observe it via shouldClose().
+		return;
+	}
+	m_window->requestClose();
+}
+
+auto Player::shouldClose () const -> bool
+{
+	if (m_closeRequested.load())
+		return true;
+
+	return m_window && m_window->shouldClose();
+}
+
 auto Player::mainViewportSize() const -> glm::uvec2 {
 	return m_window ? m_window->viewportSize() : glm::uvec2(0);
 }

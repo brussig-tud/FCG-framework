@@ -33,6 +33,7 @@ struct SDL_GPURenderPass;
 namespace fcg {
 	class Player;
 	class Device;
+	class Applet;
 }
 
 
@@ -53,7 +54,27 @@ namespace fcg {
 // Interfaces
 //
 
-/// The polymorphic interface of an \ref Applet. All applets passed to \ref fcg::run.
+/// The polymorphic interface of an \c AppletFactory.
+class FCG_FRAMEWORK_EXPORT AppletFactory
+{
+public:
+
+	////
+	// Construction/Destruction
+
+	/// Virtual base destructor. Forces vtable creation.
+	virtual ~AppletFactory () = default;
+
+	/// Create an instance of the applet.
+	virtual auto create () -> std::unique_ptr<Applet> = 0;
+};
+
+/// The concept of behaving like an \ref AppletFactory.
+template <class A>
+concept AppletFactoryConcept = std::derived_from<A, AppletFactory>;
+
+
+/// The polymorphic interface of an \c Applet.
 class FCG_FRAMEWORK_EXPORT Applet
 {
 public:
@@ -91,14 +112,16 @@ public:
 	/// applets can issue `ImGui::` calls directly. Rendering of the resulting draw data is handled by the
 	/// framework – applets must not call `ImGui::Render` themselves.
 	///
+	/// \param device The active SDL GPU device that is used for rendering.
 	/// \param player Reference to the central applet player.
-	virtual void gui (Player &player) = 0;
+	virtual void gui (Device &device, Player &player) = 0;
 
 	/// Run all code for updating applet state for the next frame.
 	/// TODO: additional arguments required for update, for example frame stats (delta-t and so on)
 	///
+	/// \param device The active SDL GPU device that is used for rendering.
 	/// \param player Reference to the central applet player.
-	virtual void update (Player &player) = 0;
+	virtual void update (Device &device, Player &player) = 0;
 
 	/// Perform all rendering the applet might want to do.
 	///
@@ -112,14 +135,7 @@ public:
 
 /// The concept of behaving like an \ref Applet.
 template <class A>
-concept AppletConcept =
-	   std::derived_from<A, Applet>
-	&& requires (A applet, SDL_GPUDevice *gpuDevice, SDL_GPURenderPass *renderPass, Player &player)
-{
-	/// Construct an instance of the Applet using defaults for all initial state, ready for consumption by
-	/// \ref fcg::run.
-	{ A::create() } -> std::same_as<std::unique_ptr<A>>;
-};
+concept AppletConcept = std::derived_from<A, Applet>;
 
 
 

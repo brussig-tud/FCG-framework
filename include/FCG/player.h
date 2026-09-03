@@ -94,6 +94,14 @@ public:
 	/// Whether at least one continuous redraw request currently exists.
 	[[nodiscard]] auto continuousRedrawRequested () const -> bool;
 
+	/// Request the main loop to shut down. For a player connected to a main window this also forwards the request
+	/// to that window; for a default-constructed player with no window the request is still recorded.
+	void requestClose ();
+
+	/// Check whether closing the application was requested, e.g. by a call to \ref requestClose or by the user
+	/// closing the main window.
+	[[nodiscard]] auto shouldClose () const -> bool;
+
 
 	////
 	// Accessors
@@ -128,6 +136,9 @@ private:
 
 	/// The number of currently active continuous redraw requests.
 	std::atomic<unsigned> m_numContinuousRedrawRequests{0};
+
+	/// Whether closing the application was requested on this player itself.
+	std::atomic<bool> m_closeRequested{false};
 };
 
 
