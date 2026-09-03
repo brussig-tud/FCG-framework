@@ -9,8 +9,8 @@
 //
 
 // C++ STL
-#include <cstddef>
 #include <cstdint>
+#include <span>
 
 // SDL3 library
 #include <SDL3/SDL.h>
