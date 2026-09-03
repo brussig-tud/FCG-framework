@@ -61,9 +61,9 @@ public:
 
 	/// Default constructor.
 	SimpleShapesApplet()
-		: m_shapes{ {
+		: shapes{
 			std::make_unique<ConvexPolygon>()
-		} }
+		}
 	{}
 
 	/// The destructor.
@@ -93,11 +93,11 @@ public:
 		ImGui::Begin("Simple Shapes");
 
 		// Shape selection combo box.
-		if (ImGui::BeginCombo("Shape", m_shapes[m_selected]->name())) {
+		if (ImGui::BeginCombo("Shape", shapes[selectedShape]->name())) {
 			for (unsigned i=0; i<(unsigned)SS::NUM; ++i) {
-				const bool isSelected = (i == static_cast<std::size_t>(m_selected));
-				if (ImGui::Selectable(m_shapes[i]->name(), isSelected)) {
-					m_selected = static_cast<int>(i);
+				const bool isSelected = (i == static_cast<std::size_t>(selectedShape));
+				if (ImGui::Selectable(shapes[i]->name(), isSelected)) {
+					selectedShape = static_cast<int>(i);
 				}
 				if (isSelected) {
 					ImGui::SetItemDefaultFocus();
@@ -109,14 +109,14 @@ public:
 		ImGui::Separator();
 
 		// GUI for the currently selected shape's parameters.
-		m_shapes[m_selected]->gui();
+		shapes[selectedShape]->gui();
 
 		ImGui::End();
 	}
 
 	void update (fcg::Device &device, fcg::Player &player) override {
 		// Make sure our shape is up-to-date and ready to render
-		m_shapes[m_selected]->update(device);
+		shapes[selectedShape]->update(device);
 	}
 
 	void render (fcg::Device &device, SDL_GPURenderPass *renderPass, fcg::Player &player) override {
@@ -131,10 +131,10 @@ protected:
 	// Fields
 
 	/// All available simple shapes, instantiated once.
-	std::unique_ptr<SimpleShape> m_shapes[(size_t)SS::NUM];
+	std::unique_ptr<SimpleShape> shapes[(size_t)SS::NUM];
 
-	/// Index of the currently selected shape in \ref m_shapes.
-	int m_selected = 0;
+	/// Index of the currently selected shape in \ref shapes.
+	int selectedShape = 0;
 };
 
 
