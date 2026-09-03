@@ -93,11 +93,11 @@ public:
 		ImGui::Begin("Simple Shapes");
 
 		// Shape selection combo box.
-		if (ImGui::BeginCombo("Shape", m_shapes[m_selected]->name())) {
+		if (ImGui::BeginCombo("Shape", m_shapes[selectedShape]->name())) {
 			for (unsigned i=0; i<(unsigned)SS::NUM; ++i) {
-				const bool isSelected = (i == static_cast<std::size_t>(m_selected));
+				const bool isSelected = (i == static_cast<std::size_t>(selectedShape));
 				if (ImGui::Selectable(m_shapes[i]->name(), isSelected)) {
-					m_selected = static_cast<int>(i);
+					selectedShape = static_cast<int>(i);
 				}
 				if (isSelected) {
 					ImGui::SetItemDefaultFocus();
@@ -109,16 +109,13 @@ public:
 		ImGui::Separator();
 
 		// GUI for the currently selected shape's parameters.
-		m_shapes[m_selected]->gui();
+		m_shapes[selectedShape]->gui(device);
 
 		ImGui::End();
 	}
 
 	void update (fcg::Device &device, fcg::Player &player) override {
-		auto &shape = *m_shapes[m_selected];
-		if (shape.dirty()) {
-			shape.rebuild(device);
-		}
+		// Nothing to update
 	}
 
 	void render (fcg::Device &device, SDL_GPURenderPass *renderPass, fcg::Player &player) override {
@@ -136,7 +133,7 @@ protected:
 	std::unique_ptr<SimpleShape> m_shapes[(size_t)SS::NUM];
 
 	/// Index of the currently selected shape in \ref m_shapes.
-	int m_selected = 0;
+	int selectedShape = 0;
 };
 
 
