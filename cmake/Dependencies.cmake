@@ -23,7 +23,8 @@ else()
 	set(SDL_STATIC ON)
 endif()
 
-# - SDL3: window creation, input events, SDL GPU rendering API.
+# SDL3: window creation, input events, SDL GPU rendering API.
+set(SDL_X11_XTEST OFF CACHE BOOL "" FORCE) #  only used for SDL's own tests
 CPMFindPackage(
 	NAME              SDL3
 	GITHUB_REPOSITORY libsdl-org/SDL
@@ -31,7 +32,7 @@ CPMFindPackage(
 	VERSION           3.4.14
 )
 
-# - GLM: header-only math library (vector/matrix types, geometry utilities).
+# GLM: header-only math library (vector/matrix types, geometry utilities).
 CPMFindPackage(
 	NAME              glm
 	GITHUB_REPOSITORY g-truc/glm
@@ -39,7 +40,7 @@ CPMFindPackage(
 	VERSION           1.0.1
 )
 
-# - ImGui: immediate mode GUI for all graphical user interaction.
+# ImGui: immediate mode GUI for all graphical user interaction.
 CPMFindPackage(
 	NAME              imgui
 	GITHUB_REPOSITORY ocornut/imgui
