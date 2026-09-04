@@ -349,16 +349,16 @@ private:
 	// Fields
 
 	/// The \ref ViewingUniforms::modelview matrix stack.
-	std::stack<glm::mat4> modelview;
+	std::stack<glm::mat4> modelview{{glm::mat4(1.f)}};
 
 	/// The \ref ViewingUniforms::projection matrix stack.
-	std::stack<glm::mat4> projection;
+	std::stack<glm::mat4> projection{{glm::mat4(1.f)}};
 
 	/// Lazy matrix stack for the \ref ViewingUniforms::invModelview matrix.
-	std::stack<std::optional<glm::mat4>> invModelview;
+	std::stack<std::optional<glm::mat4>> invModelview{{glm::mat4(1.f)}};
 
 	/// Lazy matrix stack for the \ref ViewingUniforms::invProjection matrix.
-	std::stack<std::optional<glm::mat4>> invProjection;
+	std::stack<std::optional<glm::mat4>> invProjection{{glm::mat4(1.f)}};
 
 	/// Lazy \ref ViewingUniforms::modelviewProjection matrix.
 	std::optional<glm::mat4> modelviewProjection;
@@ -367,10 +367,10 @@ private:
 	std::optional<glm::mat4> invModelviewProjection;
 
 	/// Lazy matrix stack for the \ref ViewingUniforms::normal matrix.
-	std::stack<std::optional<glm::mat3>> normal;
+	std::stack<std::optional<glm::mat3>> normal{{glm::mat3(1.f)}};
 
 	/// Lazy matrix stack for the \ref ViewingUniforms::invNormal matrix.
-	std::stack<std::optional<glm::mat3>> invNormal;
+	std::stack<std::optional<glm::mat3>> invNormal{{glm::mat3(1.f)}};
 
 	/// The current viewing uniforms data block read for shader upload.
 	std::optional<ViewingUniforms> m_viewingUniforms;

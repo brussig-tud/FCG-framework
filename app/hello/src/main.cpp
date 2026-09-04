@@ -14,9 +14,10 @@
 #include <imgui.h>
 
 // FCG Framework
-#include <FCG/applet.h>
-#include <FCG/player.h>
 #include <FCG/run.h>
+#include <FCG/player.h>
+#include <FCG/applet.h>
+#include <FCG/applet/orbit_camera.h>
 
 // Local includes
 #include <shapes.h>
@@ -126,5 +127,5 @@ protected:
 /// Program entry point.
 int main () {
 	// Run with our demo applets
-	return fcg::run<SimpleShapesApplet>(fcg::PlayerSettings{.mainWindowTitle="Hello FCG!"});
+	return fcg::run<fcg::applet::OrbitCamera, SimpleShapesApplet>(fcg::PlayerSettings{.mainWindowTitle="Hello FCG!"});
 }

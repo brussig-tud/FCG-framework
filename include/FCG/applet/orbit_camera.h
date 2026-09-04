@@ -41,28 +41,6 @@ class OrbitCamera : public Applet
 public:
 
 	////
-	// Types
-
-	/// The applet factory
-	struct Factory : public AppletFactory
-	{
-		//////
-		// Object construction/destruction
-
-		/// The destructor.
-		virtual ~Factory () = default;
-
-
-		////
-		// Interface: fcg::AppletFactory
-
-		auto create () -> std::unique_ptr<fcg::Applet> override {
-			return std::make_unique<OrbitCamera>();
-		}
-	};
-
-
-	////
 	// Object construction/destruction
 
 	/// Default constructor.
