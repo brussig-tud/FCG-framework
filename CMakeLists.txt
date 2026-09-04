@@ -38,76 +38,8 @@ else()
 endif()
 option(FCG_USE_SHARED_SDL "Use shared SDL3 library" "${SDL_SHARED_DEFAULT}")
 
-# Dependencies.
-include(FetchContent)
-# - SDL3: provides window creation, input events and the cross-platform SDL GPU API used for rendering. A
-#   system-installed SDL3 (with CMake package config) is preferred, otherwise it is fetched from source.
-set(SDL_X11_XTEST OFF CACHE BOOL "" FORCE) #  only used for SDL's own tests
-if (FCG_USE_SHARED_SDL)
-	set(SDL_SHARED ON CACHE BOOL "" FORCE)
-	set(SDL_STATIC OFF CACHE BOOL "" FORCE)
-else()
-	set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-	set(SDL_STATIC ON CACHE BOOL "" FORCE)
-endif()
-FetchContent_Declare(
-	SDL3
-	GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-	GIT_TAG        release-3.4.14
-	GIT_SHALLOW    TRUE
-	FIND_PACKAGE_ARGS NAMES SDL3
-)
-FetchContent_MakeAvailable(SDL3)
-# - GLM: header-only math library providing vector/matrix types and geometry utilities. A system-installed GLM
-#   (with CMake package config) is preferred, otherwise it is fetched from source.
-FetchContent_Declare(
-	glm
-	GIT_REPOSITORY https://github.com/g-truc/glm.git
-	GIT_TAG        1.0.1
-	GIT_SHALLOW    TRUE
-	FIND_PACKAGE_ARGS NAMES glm
-)
-FetchContent_MakeAvailable(glm)
-# - ImGui: graphics API-agnostic immediate mode GUI. Used for all graphical user interaction. A system-installed
-#   ImGui (with CMake package config) is preferred, otherwise it is fetched from source. Note that upstream ImGui
-#   ships no CMake build system of its own, so in the FetchContent case we have to assemble the library target
-#   ourselves. The version gate makes sure we don't pick up packages too old to ship the SDL3 GPU backend.
-find_package(imgui 1.92 CONFIG QUIET)
-if (NOT imgui_FOUND)
-	FetchContent_Declare(
-		imgui
-		GIT_REPOSITORY https://github.com/ocornut/imgui.git
-		GIT_TAG        v1.92.9
-		GIT_SHALLOW    TRUE
-		# Upstream has no CMakeLists.txt – point at a non-existing subdirectory so FetchContent_MakeAvailable
-		# does not attempt to add_subdirectory() the fetched repo (supported since CMake 3.18).
-		SOURCE_SUBDIR  _never_add_subdirectory
-	)
-	FetchContent_MakeAvailable(imgui)
-	# Build ImGui as a normal library (static for static framework builds, shared for shared framework
-	# builds). It must be shared when the framework is shared, because applets call ImGui global functions
-	# directly and the framework initializes the global ImGui context (GImGui). Two copies of the static
-	# library would mean the applet sees a null context while the framework owns a separate one.
-	add_library(imgui
-		"${imgui_SOURCE_DIR}/imgui.cpp"
-		"${imgui_SOURCE_DIR}/imgui_draw.cpp"
-		"${imgui_SOURCE_DIR}/imgui_tables.cpp"
-		"${imgui_SOURCE_DIR}/imgui_widgets.cpp"
-		"${imgui_SOURCE_DIR}/imgui_demo.cpp"
-		"${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp"
-		"${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp"
-	)
-	target_include_directories(imgui PUBLIC "${imgui_SOURCE_DIR}" "${imgui_SOURCE_DIR}/backends")
-	target_link_libraries(imgui PUBLIC "$<BUILD_INTERFACE:SDL3::SDL3>")
-	# Upstream ImGui has no export macros, so make sure its symbols are visible when it is built as a
-	# shared library. On Windows, CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS exports all regular functions.
-	set_target_properties(imgui PROPERTIES
-		CXX_VISIBILITY_PRESET      default
-		VISIBILITY_INLINES_HIDDEN  OFF
-		WINDOWS_EXPORT_ALL_SYMBOLS ON
-	)
-	add_library(imgui::imgui ALIAS imgui)
-endif()
+# Dependencies (SDL3, GLM, ImGui) - declared in cmake/Dependencies.cmake.
+include(cmake/Dependencies.cmake)
 
 # The framework core library.
 add_library(Core)
@@ -160,7 +92,7 @@ install(
 # Install fetched ImGui binaries alongside the framework so that shared-framework executables can find
 # the library at runtime. Exporting the ImGui CMake target is left for future packaging work, mirroring
 # how SDL3 and GLM are currently handled.
-if (TARGET imgui AND NOT imgui_FOUND)
+if (FCG_IMGUI_BUILT_HERE)
 	install(TARGETS imgui
 		RUNTIME COMPONENT FCG_Runtime
 		LIBRARY COMPONENT FCG_Runtime
