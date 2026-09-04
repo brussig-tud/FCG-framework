@@ -1,0 +1,55 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 31,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}"
+    },
+    {
+      "name": "debug",
+      "inherits": "base",
+      "displayName": "Debug — statically linked framework",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": "base",
+      "displayName": "Release — statically linked framework",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "debug-shared",
+      "inherits": "base",
+      "displayName": "Debug — shared framework",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "FCG_SHARED_LIBS": "ON"
+      }
+    },
+    {
+      "name": "release-shared",
+      "inherits": "base",
+      "displayName": "Release — shared framework",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FCG_SHARED_LIBS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "debug-shared", "configurePreset": "debug-shared" },
+    { "name": "release-shared", "configurePreset": "release-shared" }
+  ]
+}

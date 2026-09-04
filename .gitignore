@@ -2,6 +2,9 @@
 build*
 cmake-build*
 
+# User-local CMake presets (machine-specific overrides)
+CMakeUserPresets.json
+
 # IDE settings files
 .idea
 
