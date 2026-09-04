@@ -51,5 +51,11 @@
     { "name": "release", "configurePreset": "release" },
     { "name": "debug-shared", "configurePreset": "debug-shared" },
     { "name": "release-shared", "configurePreset": "release-shared" }
+  ],
+  "testPresets": [
+    { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
+    { "name": "debug-shared", "configurePreset": "debug-shared", "output": { "outputOnFailure": true } },
+    { "name": "release-shared", "configurePreset": "release-shared", "output": { "outputOnFailure": true } }
   ]
 }

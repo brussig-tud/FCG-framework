@@ -65,6 +65,10 @@ add_subdirectory(src)
 # (Optional) apps to build.
 add_subdirectory(app)
 
+# Smoke tests (Tier 0: installability, Tier 1: app lifecycle) - see tests/.
+enable_testing()
+add_subdirectory(tests)
+
 # Packaging rules. Based on https://alexreinking.com/blog/building-a-dual-shared-and-static-library-with-cmake.html
 string(COMPARE EQUAL "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}" is_top_level)
 option(FCG_INCLUDE_PACKAGING "Include packaging rules for the FCG Framework library" "${is_top_level}")
