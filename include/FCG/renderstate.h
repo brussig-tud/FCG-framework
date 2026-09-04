@@ -209,6 +209,26 @@ public:
 		return invModelviewProjection.value();
 	}
 
+	/// Reference the current viewing uniforms data block. Will be lazily computed if it is currently invalid.
+	[[nodiscard]] auto viewingUniforms() -> const ViewingUniforms&
+	{
+		if (!m_viewingUniforms.has_value()) {
+			m_viewingUniforms = {
+				modelviewMatrix(), invModelviewMatrix(), projectionMatrix(),
+				invProjectionMatrix(), modelviewProjectionMatrix(),
+				invModelviewProjectionMatrix(), normalMatrix(), invNormalMatrix()
+			};
+		}
+		return m_viewingUniforms.value();
+	}
+
+	/// Reference the current viewing uniforms data block from a \c const context. It is a logic error to call this
+	/// accessor when the \em current viewing uniforms data block has never been queried before, since the \c const
+	/// context does not allow updating it if it is currently invalid.
+	[[nodiscard]] auto viewingUniforms() const -> const ViewingUniforms& {
+		return m_viewingUniforms.value();
+	}
+
 
 	////
 	// Methods
@@ -239,7 +259,7 @@ public:
 		invModelview.pop();
 		normal.pop();
 		invNormal.pop();
-		invalidateDependentMatrices();
+		invalidateDependentData();
 	}
 
 	/// Push the projection matrix stack.
@@ -264,7 +284,7 @@ public:
 	void popProjectionMatrix () {
 		projection.pop();
 		invProjection.pop();
-		invalidateDependentMatrices();
+		invalidateDependentData();
 	}
 
 
@@ -273,10 +293,11 @@ private:
 	////
 	// Methods
 
-	/// Invalidate unsynchronized dependent matrices
-	inline void invalidateDependentMatrices () {
+	/// Invalidate unsynchronized dependent data.
+	inline void invalidateDependentData () {
 		modelviewProjection.reset();
 		invModelviewProjection.reset();
+		m_viewingUniforms.reset();
 	}
 
 	/// Invalidate after a modelview matrix stack manipulation.
@@ -284,13 +305,13 @@ private:
 		invModelview.top().reset();
 		normal.top().reset();
 		invNormal.top().reset();
-		invalidateDependentMatrices();
+		invalidateDependentData();
 	}
 
 	/// Invalidate after a projection matrix stack manipulation.
 	inline void onProjectionChange () {
 		invProjection.top().reset();
-		invalidateDependentMatrices();
+		invalidateDependentData();
 	}
 
 
@@ -320,6 +341,9 @@ private:
 
 	/// Lazy matrix stack for the \ref ViewingUniforms::invNormal matrix.
 	std::stack<std::optional<glm::mat3>> invNormal;
+
+	/// The current viewing uniforms data block read for shader upload.
+	std::optional<ViewingUniforms> m_viewingUniforms;
 };
 
 
