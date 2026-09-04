@@ -34,9 +34,29 @@ namespace fcg {
 ////
 // RenderState
 
-RenderState::RenderState(Device &device) {}
+RenderState::RenderState(Device& /* right now we don't need access to the device yet */) {}
 
-RenderState::~RenderState() {}
+RenderState::~RenderState() = default;
+
+void RenderState::pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot) {
+	SDL_PushGPUVertexUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
+}
+
+void RenderState::pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot) const
+{
+	switch (stage)
+	{
+		case ShaderStage::VERTEX:
+			SDL_PushGPUVertexUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
+			break;
+		case ShaderStage::FRAGMENT:
+			SDL_PushGPUFragmentUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
+			break;
+		case ShaderStage::COMPUTE:
+			SDL_PushGPUComputeUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
+			break;
+	}
+}
 
 
 

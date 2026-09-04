@@ -26,7 +26,7 @@
 //
 
 // Opaque SDL3 types
-struct SDL_GPUTexture;
+struct SDL_GPUCommandBuffer;
 
 // Framework types
 namespace fcg {
@@ -47,8 +47,13 @@ namespace fcg {
 
 //////
 //
-// Structs
+// Structs & enums
 //
+
+/// Indicate one of SDL3 GPU's supported shader stages.
+enum class ShaderStage {
+	VERTEX, FRAGMENT, COMPUTE
+};
 
 /// Structure of the viewing uniforms buffer.
 struct ViewingUniforms
@@ -127,9 +132,10 @@ public:
 		return invModelview.top().value();
 	}
 
-	/// Reference the top of the inverse modelview matrix stack from a \c const context. It is a logic error to call
-	/// this accessor when the \em current inverse modelview matrix has never been queried before, since the \c const
-	/// context does not allow updating it if it is currently invalid.
+	/// Reference the top of the inverse modelview matrix stack from a \c const context.
+	///
+	/// It is a logic error to call this accessor when the \em current inverse modelview matrix has never been queried
+	/// before, since the \c const context does not allow updating it if it is currently invalid.
 	[[nodiscard]] auto invModelviewMatrix() const -> const glm::mat4& {
 		return invModelview.top().value();
 	}
@@ -142,9 +148,10 @@ public:
 		return normal.top().value();
 	}
 
-	/// Reference the top of the normal matrix stack from a \c const context. It is a logic error to call this accessor
-	/// when the \em current normal matrix has never been queried before, since the \c const context does not allow
-	/// updating it if it is currently invalid.
+	/// Reference the top of the normal matrix stack from a \c const context.
+	///
+	/// It is a logic error to call this accessor when the \em current normal matrix has never been queried before,
+	/// since the \c const context does not allow updating it if it is currently invalid.
 	[[nodiscard]] auto normalMatrix() const -> const glm::mat3& {
 		return normal.top().value();
 	}
@@ -157,9 +164,10 @@ public:
 		return invNormal.top().value();
 	}
 
-	/// Reference the top of the inverse normal matrix stack from a \c const context. It is a logic error to call this
-	/// accessor when the \em current inverse normal matrix has never been queried before, since the \c const context
-	/// does not allow updating it if it is currently invalid.
+	/// Reference the top of the inverse normal matrix stack from a \c const context.
+	///
+	/// It is a logic error to call this accessor when the \em current inverse normal matrix has never been queried
+	/// before, since the \c const context does not allow updating it if it is currently invalid.
 	[[nodiscard]] auto invNormalMatrix() const -> const glm::mat3& {
 		return invNormal.top().value();
 	}
@@ -172,9 +180,10 @@ public:
 		return invProjection.top().value();
 	}
 
-	/// Reference the top of the inverse projection matrix stack from a \c const context. It is a logic error to call
-	/// this accessor when the \em current inverse projection matrix has never been queried before, since the \c const
-	/// context does not allow updating it if it is currently invalid.
+	/// Reference the top of the inverse projection matrix stack from a \c const context.
+	///
+	/// It is a logic error to call this accessor when the \em current inverse projection matrix has never been queried
+	/// before, since the \c const context does not allow updating it if it is currently invalid.
 	[[nodiscard]] auto invProjectionMatrix() const -> const glm::mat4& {
 		return invProjection.top().value();
 	}
@@ -187,9 +196,10 @@ public:
 		return modelviewProjection.value();
 	}
 
-	/// Reference the current modelview-projection matrix from a \c const context. It is a logic error to call this
-	/// accessor when the \em current modelview-projection matrix has never been queried before, since the \c const
-	/// context does not allow updating it if it is currently invalid.
+	/// Reference the current modelview-projection matrix from a \c const context.
+	///
+	/// It is a logic error to call this accessor when the \em current modelview-projection matrix has never been
+	/// queried before, since the \c const context does not allow updating it if it is currently invalid.
 	[[nodiscard]] auto modelviewProjectionMatrix() const -> const glm::mat4& {
 		return modelviewProjection.value();
 	}
@@ -202,9 +212,10 @@ public:
 		return invModelviewProjection.value();
 	}
 
-	/// Reference the current inverse modelview-projection matrix from a \c const context. It is a logic error to call
-	/// this accessor when the \em current inverse modelview-projection matrix has never been queried before, since the
-	/// \c const context does not allow updating it if it is currently invalid.
+	/// Reference the current inverse modelview-projection matrix from a \c const context.
+	///
+	/// It is a logic error to call this accessor when the \em current inverse modelview-projection matrix has never
+	/// been queried before, since the \c const context does not allow updating it if it is currently invalid.
 	[[nodiscard]] auto invModelviewProjectionMatrix() const -> const glm::mat4& {
 		return invModelviewProjection.value();
 	}
@@ -222,9 +233,10 @@ public:
 		return m_viewingUniforms.value();
 	}
 
-	/// Reference the current viewing uniforms data block from a \c const context. It is a logic error to call this
-	/// accessor when the \em current viewing uniforms data block has never been queried before, since the \c const
-	/// context does not allow updating it if it is currently invalid.
+	/// Reference the current viewing uniforms data block from a \c const context.
+	///
+	/// It is a logic error to call this accessor when the \em current viewing uniforms data block has never been
+	/// queried before, since the \c const context does not allow updating it if it is currently invalid.
 	[[nodiscard]] auto viewingUniforms() const -> const ViewingUniforms& {
 		return m_viewingUniforms.value();
 	}
@@ -286,6 +298,24 @@ public:
 		invProjection.pop();
 		invalidateDependentData();
 	}
+
+	/// Add pushing the \ref viewingUniforms data block to the command stream of the given command buffer.
+	///
+	/// \param commandBuffer The command buffer to which the push command will be added.
+	/// \param stage The shader stage for which the data block will be pushed.
+	/// \param slot The shader uniform slot to which the data block will be pushed.
+	void pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot);
+
+	/// Add pushing the \ref viewingUniforms data block to the command stream of the given command buffer.
+	///
+	/// Just like for the corresponding \link viewingUniforms accessor \endlink, it is a logic error to call this method
+	/// when the \em current viewing uniforms data block has never been queried before, since the \c const context does
+	/// not allow updating it if it is currently invalid.
+	///
+	/// \param commandBuffer The command buffer to which the push command will be added.
+	/// \param stage The shader stage for which the data block will be pushed.
+	/// \param slot The shader uniform slot to which the data block will be pushed.
+	void pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot) const;
 
 
 private:
