@@ -5,7 +5,6 @@
 //
 
 // C++ STL
-#include <array>
 #include <memory>
 
 // SDL3 library
@@ -33,28 +32,6 @@
 class SimpleShapesApplet : public fcg::Applet
 {
 public:
-
-	////
-	// Types
-
-	/// The applet factory
-	struct Factory : public fcg::AppletFactory
-	{
-		//////
-		// Object construction/destruction
-
-		/// The destructor.
-		virtual ~Factory () = default;
-
-
-		////
-		// Interface: fcg::AppletFactory
-
-		auto create () -> std::unique_ptr<fcg::Applet> override {
-			return std::make_unique<SimpleShapesApplet>();
-		}
-	};
-
 
 	////
 	// Object construction/destruction
@@ -149,5 +126,5 @@ protected:
 /// Program entry point.
 int main () {
 	// Run with our demo applets
-	return fcg::run<SimpleShapesApplet::Factory>(fcg::PlayerSettings{.mainWindowTitle="Hello FCG!"});
+	return fcg::run<SimpleShapesApplet>(fcg::PlayerSettings{.mainWindowTitle="Hello FCG!"});
 }

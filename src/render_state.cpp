@@ -12,7 +12,7 @@
 
 // Local includes
 #include "FCG/device.h"
-#include "FCG/renderstate.h"
+#include "FCG/render_state.h"
 
 
 

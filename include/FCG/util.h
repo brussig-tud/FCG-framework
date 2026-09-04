@@ -54,7 +54,7 @@ inline auto map (const std::optional<T> &opt, F&& f) -> std::optional<std::invok
 // Namespaces close
 //
 
-// namespace FCG
+// namespace fcg
 }
 
 

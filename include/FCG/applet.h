@@ -55,26 +55,6 @@ namespace fcg {
 // Interfaces
 //
 
-/// The polymorphic interface of an \c AppletFactory.
-class FCG_FRAMEWORK_EXPORT AppletFactory
-{
-public:
-
-	////
-	// Construction/Destruction
-
-	/// Virtual base destructor. Forces vtable creation.
-	virtual ~AppletFactory () = default;
-
-	/// Create an instance of the applet.
-	virtual auto create () -> std::unique_ptr<Applet> = 0;
-};
-
-/// The concept of behaving like an \ref AppletFactory.
-template <class A>
-concept AppletFactoryConcept = std::derived_from<A, AppletFactory>;
-
-
 /// The polymorphic interface of an \c Applet.
 class FCG_FRAMEWORK_EXPORT Applet
 {
@@ -139,7 +119,14 @@ public:
 
 /// The concept of behaving like an \ref Applet.
 template <class A>
-concept AppletConcept = std::derived_from<A, Applet>;
+concept AppletConcept =
+	   std::derived_from<A, Applet>/*
+	&& requires (A applet, SDL_GPUDevice *gpuDevice, SDL_GPURenderPass *renderPass, Player &player)
+{
+	/// Construct an instance of the Applet using defaults for all initial state, ready for consumption by
+	/// \ref fcg::run.
+	{ A::create() } -> std::same_as<std::unique_ptr<A>>;
+}*/;
 
 
 
@@ -148,7 +135,7 @@ concept AppletConcept = std::derived_from<A, Applet>;
 // Namespaces close
 //
 
-// namespace FCG
+// namespace fcg
 }
 
 

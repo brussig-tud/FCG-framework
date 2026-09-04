@@ -8,7 +8,7 @@
 #include <cstdlib>
 #include <memory>
 #include <vector>
-#include <initializer_list>
+#include <ranges>
 
 // SDL3
 #include <SDL3/SDL.h>
@@ -16,7 +16,7 @@
 // Local includes
 #include "FCG/run.h"
 #include "FCG/device.h"
-#include "FCG/renderstate.h"
+#include "FCG/render_state.h"
 #include "FCG/gui.h"
 #include "FCG/player.h"
 #include "FCG/window.h"
@@ -86,13 +86,13 @@ void handleEvent (const SDL_Event &event, Window &window, Gui &gui, Player &play
 
 /// Run the given application(s).
 FCG_FRAMEWORK_EXPORT int run (
-	std::initializer_list<std::unique_ptr<AppletFactory>> appletFactories, PlayerSettings &&settings
+	std::vector<std::unique_ptr<Applet>> _applets, PlayerSettings &&settings
 ){
 	// Info trace
 	SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: starting up...");
 
 	// Bail out early if there is nothing to run
-	if (appletFactories.size() < 1) {
+	if (_applets.size() < 1) {
 		SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "fcg::run() was called without applets – nothing to do");
 		return EXIT_SUCCESS;
 	}
@@ -124,12 +124,6 @@ FCG_FRAMEWORK_EXPORT int run (
 			// Create the player that the applets will interact with
 			Player player(window.get());
 
-			// Create the applet instances from their factories.
-			std::vector<std::unique_ptr<Applet>> applets; applets.reserve(appletFactories.size());
-			for (auto &factory : appletFactories) {
-				applets.push_back(factory->create());
-			}
-
 			// Claim the window for the GPU device, then create the framework GUI on top of it. The GUI instance is
 			// destroyed at scope exit, before the window is unclaimed below.
 			std::unique_ptr<Gui> gui;
@@ -145,6 +139,7 @@ FCG_FRAMEWORK_EXPORT int run (
 				exitCode = EXIT_FAILURE;
 				player.requestClose();
 			}
+			std::vector<std::unique_ptr<Applet>> applets = std::move(_applets);
 			if (gui)
 			{
 				// Initialize all applets
@@ -251,6 +246,13 @@ FCG_FRAMEWORK_EXPORT int run (
 
 			// Clean up
 			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: shutting down...");
+			for (auto &applet : std::views::reverse(applets)) {
+				SDL_LogInfo(
+					SDL_LOG_CATEGORY_APPLICATION, "Player: ending applet %p (\"%s\")",
+					(void*)applet.get(), applet->name().c_str()
+				);
+				applet.reset();
+			}
 			device.unclaimWindow(window);
 		}
 	}
