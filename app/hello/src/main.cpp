@@ -56,13 +56,13 @@ public:
 		return name;
 	}
 
-	void onViewportResize (fcg::Device &device, const glm::uvec2 &oldViewportSize, fcg::Player &player) override {
-		// Nothing to do yet.
-	}
-
 	void init (fcg::Device &device, fcg::Player &player) override {
 		// Nothing to initialize here. Shapes are lazy-rebuilt in update() when their dirty flag
 		// (set by default) is set.
+	}
+
+	void onViewportResize (fcg::Device &device, const glm::uvec2 &oldViewportSize, fcg::Player &player) override {
+		// Nothing to do yet.
 	}
 
 	void gui (fcg::Device &device, fcg::Player &player) override
