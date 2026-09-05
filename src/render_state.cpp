@@ -43,7 +43,8 @@ void RenderState::pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, Shad
 	switch (stage)
 	{
 		case ShaderStage::VERTEX:
-			SDL_PushGPUVertexUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
+			SDL_PushGPUVertexUniformData(commandBuffer, slot, &modelviewProjectionMatrix(), sizeof(glm::mat4));
+			//SDL_PushGPUVertexUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
 			break;
 		case ShaderStage::FRAGMENT:
 			SDL_PushGPUFragmentUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
