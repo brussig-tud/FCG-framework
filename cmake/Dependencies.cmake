@@ -24,12 +24,15 @@ else()
 endif()
 
 # SDL3: window creation, input events, SDL GPU rendering API.
-set(SDL_X11_XTEST OFF CACHE BOOL "" FORCE) #  only used for SDL's own tests
 CPMFindPackage(
 	NAME              SDL3
 	GITHUB_REPOSITORY libsdl-org/SDL
 	GIT_TAG           release-3.4.14
 	VERSION           3.4.14
+	OPTIONS
+		# XTest is a niche runtime feature (X11 mouse warping, currently disabled
+		# upstream) also used by SDL's own tests - off avoids the libxtst dependency
+		"SDL_X11_XTEST OFF"
 )
 
 # GLM: header-only math library (vector/matrix types, geometry utilities).
