@@ -38,8 +38,20 @@ RenderState::RenderState(Device& /* right now we don't need access to the device
 
 RenderState::~RenderState() = default;
 
-void RenderState::pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot) {
-	SDL_PushGPUVertexUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
+void RenderState::pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot)
+{
+	switch (stage)
+	{
+		case ShaderStage::VERTEX:
+			SDL_PushGPUVertexUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
+			break;
+		case ShaderStage::FRAGMENT:
+			SDL_PushGPUFragmentUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
+			break;
+		case ShaderStage::COMPUTE:
+			SDL_PushGPUComputeUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
+			break;
+	}
 }
 
 void RenderState::pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot) const

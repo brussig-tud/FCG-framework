@@ -1,6 +1,6 @@
 # Shader compilation (GLSL -> SPIR-V via glslang) and embedding via cmrc.
-# Logical shaders are registered with fcg_add_shader() and turned into the
-# 'fcg-resources' library by fcg_finalize_shaders().
+# Logical shaders are registered with fcg_add_shader() and turned into a
+# caller-selected resource library by fcg_finalize_shaders().
 
 include(${CMAKE_CURRENT_LIST_DIR}/CMakeRC.cmake)
 
@@ -14,7 +14,7 @@ function (fcg_add_shader NAME)
 		message(FATAL_ERROR "fcg_add_shader(${NAME}): SOURCES is required")
 	endif ()
 
-	set(out_root "${CMAKE_BINARY_DIR}/shaders/${NAME}")
+	set(out_root "${CMAKE_CURRENT_BINARY_DIR}/shaders/${NAME}")
 	file(MAKE_DIRECTORY "${out_root}")
 
 	foreach (src IN LISTS ARG_SOURCES)
@@ -33,21 +33,27 @@ function (fcg_add_shader NAME)
 			VERBATIM
 		)
 		configure_file("${src}" "${out_root}/${fname}" COPYONLY)  # raw source next to the blob
-		set_property(GLOBAL APPEND PROPERTY FCG_SHADER_RESOURCES
+		set_property(DIRECTORY APPEND PROPERTY FCG_SHADER_RESOURCES
 			"${spv}" "${out_root}/${fname}"
 		)
 	endforeach ()
 endfunction ()
 
-# Create the resource library from all shaders registered so far. Link it into
-# whatever needs the embedded resources.
+# Create the resource library from shaders registered in this directory. The
+# target and namespace are explicit so independent subdirectories can provide
+# separate resource libraries.
 function (fcg_finalize_shaders)
-	get_property(resources GLOBAL PROPERTY FCG_SHADER_RESOURCES)
+	cmake_parse_arguments(ARG "" "TARGET;NAMESPACE" "" ${ARGN})
+	if (NOT ARG_TARGET OR NOT ARG_NAMESPACE)
+		message(FATAL_ERROR "fcg_finalize_shaders(): TARGET and NAMESPACE are required")
+	endif ()
+
+	get_property(resources DIRECTORY PROPERTY FCG_SHADER_RESOURCES)
 	if (NOT resources)
 		return()
 	endif ()
-	cmrc_add_resource_library(fcg-resources NAMESPACE res
-		WHENCE "${CMAKE_BINARY_DIR}/shaders"
+	cmrc_add_resource_library(${ARG_TARGET} NAMESPACE ${ARG_NAMESPACE}
+		WHENCE "${CMAKE_CURRENT_BINARY_DIR}/shaders"
 		${resources}
 	)
 endfunction ()

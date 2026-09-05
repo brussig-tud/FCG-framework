@@ -1,3 +1,4 @@
+
 //////
 //
 // Includes
@@ -7,7 +8,6 @@
 #include <format>
 #include <string>
 #include <string_view>
-#include <system_error>
 
 // cmrc (embedded resource filesystem)
 #include <cmrc/cmrc.hpp>
@@ -15,9 +15,16 @@
 // FCG Framework
 #include <FCG/res.h>
 
-// The embedded resource filesystem — defined by the generated fcg-resources
-// library (see cmake/Shaders.cmake).
+
+
+//////
+//
+// Non-include prototypes
+//
+
+// cmrc library
 namespace cmrc::res {
+	// the embedded resource filesystem — defined by the generated fcg-resources library (see cmake/Shaders.cmake).
 	auto get_filesystem () -> cmrc::embedded_filesystem;
 }
 
@@ -28,10 +35,8 @@ namespace cmrc::res {
 // Module namespace open
 //
 
-/// The library top-level namespace.
-namespace fcg {
-
-namespace res {
+/// Our module namespace.
+namespace fcg::res {
 
 
 
@@ -88,14 +93,14 @@ auto asStringView (const cmrc::file &file) -> std::string_view {
 
 auto Shader::stages () const -> std::vector<ShaderStage> {
 	std::vector<ShaderStage> result;
-	for (std::size_t i = 0; i < m_stageData.size(); i ++)
-		if (m_stageData[i])
+	for (std::size_t i = 0; i < stageData.size(); i ++)
+		if (stageData[i])
 			result.push_back(static_cast<ShaderStage>(i));
 	return result;
 }
 
 auto Shader::stage (ShaderStage stage) const -> std::optional<ShaderStageData> {
-	const auto &entry = m_stageData[static_cast<std::size_t>(stage)];
+	const auto &entry = stageData[static_cast<std::size_t>(stage)];
 	if (!entry)
 		return std::nullopt;
 	return *entry;
@@ -124,7 +129,7 @@ auto shader (std::string_view name) -> std::optional<Shader>
 		if (!spirv)
 			continue;
 		auto source = tryOpen(fs, base + ".glsl");
-		result.m_stageData[static_cast<std::size_t>(stage)] = ShaderStageData {
+		result.stageData[static_cast<std::size_t>(stage)] = ShaderStageData {
 			.stage = stage,
 			.spirv = asBytes(*spirv),
 			.source = source ? asStringView(*source) : std::string_view(),
@@ -138,6 +143,10 @@ auto shader (std::string_view name) -> std::optional<Shader>
 
 
 
-} // namespace res
+//////
+//
+// Namespaces close
+//
 
-} // namespace fcg
+// Our module namespace
+} // namespace fcg::res

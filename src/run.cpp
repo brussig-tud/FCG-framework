@@ -258,7 +258,7 @@ FCG_FRAMEWORK_EXPORT int run (
 					auto rs = RenderState(device);
 					if (auto *renderPass = frame->beginRenderPass(player.clearColor())) {
 						for (auto &applet : applets)
-							applet->render(device, rs, renderPass, player);
+							applet->render(device, rs, renderPass, frame->commandBuffer(), player);
 						frame->endRenderPass();
 					}
 					if (auto *overlayPass = frame->beginOverlayRenderPass()) {

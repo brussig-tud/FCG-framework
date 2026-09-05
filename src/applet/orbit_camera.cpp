@@ -84,7 +84,10 @@ void OrbitCamera::update (Device& device, Player& player)
 	}
 }
 
-void OrbitCamera::render (Device& device, RenderState& renderState, SDL_GPURenderPass* renderPass, Player& player) {
+void OrbitCamera::render (
+	Device& device, RenderState& renderState, SDL_GPURenderPass* renderPass,
+	SDL_GPUCommandBuffer* /*commandBuffer*/, Player& player
+) {
 	// We assume to be the first to touch the stack, so no pushing or popping, we just replace the respective initial
 	// matrices. Would need a beforeRender/afterRender pair of hooks to push/pop if we wanted to do it properly.
 	renderState.loadModelviewMatrix(*viewMatrix);

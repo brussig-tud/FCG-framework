@@ -115,9 +115,12 @@ public:
 	/// \param renderPass A render pass targeting the current swapchain texture of the main window. Record all draw
 	///                   calls that should appear on the window into this pass. The pass is begun before and ended
 	///                   after all applets had their turn by the framework – do not end (or re-begin) it yourself.
+	/// \param commandBuffer The command buffer that owns the render pass. Needed for operations such as pushing
+	///                      uniform data that cannot be recorded through the render pass handle.
 	/// \param player Reference to the central applet player.
 	virtual void render (
-		Device &device, RenderState &renderState, SDL_GPURenderPass *renderPass, Player &player
+		Device &device, RenderState &renderState, SDL_GPURenderPass *renderPass,
+		SDL_GPUCommandBuffer *commandBuffer, Player &player
 	) = 0;
 };
 

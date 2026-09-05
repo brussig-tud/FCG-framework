@@ -1,10 +1,12 @@
+
+#ifndef __FCG_RES_H__
+#define __FCG_RES_H__
+
+
 //////
 //
 // Includes
 //
-
-#ifndef __FCG_RES_H__
-#define __FCG_RES_H__
 
 // C++ STL
 #include <array>
@@ -20,9 +22,13 @@
 
 
 
-namespace fcg {
+//////
+//
+// Namespaces open
+//
 
-namespace res {
+/// Our module namespace.
+namespace fcg::res {
 
 
 
@@ -31,8 +37,8 @@ namespace res {
 // Structs & enums
 //
 
-/// The embedded artifacts of one shader stage: the compiled SPIR-V blob and the raw GLSL source it was
-/// built from (the latter kept for readable error messages from runtime shader translation).
+/// The embedded artifacts of one shader stage: the compiled SPIR-V blob and the raw GLSL source it was built from (the
+/// latter kept for readable error messages from runtime shader translation).
 struct ShaderStageData
 {
 	/// The stage this data set belongs to.
@@ -52,10 +58,17 @@ struct ShaderStageData
 // Classes
 //
 
-/// A logical shader registered via the build system's \c fcg_add_shader, composed of one or more shader
-/// stages. The embedded resources are process-static, so \c Shader instances can outlive anything.
+/// A logical shader registered via the build system's \c fcg_add_shader, composed of one or more shader stages. The
+/// embedded resources are process-static, so \c Shader instances can outlive anything.
 class FCG_FRAMEWORK_EXPORT Shader
 {
+	////
+	// Friend declarations
+
+	/// Only resource lookup function, which is the only place where shaders may be constructed.
+	friend auto shader (std::string_view name) -> std::optional<Shader>;
+
+
 public:
 
 	////
@@ -75,22 +88,29 @@ public:
 
 private:
 
-	/// Only the lookup function constructs shaders.
-	friend auto shader (std::string_view name) -> std::optional<Shader>;
+	////
+	// Object construction/destruction
 
-	Shader () = default;
+	/// Private default constructor.
+	Shader() = default;
+
+
+	////
+	// Fields
 
 	/// The shader's name.
 	std::string m_name;
 
 	/// Per-stage data, indexed as the stage enum. Empty optionals indicate stages the shader does not have.
-	std::array<std::optional<ShaderStageData>, 3> m_stageData;
+	std::array<std::optional<ShaderStageData>, 3> stageData;
 };
 
 
 
-////
+//////
+//
 // Functions
+//
 
 /// Look up an embedded logical shader by name.
 ///
@@ -101,9 +121,13 @@ private:
 
 
 
-} // namespace res
+//////
+//
+// Namespaces close
+//
 
-} // namespace fcg
+// Our module namespace
+} // namespace fcg::res
 
 
 

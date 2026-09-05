@@ -9,6 +9,7 @@
 //
 
 // C++ STL
+#include <cstddef>
 #include <stack>
 #include <optional>
 
@@ -56,6 +57,21 @@ enum class ShaderStage {
 };
 
 /// Structure of the viewing uniforms buffer.
+struct alignas(16) Std140Mat3
+{
+	/// The three std140-aligned columns of the matrix.
+	glm::vec4 columns[3];
+
+	/// Construct an std140-compatible matrix from a GLM matrix.
+	Std140Mat3 (const glm::mat3 &matrix)
+		: columns{
+			{matrix[0], 0.f},
+			{matrix[1], 0.f},
+			{matrix[2], 0.f}
+		}
+	{}
+};
+
 struct ViewingUniforms
 {
 	/// The modelview matrix.
@@ -77,11 +93,16 @@ struct ViewingUniforms
 	glm::mat4 invModelviewProjection;
 
 	/// The normal matrix.
-	glm::mat3 normal;
+	Std140Mat3 normal;
 
 	/// The inverse normal matrix.
-	glm::mat3 invNormal;
+	Std140Mat3 invNormal;
 };
+
+static_assert(offsetof(ViewingUniforms, normal) == 6 * sizeof(glm::mat4));
+static_assert(offsetof(ViewingUniforms, invNormal) == 6 * sizeof(glm::mat4) + sizeof(Std140Mat3));
+static_assert(sizeof(Std140Mat3) == 3 * sizeof(glm::vec4));
+static_assert(sizeof(ViewingUniforms) == 6 * sizeof(glm::mat4) + 2 * sizeof(Std140Mat3));
 
 
 

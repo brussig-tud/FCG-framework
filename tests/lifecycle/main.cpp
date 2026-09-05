@@ -90,7 +90,8 @@ public:
 	}
 
 	void render (
-		fcg::Device &device, fcg::RenderState &renderState, SDL_GPURenderPass *renderPass, fcg::Player &player
+		fcg::Device &device, fcg::RenderState &renderState, SDL_GPURenderPass *renderPass,
+		SDL_GPUCommandBuffer *commandBuffer, fcg::Player &player
 	) override {
 		if (!m_pipeline)
 			return;

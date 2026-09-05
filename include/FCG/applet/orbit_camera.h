@@ -98,7 +98,10 @@ public:
 
 	void update (Device &device, Player &player) override;
 
-	void render (Device &device, RenderState &renderState, SDL_GPURenderPass *renderPass, Player &player) override;
+	void render (
+		Device &device, RenderState &renderState, SDL_GPURenderPass *renderPass,
+		SDL_GPUCommandBuffer *commandBuffer, Player &player
+	) override;
 
 
 private:
@@ -149,7 +152,7 @@ private:
 //
 
 // Our module namespace
-} // namespace applet::fcg
+} // namespace fcg::applet
 
 
 #endif  // ifndef __FCG_ORBIT_CAMERA_H__
