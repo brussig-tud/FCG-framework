@@ -1,0 +1,17 @@
+---
+BasedOnStyle: Microsoft
+UseTab: ForContinuationAndIndentation
+AccessModifierOffset: -4
+BraceWrapping:
+  AfterControlStatement: Never
+  AfterNamespace: false
+BreakBeforeBinaryOperators: All
+SpaceBeforeParens: Custom
+SpaceBeforeParensOptions:
+  AfterFunctionDeclarationName: true
+  AfterFunctionDefinitionName: true
+AllowShortFunctionsOnASingleLine: Inline
+IndentCaseLabels: true
+MaxEmptyLinesToKeep: 2
+SortIncludes: Never
+FixNamespaceComments: false
