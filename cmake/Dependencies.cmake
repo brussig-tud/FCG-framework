@@ -78,3 +78,34 @@ if (NOT TARGET imgui)
 	add_library(imgui::imgui ALIAS imgui)
 	set(FCG_IMGUI_BUILT_HERE ON)  # used by install logic in the root CMakeLists
 endif()
+
+# glslang: GLSL front-end for build-time shader compilation (GLSL -> SPIR-V).
+# Fetched, not system-first: SPIR-V is embedded into binaries, so the tool
+# version must be locked.
+CPMAddPackage(
+	NAME              glslang
+	GITHUB_REPOSITORY KhronosGroup/glslang
+	GIT_TAG           16.5.0
+	GIT_SUBMODULES    ""  # SPIRV-Tools submodule unused (no optimizer)
+	OPTIONS
+		"ENABLE_OPT OFF"           # skip SPIRV-Tools entirely
+		"ENABLE_HLSL OFF"          # GLSL-only pipeline
+		"GLSLANG_TESTS OFF"
+		"GLSLANG_ENABLE_INSTALL OFF"
+		"BUILD_EXTERNAL OFF"
+)
+
+# SDL_shadercross: runtime SPIR-V translation for the non-Vulkan SDL GPU
+# backends (Metal via SPIRV-Cross, D3D12 via DXC). No upstream releases yet,
+# hence the pinned commit. DXC off until the Windows strategy is settled.
+CPMAddPackage(
+	NAME              SDL_shadercross
+	GITHUB_REPOSITORY libsdl-org/SDL_shadercross
+	GIT_TAG           1ff05bec573988a98ef9e0260b4da44f512b8367  # main @ 2026-09-05
+	OPTIONS
+		"SDLSHADERCROSS_DXC OFF"           # SPIR-V passthrough + MSL unaffected
+		"SDLSHADERCROSS_VENDORED ON"       # bundle SPIRV-Cross
+		"SDLSHADERCROSS_SPIRVCROSS_SHARED OFF"
+		"SDLSHADERCROSS_CLI OFF"
+		"SDLSHADERCROSS_INSTALL OFF"
+)

@@ -10,6 +10,10 @@ set(FCG_FRAMEWORK_SOVERSION 0)
 set(FCG_CXX_STANDARD cxx_std_23)
 
 # Pre-configuration.
+# Not using C++20 modules: skip the per-TU module scanner (also keeps
+# compilations ccache-compatible).
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
 set(CMAKE_DEBUG_POSTFIX d)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
