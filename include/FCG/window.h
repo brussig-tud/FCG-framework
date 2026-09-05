@@ -20,6 +20,9 @@
 #include "FCG/export.h"
 #include "FCG/frame.h"
 
+// SDL3 library (SDL_GPUTextureFormat in the public API)
+#include <SDL3/SDL_gpu.h>
+
 
 
 //////
@@ -122,6 +125,9 @@ public:
 		return m_viewportSize;
 	}
 
+	/// The texture format of this window's swapchain images, as required for creating render target
+	/// descriptions of graphics pipelines. The window must be claimed by a device.
+	[[nodiscard]] auto swapchainFormat () const -> SDL_GPUTextureFormat;
 	/// Update the stored viewport dimensions from the current window drawable size. In a blocking main loop,
 	/// rendering does not necessarily happen right after a resize event, so this should be polled once per
 	/// iteration to keep the viewport dimensions fresh for users that query them outside of rendering (e.g.

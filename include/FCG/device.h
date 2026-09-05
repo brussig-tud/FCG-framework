@@ -15,6 +15,7 @@
 
 // Local includes
 #include "FCG/export.h"
+#include "FCG/res.h"
 
 
 
@@ -25,6 +26,7 @@
 
 // Opaque SDL3 types
 struct SDL_GPUDevice;
+struct SDL_GPUShader;
 
 // Framework types
 namespace fcg {
@@ -119,6 +121,22 @@ public:
 	///
 	/// \param window The window to remove the claim for. Must have been previously claimed by this device.
 	void unclaimWindow (std::unique_ptr<Window> &window);
+
+	/// Create a GPU shader for this device from embedded SPIR-V bytecode.
+	///
+	/// On Vulkan backends, the SPIR-V is used directly. On all other backends (Metal, Direct3D 12), it is
+	/// translated to the backend's shader format at runtime via SDL_shadercross.
+	///
+	/// \param stage      The shader stage. Compute shaders are not supported by this method yet.
+	/// \param spirv      The SPIR-V bytecode.
+	/// \param entrypoint The shader entry point. Defaults to \c main, which is what the build system's shader
+	///                   compilation produces.
+	///
+	/// \returns The shader, or \c nullptr on failure (details are written to the SDL error log). The device
+	///          retains ownership.
+	[[nodiscard]] auto createShader (
+		ShaderStage stage, std::span<const std::byte> spirv, std::string_view entrypoint = "main"
+	) const -> SDL_GPUShader*;
 
 
 private:

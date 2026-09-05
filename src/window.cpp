@@ -74,6 +74,15 @@ auto Window::id () const -> unsigned {
 	return SDL_GetWindowID(m_handle);
 }
 
+auto Window::swapchainFormat () const -> SDL_GPUTextureFormat
+{
+	/// If the window is not claimed by a device an \c
+	/// SDL_GPU_TEXTUREFORMAT_INVALID is returned as sentinel value.
+	if (!m_device)
+		return SDL_GPU_TEXTUREFORMAT_INVALID;
+	return SDL_GetGPUSwapchainTextureFormat(m_device->handle(), m_handle);
+}
+
 auto Window::claim (Device &device) -> bool
 {
 	auto curClaim = m_device ? std::make_optional(m_device->handle()) : std::nullopt;

@@ -12,6 +12,9 @@
 #include <atomic>
 #include <string>
 
+// SDL3 library
+#include <SDL3/SDL_gpu.h>
+
 // GLM library
 #include <glm/glm.hpp>
 
@@ -117,6 +120,9 @@ public:
 	/// \todo Right now there is no real reason to hide this property behind an accessor. This could change in the
 	/// future though in case of multithreading, where we might want to wrap the reference in a scoped lock.
 	[[nodiscard]] auto clearColor () const -> const glm::fvec4& { return m_clearColor; }
+
+	/// The texture format of the main window's swapchain images, as needed for pipeline render targets.
+	[[nodiscard]] auto swapchainFormat () const -> SDL_GPUTextureFormat;
 
 	/// Reference the current dimensions of the main window viewport.
 	[[nodiscard]] auto viewportSize () const -> glm::uvec2;

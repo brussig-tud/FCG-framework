@@ -81,19 +81,26 @@ endif()
 
 # glslang: GLSL front-end for build-time shader compilation (GLSL -> SPIR-V).
 # Fetched, not system-first: SPIR-V is embedded into binaries, so the tool
-# version must be locked.
-CPMAddPackage(
-	NAME              glslang
-	GITHUB_REPOSITORY KhronosGroup/glslang
-	GIT_TAG           16.5.0
-	GIT_SUBMODULES    ""  # SPIRV-Tools submodule unused (no optimizer)
-	OPTIONS
-		"ENABLE_OPT OFF"           # skip SPIRV-Tools entirely
-		"ENABLE_HLSL OFF"          # GLSL-only pipeline
-		"GLSLANG_TESTS OFF"
-		"GLSLANG_ENABLE_INSTALL OFF"
-		"BUILD_EXTERNAL OFF"
-)
+# version must be locked. The tool is always built statically and without the
+# debug postfix - it is used at build time only, and CMake's order-only
+# dependency expansion for the tool would otherwise not match the postfixed
+# output names. The block restores the surrounding configuration afterwards.
+block (SCOPE_FOR VARIABLES)
+	set(BUILD_SHARED_LIBS OFF)
+	set(CMAKE_DEBUG_POSTFIX "")
+	CPMAddPackage(
+		NAME              glslang
+		GITHUB_REPOSITORY KhronosGroup/glslang
+		GIT_TAG           16.5.0
+		GIT_SUBMODULES    ""  # SPIRV-Tools submodule unused (no optimizer)
+		OPTIONS
+			"ENABLE_OPT OFF"           # skip SPIRV-Tools entirely
+			"ENABLE_HLSL OFF"          # GLSL-only pipeline
+			"GLSLANG_TESTS OFF"
+			"GLSLANG_ENABLE_INSTALL OFF"
+			"BUILD_EXTERNAL OFF"
+	)
+endblock ()
 
 # SDL_shadercross: runtime SPIR-V translation for the non-Vulkan SDL GPU
 # backends (Metal via SPIRV-Cross, D3D12 via DXC). No upstream releases yet,
@@ -106,6 +113,8 @@ CPMAddPackage(
 		"SDLSHADERCROSS_DXC OFF"           # SPIR-V passthrough + MSL unaffected
 		"SDLSHADERCROSS_VENDORED ON"       # bundle SPIRV-Cross
 		"SDLSHADERCROSS_SPIRVCROSS_SHARED OFF"
+		"SDLSHADERCROSS_SHARED OFF"        # statically linked into Core
+		"SDLSHADERCROSS_STATIC ON"
 		"SDLSHADERCROSS_CLI OFF"
 		"SDLSHADERCROSS_INSTALL OFF"
 )

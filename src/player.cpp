@@ -92,6 +92,11 @@ auto Player::viewportSize() const -> glm::uvec2 {
 	return m_window ? m_window->viewportSize() : glm::uvec2(0);
 }
 
+auto Player::swapchainFormat () const -> SDL_GPUTextureFormat {
+	/// If the player has no main window or that window is not claimed by a
+	/// device an \c SDL_GPU_TEXTUREFORMAT_INVALID is returned as sentinel value.
+	return m_window ? m_window->swapchainFormat() : SDL_GPU_TEXTUREFORMAT_INVALID;
+}
 
 //////
 //

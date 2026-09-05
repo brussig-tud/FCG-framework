@@ -44,7 +44,7 @@ option(FCG_USE_SHARED_SDL "Use shared SDL3 library" "${SDL_SHARED_DEFAULT}")
 
 # Dependencies (SDL3, GLM, ImGui) - declared in cmake/Dependencies.cmake.
 include(cmake/Dependencies.cmake)
-
+include(cmake/Shaders.cmake)
 # The framework core library.
 add_library(Core)
 list(APPEND FCG_INCLUDED_LIBS Core)
@@ -62,9 +62,15 @@ target_include_directories(Core PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY
 target_link_libraries(
 	Core PUBLIC "$<BUILD_INTERFACE:SDL3::SDL3>" "$<BUILD_INTERFACE:glm::glm>" "$<BUILD_INTERFACE:imgui::imgui>"
 )
+# Runtime SPIR-V translation for non-Vulkan backends (Metal, Direct3D 12).
+target_link_libraries(Core PRIVATE "$<BUILD_INTERFACE:SDL3_shadercross::SDL3_shadercross>")
 # Enable the experimental GLM GTX extensions (e.g. GLM_GTX_color_space used for color handling).
 target_compile_definitions(Core PUBLIC GLM_ENABLE_EXPERIMENTAL)
 add_subdirectory(src)
+
+# Embedded shaders (cmake/Shaders.cmake).
+add_subdirectory(shaders)
+target_link_libraries(Core PRIVATE "$<BUILD_INTERFACE:fcg-resources>")
 
 # (Optional) apps to build.
 add_subdirectory(app)

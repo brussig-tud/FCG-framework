@@ -7,6 +7,7 @@ set(SOURCES
 	gui.cpp
 	player.cpp
 	render_state.cpp
+	res.cpp
 	run.cpp
 	window.cpp
 )
@@ -20,6 +21,7 @@ set(HEADERS
 	${CMAKE_SOURCE_DIR}/include/FCG/gui.h
 	${CMAKE_SOURCE_DIR}/include/FCG/player.h
 	${CMAKE_SOURCE_DIR}/include/FCG/render_state.h
+	${CMAKE_SOURCE_DIR}/include/FCG/res.h
 	${CMAKE_SOURCE_DIR}/include/FCG/run.h
 	${CMAKE_SOURCE_DIR}/include/FCG/util.h
 	${CMAKE_SOURCE_DIR}/include/FCG/window.h
