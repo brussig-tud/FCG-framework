@@ -2,6 +2,7 @@
 # Collect sources
 set(SOURCES
 	applet/orbit_camera.cpp
+	event.cpp
 	device.cpp
 	frame.cpp
 	gui.cpp
@@ -16,6 +17,7 @@ set(SOURCES
 set(HEADERS
 	${CMAKE_SOURCE_DIR}/include/FCG/applet/orbit_camera.h
 	${CMAKE_SOURCE_DIR}/include/FCG/applet.h
+	${CMAKE_SOURCE_DIR}/include/FCG/event.h
 	${CMAKE_SOURCE_DIR}/include/FCG/device.h
 	${CMAKE_SOURCE_DIR}/include/FCG/frame.h
 	${CMAKE_SOURCE_DIR}/include/FCG/gui.h

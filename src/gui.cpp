@@ -134,6 +134,9 @@ void Gui::renderDrawData (SDL_GPUCommandBuffer *commandBuffer, SDL_GPURenderPass
 	ImGui_ImplSDLGPU3_RenderDrawData(ImGui::GetDrawData(), commandBuffer, renderPass);
 }
 
+auto Gui::wantsKeyboard () const -> bool { return ImGui::GetIO().WantCaptureKeyboard; }
+auto Gui::wantsMouse () const -> bool { return ImGui::GetIO().WantCaptureMouse; }
+
 auto Gui::wantsTextInput () const -> bool {
 	return ImGui::GetIO().WantTextInput;
 }

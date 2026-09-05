@@ -15,6 +15,7 @@
 
 // Local includes
 #include "FCG/run.h"
+#include "FCG/event.h"
 #include "FCG/device.h"
 #include "FCG/render_state.h"
 #include "FCG/gui.h"
@@ -42,10 +43,34 @@ namespace fcg {
 namespace {
 
 /// Handle a single SDL event for the central framework window.
-void handleEvent (const SDL_Event &event, Window &window, Gui &gui, Player &player)
+void handleEvent (const SDL_Event &event, Window &window, Gui &gui, Player &player, std::vector<std::unique_ptr<Applet>> &applets)
 {
 	// Always feed the GUI so ImGui can react to input
 	gui.processEvent(event);
+
+	// Dispatch logic
+	// - categorize the event context as basis for dispatch decisions below
+	const bool windowEvent = event.type >= SDL_EVENT_WINDOW_FIRST && event.type <= SDL_EVENT_WINDOW_LAST;
+	const bool inputEvent = event.type >= SDL_EVENT_KEY_DOWN && event.type <= SDL_EVENT_DROP_POSITION;
+	bool mainWindowEvent = !windowEvent && !inputEvent;
+	if (event.type >= SDL_EVENT_KEY_DOWN && event.type <= SDL_EVENT_TEXT_EDITING_CANDIDATES)
+		mainWindowEvent = event.key.windowID == window.id();
+	else if (event.type >= SDL_EVENT_MOUSE_MOTION && event.type <= SDL_EVENT_MOUSE_WHEEL)
+		mainWindowEvent = event.motion.windowID == window.id();
+	else if (event.type >= SDL_EVENT_DROP_FILE && event.type <= SDL_EVENT_DROP_POSITION)
+		mainWindowEvent = event.drop.windowID == window.id();
+	const bool keyboard = event.type >= SDL_EVENT_KEY_DOWN && event.type <= SDL_EVENT_TEXT_EDITING_CANDIDATES;
+	const bool mouse = event.type >= SDL_EVENT_MOUSE_MOTION && event.type <= SDL_EVENT_MOUSE_WHEEL;
+	// - dispatch to the applets
+	if (mainWindowEvent && inputEvent && !(keyboard && gui.wantsKeyboard()) && !(mouse && gui.wantsMouse())) {
+		Event normalized = makeEvent(event);
+		EventContext context;
+		for (auto &applet : applets)
+			applet->onEvent(normalized, context, player);
+		if (   event.type == SDL_EVENT_KEY_DOWN && event.key.windowID == window.id() && event.key.key == SDLK_ESCAPE
+		    && !context.wasHandled() && !gui.wantsTextInput())
+			player.requestClose();
+	}
 
 	switch (event.type)
 	{
@@ -172,7 +197,7 @@ FCG_FRAMEWORK_EXPORT int run (
 					SDL_Event event;
 					bool handledAnyEvent = false;
 					while (SDL_PollEvent(&event)) {
-						handleEvent(event, *window, *gui, player);
+						handleEvent(event, *window, *gui, player, applets);
 						handledAnyEvent = true;
 					}
 					if (handledAnyEvent)
@@ -188,9 +213,9 @@ FCG_FRAMEWORK_EXPORT int run (
 					const int waitTimeoutMs = gui->needsPeriodicRedraw() ? Gui::periodicRedrawIntervalMs : -1;
 					SDL_Event event;
 					if (SDL_WaitEventTimeout(&event, waitTimeoutMs)) {
-						handleEvent(event, *window, *gui, player);
+						handleEvent(event, *window, *gui, player, applets);
 						while (SDL_PollEvent(&event))
-							handleEvent(event, *window, *gui, player);
+							handleEvent(event, *window, *gui, player, applets);
 						// The GUI reacts to input with one frame of latency, so schedule follow-up redraws
 						pendingRedraws = 2;
 					}

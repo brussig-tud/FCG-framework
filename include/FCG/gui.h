@@ -129,6 +129,8 @@ public:
 	/// Whether the GUI currently wants text input. While this is `true`, key presses should be considered
 	/// consumed by the GUI (e.g. *Escape* should not close the window while a text field is being edited).
 	[[nodiscard]] auto wantsTextInput () const -> bool;
+	[[nodiscard]] auto wantsKeyboard () const -> bool;
+	[[nodiscard]] auto wantsMouse () const -> bool;
 
 	/// Whether the GUI currently needs periodic redraws even without any input events. This is the case while a
 	/// text field with a blinking caret is active. A blocking main loop should wake up after

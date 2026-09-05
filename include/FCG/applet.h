@@ -18,6 +18,7 @@
 
 // Local includes
 #include "FCG/export.h"
+#include "FCG/event.h"
 
 
 
@@ -88,6 +89,9 @@ public:
 	/// \param oldViewportSize The dimensions of the main viewport before the most recent resizing
 	/// \param player Reference to the central applet player.
 	virtual void onViewportResize (Device &device, const glm::uvec2 &oldViewportSize, Player &player) = 0;
+
+	/// Handle one synchronous main-window input event.
+	virtual void onEvent (const Event &event, EventContext &context, Player &player) {}
 
 	/// Define all *ImGui* widgets the applet wants. The framework *ImGui* context is current during this call, so
 	/// applets can issue `ImGui::` calls directly. Rendering of the resulting draw data is handled by the
