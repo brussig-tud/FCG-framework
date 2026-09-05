@@ -8,10 +8,6 @@
 // Includes
 //
 
-// C++ STL
-#include <memory>
-#include <tuple>
-
 // GLM library
 #include <glm/glm.hpp>
 
