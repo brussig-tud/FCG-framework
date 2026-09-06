@@ -42,9 +42,6 @@ struct OrbitCameraParams
 		/// The vertical field of view in degrees.
 		float fovY;
 
-		/// The aspect ratio of the camera's image plane (width/height).
-		float aspect;
-
 		/// The focal length of the camera in world units. For now, this only decides the "focal point" around which the
 		/// camera orbits. It could also be used to render camera-related post-processing effects like depth-of-field.
 		float f;
@@ -94,6 +91,8 @@ public:
 
 	void onViewportResize (Device &device, const glm::uvec2 &oldViewportSize, Player &player) override;
 
+	void onEvent (const Event &event, EventContext &context, Player &player) override;
+
 	void gui (Device &device, Player &player) override;
 
 	void update (Device &device, Player &player) override;
@@ -132,6 +131,21 @@ private:
 
 
 	////
+	// Helpers
+
+	/// Compute the focal point around which the camera orbits.
+	[[nodiscard]] auto focalPoint () const -> glm::vec3 {
+		return params.extrinsics.eye + params.intrinsics.f * params.extrinsics.dir;
+	}
+
+	/// Invalidates cached matrices so they are recomputed in update().
+	void invalidateMatrices (bool view = true, bool projection = true) {
+		if (view) viewMatrix.reset();
+		if (projection) projMatrix.reset();
+	}
+
+
+	////
 	// Fields
 
 	/// The current camera parameters.
@@ -142,6 +156,15 @@ private:
 
 	/// The current projection matrix resulting from the camera parameters.
 	std::optional<glm::mat4> projMatrix;
+
+	/// Multiplier applied to all translation/zoom speeds.
+	float speedFactor = 1.0f;
+
+	/// The mouse button currently dragging the camera, or Unknown.
+	MouseButton activeDragButton = MouseButton::Unknown;
+
+	/// Whether Shift was held when the active drag started.
+	bool dragStartedWithShift = false;
 };
 
 
