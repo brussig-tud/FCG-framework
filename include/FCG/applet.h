@@ -19,6 +19,7 @@
 // Local includes
 #include "FCG/export.h"
 #include "FCG/event.h"
+#include "FCG/render_state.h"
 
 
 

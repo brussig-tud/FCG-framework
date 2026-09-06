@@ -18,6 +18,7 @@
 
 // Local includes
 #include "FCG/export.h"
+#include "FCG/device.h"
 
 
 
@@ -51,12 +52,7 @@ namespace fcg {
 // Structs & enums
 //
 
-/// Indicate one of SDL3 GPU's supported shader stages.
-enum class ShaderStage {
-	VERTEX, FRAGMENT, COMPUTE
-};
-
-/// Structure of the viewing uniforms buffer.
+/// Convenience wrapper for a std140-compatible 3x3 matrix.
 struct alignas(16) Std140Mat3
 {
 	/// The three std140-aligned columns of the matrix.
@@ -71,7 +67,9 @@ struct alignas(16) Std140Mat3
 		}
 	{}
 };
+static_assert(sizeof(Std140Mat3) == 3 * sizeof(glm::vec4));
 
+/// Structure of the viewing uniforms buffer.
 struct ViewingUniforms
 {
 	/// The modelview matrix.
@@ -98,10 +96,8 @@ struct ViewingUniforms
 	/// The inverse normal matrix.
 	Std140Mat3 invNormal;
 };
-
 static_assert(offsetof(ViewingUniforms, normal) == 6 * sizeof(glm::mat4));
 static_assert(offsetof(ViewingUniforms, invNormal) == 6 * sizeof(glm::mat4) + sizeof(Std140Mat3));
-static_assert(sizeof(Std140Mat3) == 3 * sizeof(glm::vec4));
 static_assert(sizeof(ViewingUniforms) == 6 * sizeof(glm::mat4) + 2 * sizeof(Std140Mat3));
 
 

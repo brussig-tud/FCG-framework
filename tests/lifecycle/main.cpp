@@ -55,10 +55,10 @@ public:
 			return;
 		}
 		auto *vertexShader = device.createShader(
-			fcg::ShaderStage::VERTEX, shader->stage(fcg::ShaderStage::VERTEX)->spirv
+			fcg::ShaderStage::VERTEX, shader->stage(fcg::ShaderStage::VERTEX)->spirv, 0
 		);
 		auto *fragmentShader = device.createShader(
-			fcg::ShaderStage::FRAGMENT, shader->stage(fcg::ShaderStage::FRAGMENT)->spirv
+			fcg::ShaderStage::FRAGMENT, shader->stage(fcg::ShaderStage::FRAGMENT)->spirv, 0
 		);
 		if (!vertexShader || !fragmentShader)
 			return;  // createShader already logged the error

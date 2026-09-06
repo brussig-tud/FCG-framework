@@ -18,7 +18,7 @@
 #include <vector>
 
 // FCG Framework
-#include <FCG/render_state.h>
+#include <FCG/device.h>
 
 
 

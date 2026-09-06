@@ -1,6 +1,6 @@
 
-#ifndef __FCG_GPU_H__
-#define __FCG_GPU_H__
+#ifndef __FCG_DEVICE_H__
+#define __FCG_DEVICE_H__
 
 
 //////
@@ -10,12 +10,12 @@
 
 // C++ STL
 #include <memory>
+#include <span>
 #include <set>
 #include <optional>
 
 // Local includes
 #include "FCG/export.h"
-#include "FCG/res.h"
 
 
 
@@ -42,6 +42,18 @@ namespace fcg {
 
 /// The library top-level namespace.
 namespace fcg {
+
+
+
+//////
+//
+// Structs & enums
+//
+
+/// Indicate one of SDL3 GPU's supported shader stages.
+enum class ShaderStage {
+	VERTEX, FRAGMENT, COMPUTE
+};
 
 
 
@@ -127,15 +139,17 @@ public:
 	/// On Vulkan backends, the SPIR-V is used directly. On all other backends (Metal, Direct3D 12), it is
 	/// translated to the backend's shader format at runtime via SDL_shadercross.
 	///
-	/// \param stage      The shader stage. Compute shaders are not supported by this method yet.
-	/// \param spirv      The SPIR-V bytecode.
+	/// \param stage The shader stage. Compute shaders are not supported by this method yet.
+	/// \param spirv The SPIR-V bytecode.
+	/// \param numUniformBlocks The number of uniform blocks used by the shader.
 	/// \param entrypoint The shader entry point. Defaults to \c main, which is what the build system's shader
 	///                   compilation produces.
 	///
 	/// \returns The shader, or \c nullptr on failure (details are written to the SDL error log). The device
 	///          retains ownership.
 	[[nodiscard]] auto createShader (
-		ShaderStage stage, std::span<const std::byte> spirv, std::string_view entrypoint = "main"
+		ShaderStage stage, std::span<const std::byte> spirv, unsigned numUniformBlocks,
+		std::string_view entrypoint="main"
 	) const -> SDL_GPUShader*;
 
 
@@ -162,4 +176,4 @@ private:
 }
 
 
-#endif  // ifndef __FCG_GPU_H__
+#endif  // ifndef __FCG_DEVICE_H__

@@ -97,7 +97,7 @@ void Device::unclaimWindow (std::unique_ptr<Window> &window) {
 }
 
 auto Device::createShader (
-	ShaderStage stage, std::span<const std::byte> spirv, std::string_view entrypoint
+	ShaderStage stage, std::span<const std::byte> spirv, unsigned numUniformBlocks, std::string_view entrypoint
 ) const -> SDL_GPUShader*
 {
 	if (stage == ShaderStage::COMPUTE) {
@@ -121,6 +121,7 @@ auto Device::createShader (
 		info.entrypoint = entry.c_str();
 		info.format = SDL_GPU_SHADERFORMAT_SPIRV;
 		info.stage = sdlStage;
+		info.num_uniform_buffers = numUniformBlocks;
 
 		SDL_GPUShader *shader = SDL_CreateGPUShader(m_handle, &info);
 		if (!shader)
