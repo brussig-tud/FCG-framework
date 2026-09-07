@@ -10,6 +10,7 @@
 
 // C++ STL
 #include <algorithm>
+#include <stdexcept>
 #include <array>
 #include <cmath>
 #include <vector>
@@ -317,7 +318,7 @@ private:
 			case Solid::Octahedron:   return octahedron;
 			case Solid::Dodecahedron: return dodecahedron;
 			case Solid::Icosahedron:  return icosahedron;
-			default:                  return tetrahedron;
+			default:                  throw std::logic_error("Received invalid enum value");
 		}
 	}
 
@@ -326,7 +327,7 @@ private:
 	// Fields
 
 	/// The currently selected solid, as an `int` for ImGui interop (see \ref Solid).
-	int solid = (int)Solid::Tetrahedron;
+	int solid = (int)Solid::Dodecahedron;
 
 	/// The currently selected size semantics, as an `int` for ImGui interop (see \ref SizeSemantics).
 	int sizeSemantics = (int)SizeSemantics::Circumradius;

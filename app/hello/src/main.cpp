@@ -250,7 +250,7 @@ protected:
 	std::unique_ptr<SimpleShape> shapes[(size_t)SS::NUM];
 
 	/// Index of the currently selected shape in \ref shapes.
-	int selectedShape = 0;
+	int selectedShape = 1;
 
 	/// Cached GPU device handle, captured during \ref init so the destructor can release the pipeline.
 	fcg::Device *m_device = nullptr;
