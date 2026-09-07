@@ -41,7 +41,7 @@ namespace fcg::applet {
 
 OrbitCamera::OrbitCamera()
 	: m_params(OrbitCameraParams{
-		.intrinsics = {.fovY=45.f, .f=3.f, .zNear=.125f, .zFar=100.f},
+		.intrinsics = {.fovY=60, .f=3, .zNear=.125f, .zFar=100},
 		.extrinsics = {.eye={0, 0, 3}, .dir={0, 0, -1}, .up={0, 1, 0}}
 	})
 {}
