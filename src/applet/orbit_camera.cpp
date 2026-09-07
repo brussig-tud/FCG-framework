@@ -40,7 +40,7 @@ namespace fcg::applet {
 // Orbit Camera
 
 OrbitCamera::OrbitCamera()
-	: params(OrbitCameraParams{
+	: m_params(OrbitCameraParams{
 		.intrinsics = {.fovY=45.f, .f=3.f, .zNear=.125f, .zFar=100.f},
 		.extrinsics = {.eye={0, 0, 3}, .dir={0, 0, -1}, .up={0, 1, 0}}
 	})
@@ -56,44 +56,72 @@ auto OrbitCamera::name () -> std::string& {
 void OrbitCamera::init (Device&, Player&) {}
 
 void OrbitCamera::onViewportResize (Device& device, const glm::uvec2& oldViewportSize, Player& player) {
-	// Update the aspect ratio
+	// Potentially updated aspect ratio will require matrix recomputation
 	projMatrix.reset();
 }
 
 void OrbitCamera::setFovY (float fovY) {
-	params.intrinsics.fovY = glm::clamp(fovY, 1.f, 179.f);
+	m_params.intrinsics.fovY = glm::clamp(fovY, 1.f, 179.f);
 	projMatrix.reset();
 }
 
 void OrbitCamera::setFocalLength (float f) {
-	params.intrinsics.f = glm::max(f, 0.001f);
+	m_params.intrinsics.f = glm::max(f, 0.001f);
+	m_focalPoint.reset();
 	viewMatrix.reset();
 }
 
 void OrbitCamera::setNearPlane (float zNear) {
-	params.intrinsics.zNear = glm::max(zNear, 0.001f);
-	params.intrinsics.zFar = glm::max(params.intrinsics.zFar, params.intrinsics.zNear + 0.001f);
+	m_params.intrinsics.zNear = glm::max(zNear, 0.001f);
+	m_params.intrinsics.zFar = glm::max(m_params.intrinsics.zFar, m_params.intrinsics.zNear + 0.001f);
 	projMatrix.reset();
 }
 
 void OrbitCamera::setFarPlane (float zFar) {
-	params.intrinsics.zFar = glm::max(zFar, params.intrinsics.zNear + 0.001f);
+	m_params.intrinsics.zFar = glm::max(zFar, m_params.intrinsics.zNear + 0.001f);
 	projMatrix.reset();
 }
 
 void OrbitCamera::setEye (const glm::vec3& eye) {
-	params.extrinsics.eye = eye;
+	m_params.extrinsics.eye = eye;
+	m_focalPoint.reset();
 	viewMatrix.reset();
 }
 
 void OrbitCamera::setDir (const glm::vec3& dir) {
-	params.extrinsics.dir = glm::normalize(dir);
+	m_params.extrinsics.dir = glm::normalize(dir);
+	m_focalPoint.reset();
 	viewMatrix.reset();
 }
 
 void OrbitCamera::setUp (const glm::vec3& up) {
-	params.extrinsics.up = glm::normalize(up);
+	m_params.extrinsics.up = glm::normalize(up);
 	viewMatrix.reset();
+}
+
+void OrbitCamera::setFocalPoint (const glm::vec3& focalPoint)
+{
+	// Bail out on degenerate case
+	const glm::vec3 v = focalPoint - m_params.extrinsics.eye;
+	const float f = glm::length(v);
+	if (f < 0.001f)
+		return;
+
+	// Update the camera parameters
+	m_params.intrinsics.f = f;
+	m_params.extrinsics.dir = v / f;
+	glm::vec3 right = glm::cross(m_params.extrinsics.dir, m_params.extrinsics.up);
+	if (glm::length(right) < 0.0001f) {
+		const glm::vec3 fallback = std::abs(m_params.extrinsics.dir.y) < 0.99f ?
+			glm::vec3(0,1,0) : glm::vec3(0,0,1);
+		right = glm::cross(m_params.extrinsics.dir, fallback);
+	}
+	m_params.extrinsics.up = glm::cross(glm::normalize(right), m_params.extrinsics.dir);
+
+	// Invalidate caches
+	m_focalPoint.reset();
+	viewMatrix.reset();
+	projMatrix.reset();
 }
 
 namespace {
@@ -109,11 +137,11 @@ inline auto rotateAround (const glm::vec3& v, float angle, const glm::vec3& axis
 
 void OrbitCamera::onEvent (const Event& event, EventContext& context, Player& player)
 {
-	constexpr float orbitSpeed = 0.01f;
-	constexpr float panScale = 0.001f;
-	constexpr float dollyScale = 0.005f;
-	constexpr float zoomScale = 0.1f;
-	constexpr float rollSpeed = 0.01f;
+	constexpr float orbitSpeed = .01f;
+	constexpr float panScale = .001f;
+	constexpr float dollyScale = .005f;
+	constexpr float zoomFraction = 0.125f;
+	constexpr float rollSpeed = .01f;
 
 	if (event.type() == EventType::MouseButtonDown) {
 		const auto* mouse = event.data<MouseButtonEvent>();
@@ -137,75 +165,84 @@ void OrbitCamera::onEvent (const Event& event, EventContext& context, Player& pl
 		return;
 	}
 
-	if (event.type() == EventType::MouseMotion) {
+	if (event.type() == EventType::MouseMotion)
+	{
+		auto handleTranslation = [this](const glm::vec3& translation) {
+			m_params.extrinsics.eye += translation;
+			m_focalPoint.reset();
+			viewMatrix.reset();
+		};
 		const auto* motion = event.data<MouseMotionEvent>();
-		if (!motion || activeDragButton == MouseButton::Unknown) return;
+		if (!motion || activeDragButton == MouseButton::Unknown)
+			return;
 
 		const float dx = motion->relativeX;
 		const float dy = motion->relativeY;
-		const float f = params.intrinsics.f;
-		const auto& dir = params.extrinsics.dir;
-		const auto& up = params.extrinsics.up;
-		const auto& eye = params.extrinsics.eye;
+		const float f = m_params.intrinsics.f;
+		const auto& dir = m_params.extrinsics.dir;
+		const auto& up = m_params.extrinsics.up;
+		const auto& eye = m_params.extrinsics.eye;
 
-		if (activeDragButton == MouseButton::Left) {
+		if (activeDragButton == MouseButton::Left)
+		{
 			if (dragStartedWithShift) {
 				// Roll the up vector around the viewing direction.
 				const float angle = -dx * rollSpeed;
 				setUp(rotateAround(up, angle, dir));
 			}
-			else {
+			else
+			{
 				// Orbit around the focal point.
-				const glm::vec3 focus = focalPoint();
-				glm::vec3 right = glm::normalize(glm::cross(dir, up));
-
-				// Clamp pitch to avoid flipping past the poles.
-				const float pitchAngle = glm::clamp(-dy * orbitSpeed, -glm::half_pi<float>() + 0.01f, glm::half_pi<float>() - 0.01f);
-				const float yawAngle = -dx * orbitSpeed;
-
-				glm::vec3 offset = eye - focus;
-				offset = rotateAround(offset, yawAngle, up);
-				offset = rotateAround(offset, pitchAngle, right);
-				setEye(focus + offset);
-
-				setDir(rotateAround(dir, yawAngle, up));
-				setUp(rotateAround(up, pitchAngle, right));
+				const auto &focus = focalPoint();
+				auto right = glm::normalize(
+					glm::cross(m_params.extrinsics.dir, m_params.extrinsics.up)
+				);
+				right = rotateAround(right, -dx*orbitSpeed, m_params.extrinsics.up);
+				m_params.extrinsics.up = rotateAround(m_params.extrinsics.up, dy*-orbitSpeed, right);
+				m_params.extrinsics.dir = glm::cross(m_params.extrinsics.up, right);
+				m_params.extrinsics.eye = focus - m_params.intrinsics.f*m_params.extrinsics.dir;
+				viewMatrix.reset();
 			}
+			context.markHandled();
 		}
 		else if (activeDragButton == MouseButton::Right) {
 			// Pan in the camera plane.
-			const glm::vec3 right = glm::normalize(glm::cross(dir, up));
-			const glm::vec3 translation = (-dx * right + dy * up) * f * speedFactor * panScale;
-			setEye(eye + translation);
+			const glm::vec3 right = glm::normalize(glm::cross(dir, up));;
+			handleTranslation((-dx*right + dy*up) * f*speedFactor*panScale);
+			context.markHandled();
 		}
 		else if (activeDragButton == MouseButton::Middle) {
 			// Dolly forward/backward along the viewing direction.
-			const glm::vec3 translation = dir * (-dy) * f * speedFactor * dollyScale;
-			setEye(eye + translation);
+			handleTranslation(-dy*dir * f*speedFactor*dollyScale);
+			context.markHandled();
 		}
-
-		context.markHandled();
 		return;
 	}
 
-	if (event.type() == EventType::MouseWheel) {
+	if (event.type() == EventType::MouseWheel)
+	{
 		const auto* wheel = event.data<MouseWheelEvent>();
-		if (!wheel) return;
-
-		const float f = params.intrinsics.f;
-		const glm::vec3 translation = params.extrinsics.dir * wheel->y * f * speedFactor * zoomScale;
-		setEye(params.extrinsics.eye + translation);
+		if (!wheel)
+			return;
+		const auto effectiveZoomFraction = zoomFraction*speedFactor;
+		const auto zoomRatio = wheel->y < 0 ? 1+effectiveZoomFraction : 1/(1+effectiveZoomFraction);
+		const auto effectiveZoomRatio = std::pow(zoomRatio, std::abs(wheel->y));
+		m_params.intrinsics.f *= effectiveZoomRatio;
+		m_params.extrinsics.eye = focalPoint() - m_params.intrinsics.f*m_params.extrinsics.dir;
+		viewMatrix.reset();
+		projMatrix.reset();
 		context.markHandled();
 		return;
 	}
 }
 
-void OrbitCamera::gui (Device& device, Player& player) {
+void OrbitCamera::gui (Device& device, Player& player)
+{
 	ImGui::SetNextWindowSize({0, 0}, ImGuiCond_FirstUseEver);
 	ImGui::Begin("Orbit Camera");
 
-	auto& in = params.intrinsics;
-	auto& ex = params.extrinsics;
+	auto& in = m_params.intrinsics;
+	auto& ex = m_params.extrinsics;
 
 	if (ImGui::CollapsingHeader("Intrinsics", ImGuiTreeNodeFlags_DefaultOpen)) {
 		float fovY = in.fovY;
@@ -241,9 +278,13 @@ void OrbitCamera::gui (Device& device, Player& player) {
 		if (ImGui::DragFloat3("Up", &u.x, 0.01f)) {
 			setUp(u);
 		}
+	}
 
-		const glm::vec3 focus = focalPoint();
-		ImGui::Text("Focal point: %.3f, %.3f, %.3f", focus.x, focus.y, focus.z);
+	if (ImGui::CollapsingHeader("Combined", ImGuiTreeNodeFlags_DefaultOpen)) {
+		glm::vec3 focus = focalPoint();
+		if (ImGui::DragFloat3("Focal point", &focus.x, 0.01f)) {
+			setFocalPoint(focus);
+		}
 	}
 
 	if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -261,15 +302,15 @@ void OrbitCamera::update (Device& device, Player& player)
 		// Recompute the projection matrix
 		const auto &vp = player.viewportSize();
 		projMatrix = glm::perspectiveFov<float>(
-			glm::radians(params.intrinsics.fovY), vp.x, vp.y, params.intrinsics.zNear,
-			params.intrinsics.zFar
+			glm::radians(m_params.intrinsics.fovY), vp.x, vp.y, m_params.intrinsics.zNear,
+			m_params.intrinsics.zFar
 		);
 	}
 	if (!viewMatrix.has_value()) {
 		// Recompute the view matrix
 		viewMatrix = glm::lookAt(
-			params.extrinsics.eye, params.extrinsics.eye + params.intrinsics.f*params.extrinsics.dir,
-			params.extrinsics.up
+			m_params.extrinsics.eye, m_params.extrinsics.eye + m_params.intrinsics.f*m_params.extrinsics.dir,
+			m_params.extrinsics.up
 		);
 	}
 }

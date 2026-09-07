@@ -9,6 +9,7 @@
 //
 
 // C++ STL
+#include <cmath>
 #include <memory>
 #include <optional>
 
@@ -51,6 +52,23 @@ struct OrbitCameraParams
 
 		/// The far clipping plane distance.
 		float zFar;
+
+		/// Set \ref fovY such that the frustum has the given diameter at the focal point.
+		void setFovYForFrustumDiameterAtFocus (float diameter) {
+			const auto theta = glm::atan(.5f*diameter / f);
+			fovY = theta+theta;
+		}
+
+		/// Set \ref f to the distance where the frustum has the given diameter under the current \ref fovY.
+		void setFocusDistForFrustumDiameter (float diameter) {
+			f = .5f*diameter/glm::tan(.5f*fovY);
+		}
+
+		/// Compute the frustum diameter at the current \ref f.
+		[[nodiscard]] auto frustumDiameterAtFocus () const -> float {
+			const auto h05 = f*glm::tan(.5f*fovY);
+			return h05+h05;
+		}
 	} intrinsics;
 
 	/// The extrinsic camera parameters (describing the camera's position and orientation in world space).
@@ -100,10 +118,33 @@ public:
 	void render (
 		Device &device, RenderState &renderState, SDL_GPURenderPass *renderPass,
 		SDL_GPUCommandBuffer *commandBuffer, Player &player
-	) override;
+		) override;
 
 
-private:
+	////
+	// Accessors
+
+	/// Compute the focal point around which the camera orbits from a \c const context.
+	///
+	/// It is a logic error to call this accessor when the \em current focal point has never been queried before, since
+	/// the \c const context does not allow updating it if it is currently invalid.
+	[[nodiscard]] inline auto focalPoint () const -> const glm::vec3& {
+		return m_focalPoint.value();
+	}
+
+	/// Compute the focal point around which the camera orbits. Will be lazily computed if it is currently invalid.
+	[[nodiscard]] inline auto focalPoint () -> const glm::vec3& {
+		if (!m_focalPoint.has_value()) {
+			m_focalPoint = m_params.extrinsics.eye + m_params.intrinsics.f*m_params.extrinsics.dir;
+		}
+		return m_focalPoint.value();
+	}
+
+	/// Reference the current camera parameters.
+	[[nodiscard]] inline auto params () const -> const OrbitCameraParams& {
+		return m_params;
+	}
+
 
 	////
 	// Methods
@@ -129,27 +170,20 @@ private:
 	/// Set a new up direction.
 	void setUp (const glm::vec3 &up);
 
+	/// Set a new focal point, updating the \link camera parameters params \endlink accordingly.
+	void setFocalPoint (const glm::vec3 &focalPoint);
 
-	////
-	// Helpers
 
-	/// Compute the focal point around which the camera orbits.
-	[[nodiscard]] auto focalPoint () const -> glm::vec3 {
-		return params.extrinsics.eye + params.intrinsics.f * params.extrinsics.dir;
-	}
-
-	/// Invalidates cached matrices so they are recomputed in update().
-	void invalidateMatrices (bool view = true, bool projection = true) {
-		if (view) viewMatrix.reset();
-		if (projection) projMatrix.reset();
-	}
-
+private:
 
 	////
 	// Fields
 
 	/// The current camera parameters.
-	OrbitCameraParams params;
+	OrbitCameraParams m_params;
+
+	/// The current focal point of the orbit.
+	std::optional<glm::vec3> m_focalPoint;
 
 	/// The current view matrix resulting from the camera parameters.
 	std::optional<glm::mat4> viewMatrix;

@@ -213,9 +213,6 @@ public:
 
 		rs.pushModelviewMatrix();
 
-		// Move the shape back from the world space center a bit.
-		rs.mulModelviewMatrix(glm::translate(glm::fvec3(0, 0, -3)));
-
 		// Bind the pipeline and the shape's geometry buffers.
 		SDL_BindGPUGraphicsPipeline(renderPass, m_pipeline);
 
@@ -238,9 +235,6 @@ public:
 
 		// Draw the indexed triangle list.
 		SDL_DrawGPUIndexedPrimitives(renderPass, shape.numIndices(), 1, 0, 0, 0);
-
-		// Pop our changes from the matrix stack.
-		rs.popModelviewMatrix();
 	}
 
 
