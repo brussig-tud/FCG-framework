@@ -11,6 +11,7 @@
 // C++ STL
 #include <memory>
 #include <span>
+#include <string_view>
 #include <set>
 #include <optional>
 

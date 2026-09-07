@@ -32,10 +32,10 @@ auto makeEvent (const SDL_Event &e) -> Event
 	switch (e.type)
 	{
 		case SDL_EVENT_KEY_DOWN:
-			return {EventType::KeyDown, &e, KeyEvent{e.key.key, e.key.scancode, e.key.mod, e.key.repeat}};
+			return {EventType::KeyDown, &e, KeyEvent{e.key.key, (uint32_t)e.key.scancode, e.key.mod, e.key.repeat}};
 
 		case SDL_EVENT_KEY_UP:
-			return {EventType::KeyUp, &e, KeyEvent{e.key.key, e.key.scancode, e.key.mod, false}};
+			return {EventType::KeyUp, &e, KeyEvent{e.key.key, (uint32_t)e.key.scancode, e.key.mod, false}};
 
 		case SDL_EVENT_TEXT_INPUT:
 			return {EventType::TextInput, &e, TextEvent{e.text.text ? e.text.text : ""}};
