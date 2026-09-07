@@ -5,7 +5,8 @@
 //
 
 // C++ STL
-#include <sstream>
+#include <format>
+#include <stdexcept>
 
 // SDL3 library
 #include <SDL3/SDL.h>
@@ -86,14 +87,16 @@ auto Window::swapchainFormat () const -> SDL_GPUTextureFormat
 auto Window::claim (Device &device) -> bool
 {
 	auto curClaim = m_device ? std::make_optional(m_device->handle()) : std::nullopt;
-	if (curClaim) {
-		std::stringstream msgstream;
-		if (curClaim.value() == device.handle())
-			msgstream << "Device "<<std::hex<<device.handle()<<" tried claiming the window "<<m_handle<<" twice";
-		else
-			msgstream << "Device "<<std::hex<<device.handle()<<" tried claiming the window "<<m_handle<<" while it is"
-		                 " already claimed by device "<<curClaim.value();
-		auto msg = msgstream.str();
+	if (curClaim)
+	{
+		const std::string msg = curClaim.value() == device.handle()
+			? std::format(
+				"Device {:p} tried claiming the window {:p} twice", (void*)device.handle(), (void*)m_handle
+			)
+			: std::format(
+				"Device {:p} tried claiming the window {:p} while it is already claimed by device {:p}",
+				(void*)device.handle(), (void*)m_handle, (void*)curClaim.value()
+			);
 		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 		throw std::logic_error(msg);
 	}
@@ -112,10 +115,10 @@ void Window::unclaim (Device &device)
 	auto curClaim = m_device ? std::make_optional(m_device->handle()) : std::nullopt;
 	if (!curClaim || curClaim.value() != device.handle())
 	{
-		std::stringstream msgstream;
-		msgstream << "Trying to release nonexistent device claim to window "<<std::hex<<m_handle<<":" << std::endl
-		          << "Releasing device: "<<device.handle()<<", actual claiming device: "<<curClaim.value_or(nullptr);
-		auto msg = msgstream.str();
+		const auto msg = std::format(
+			"Trying to release nonexistent device claim to window {:p}:\nReleasing device: {:p}, actual"
+			" claiming device: {:p}", (void*)m_handle, (void*)device.handle(), (void*)curClaim.value_or(nullptr)
+		);
 		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 		throw std::logic_error(msg);
 	}
@@ -133,10 +136,8 @@ auto Window::beginFrame (Device &device) -> Frame*
 {
 	// Make sure no frame is already in flight
 	if (m_frame) {
-		std::stringstream msgstream;
-		msgstream << "Trying to start new frame on window "<<std::hex<<m_handle<<" while another one is still in"
-		             " flight";
-		auto msg = msgstream.str();
+		const auto msg = std::format(
+			"Trying to start new frame on window {:p} while another one is still in flight", (void*)m_handle);
 		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 		throw std::logic_error(msg);
 	}
@@ -144,9 +145,9 @@ auto Window::beginFrame (Device &device) -> Frame*
 	// Make sure the window is claimed for the device the frame should be rendered with
 	auto curClaim = m_device ? std::make_optional(m_device->handle()) : std::nullopt;
 	if (!curClaim || curClaim.value() != device.handle())  {
-		std::stringstream msgstream;
-		msgstream << "Trying to start new frame on unclaimed window "<<std::hex<<m_handle;
-		auto msg = msgstream.str();
+		const auto msg = std::format(
+			"Trying to start new frame on unclaimed window {:p}", (void*)m_handle
+		);
 		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 		throw std::logic_error(msg);
 	}
@@ -154,9 +155,7 @@ auto Window::beginFrame (Device &device) -> Frame*
 	// Acquire (and potentially wait for) the swapchain texture and central command buffer for this frame
 	SDL_GPUCommandBuffer *cmdBuffer = SDL_AcquireGPUCommandBuffer(device.handle());
 	if (!cmdBuffer) {
-		std::stringstream msgstream;
-		msgstream << "Acquiring a GPU command buffer failed: "<<SDL_GetError();
-		auto msg = msgstream.str();
+		const auto msg = std::format("Acquiring a GPU command buffer failed: {}", SDL_GetError());
 		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 		throw std::runtime_error(msg);
 	}
@@ -166,9 +165,7 @@ auto Window::beginFrame (Device &device) -> Frame*
 		cmdBuffer, m_handle, &swapchainTexture, &swapchainSize.x,
 		&swapchainSize.y
 	)){
-		std::stringstream msgstream;
-		msgstream << "Acquiring the swapchain texture failed: "<<SDL_GetError();
-		auto msg = msgstream.str();
+		const auto msg = std::format("Acquiring the swapchain texture failed: {}", SDL_GetError());
 		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 		throw std::runtime_error(msg);
 	}
@@ -201,9 +198,7 @@ auto Window::beginFrame (Device &device) -> Frame*
 		depthTextureInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
 		depthTexture = SDL_CreateGPUTexture(device.handle(), &depthTextureInfo);
 		if (!depthTexture) {
-			std::stringstream msgstream;
-			msgstream << "Creating the depth buffer failed: "<<SDL_GetError();
-			auto msg = msgstream.str();
+			const auto msg = std::format("Creating the depth buffer failed: {}", SDL_GetError());
 			SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 			throw std::runtime_error(msg);
 		}
@@ -222,9 +217,9 @@ void Window::endFrame ()
 {
 	// Make sure a frame was actually in flight
 	if (!m_frame) {
-		std::stringstream msgstream;
-		msgstream << "Trying to end a frame on window "<<std::hex<<m_handle<<" which currently has no frames in flight";
-		auto msg = msgstream.str();
+		const auto msg = std::format(
+			"Trying to end a frame on window {:p} which currently has no frames in flight", (void*)m_handle
+		);
 		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 		throw std::logic_error(msg);
 	}

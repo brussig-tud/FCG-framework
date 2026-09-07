@@ -5,7 +5,7 @@
 //
 
 // C++ STL
-#include <sstream>
+#include <format>
 #include <stdexcept>
 
 // SDL3 library
@@ -39,9 +39,7 @@ Frame::~Frame()
 	if (m_commandBuffer || m_targetTexture)
 	{
 		// This is a logic bug
-		std::stringstream msgstream;
-		msgstream << "Frame is being destroyed while in flight";
-		auto msg = msgstream.str();
+		const auto msg = std::format("Frame is being destroyed while in flight");
 		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 
 		// Unrecoverable
@@ -53,9 +51,7 @@ void Frame::end ()
 {
 	// Can't end the frame if a render pass is being recorded
 	if (m_renderPass) {
-		std::stringstream msgstream;
-		msgstream << "Frame is being ended while a render pass is being recorded";
-		auto msg = msgstream.str();
+		const auto msg = std::format("Frame is being ended while a render pass is being recorded");
 		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 		throw std::logic_error(msg);
 	}
@@ -71,10 +67,9 @@ auto Frame::beginRenderPass (const glm::fvec4 &clearColor) -> SDL_GPURenderPass*
 {
 	// Don't begin another render pass while one is still active
 	if (m_renderPass) {
-		std::stringstream msgstream;
-		msgstream << "Trying to begin a new frame render pass to the frame target while one is already being recorded";
-		auto msg = msgstream.str();
-		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
+		constexpr auto msg =
+			"Trying to begin a new frame render pass to the frame target while one is already being recorded";
+		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, msg);
 		throw std::logic_error(msg);
 	}
 
@@ -102,10 +97,8 @@ auto Frame::beginOverlayRenderPass () -> SDL_GPURenderPass*
 {
 	// Don't begin another render pass while one is still active
 	if (m_renderPass) {
-		std::stringstream msgstream;
-		msgstream << "Trying to begin an overlay render pass while another one is still being recorded";
-		auto msg = msgstream.str();
-		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
+		constexpr auto msg = "Trying to begin an overlay render pass while another one is still being recorded";
+		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg);
 		throw std::logic_error(msg);
 	}
 
@@ -126,10 +119,8 @@ void Frame::endRenderPass ()
 {
 	// Can't end the current render pass if there is none
 	if (!m_renderPass) {
-		std::stringstream msgstream;
-		msgstream << "Trying to end a frame render pass when none is active";
-		auto msg = msgstream.str();
-		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
+		constexpr auto msg = "Trying to end a frame render pass when none is active";
+		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, msg);
 		throw std::logic_error(msg);
 	}
 	SDL_EndGPURenderPass(m_renderPass);
