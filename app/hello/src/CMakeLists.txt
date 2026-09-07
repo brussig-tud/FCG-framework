@@ -9,6 +9,7 @@ set(SOURCES
 set(HEADERS
 	shapes.h
 	shapes/convex_poly.h
+	shapes/platonic_solid.h
 )
 
 # Add to our target

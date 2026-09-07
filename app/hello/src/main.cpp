@@ -73,7 +73,8 @@ public:
 	/// Default constructor.
 	SimpleShapesApplet()
 		: shapes{
-			std::make_unique<ConvexPolygon>()
+			std::make_unique<ConvexPolygon>(),
+			std::make_unique<PlatonicSolid>()
 		}
 	{}
 
@@ -146,6 +147,8 @@ public:
 		SDL_GPUGraphicsPipelineTargetInfo targetInfo {};
 		targetInfo.color_target_descriptions = &colorTarget;
 		targetInfo.num_color_targets = 1;
+		targetInfo.has_depth_stencil_target = true;
+		targetInfo.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
 
 		SDL_GPUGraphicsPipelineCreateInfo pipelineInfo {};
 		pipelineInfo.vertex_shader = vertexShader;

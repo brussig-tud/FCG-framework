@@ -43,6 +43,7 @@ namespace fcg {
 /// The list of implemented simple shapes
 enum class SimpleShapes {
 	ConvexPolygon,
+	PlatonicSolid,
 	NUM
 };
 
@@ -209,6 +210,9 @@ private:
 
 // The convex polygon shape.
 #include "shapes/convex_poly.h"
+
+// The platonic solid shape.
+#include "shapes/platonic_solid.h"
 
 
 #endif  // __FCG_HELLO_SHAPES_H__
