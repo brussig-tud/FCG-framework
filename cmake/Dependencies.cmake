@@ -33,6 +33,8 @@ CPMFindPackage(
 		# XTest is a niche runtime feature (X11 mouse warping, currently disabled
 		# upstream) also used by SDL's own tests - off avoids the libxtst dependency
 		"SDL_X11_XTEST OFF"
+		# We don't need any screensaver functionality - off avoids this niche dependency
+		"SDL_X11_XSCRNSAVER OFF"
 )
 
 # GLM: header-only math library (vector/matrix types, geometry utilities).
