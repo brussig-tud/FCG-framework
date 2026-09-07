@@ -282,8 +282,11 @@ void OrbitCamera::gui (Device& device, Player& player)
 
 	if (ImGui::CollapsingHeader("Combined", ImGuiTreeNodeFlags_DefaultOpen)) {
 		glm::vec3 focus = focalPoint();
-		if (ImGui::DragFloat3("Focal point", &focus.x, 0.01f)) {
+		if (ImGui::DragFloat3("focus", &focus.x, 0.01f)) {
 			setFocalPoint(focus);
+		}
+		if (ImGui::Button("Reset focus")) {
+			setFocalPoint(glm::vec3(0));
 		}
 	}
 
