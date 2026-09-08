@@ -100,6 +100,17 @@ class FCG_FRAMEWORK_EXPORT OrbitCamera : public Applet
 		glm::uvec2 clickPos;
 	};
 
+	struct FocusAnimation {
+		/// The focal point when the animation began.
+		glm::vec3 start;
+
+		/// The resolved world-space focus point to transition to.
+		glm::vec3 target;
+
+		/// Accumulated seconds since the animation began, in [0, duration].
+		float elapsed;
+	};
+
 
 public:
 
@@ -221,7 +232,7 @@ private:
 	bool dragStartedWithShift = false;
 
 	/// For handling double-click-to-focus actions.
-	std::variant<std::monostate, PendingReadbackInfo, glm::vec3> focusChange;
+	std::variant<std::monostate, PendingReadbackInfo, glm::vec3, FocusAnimation> focusChange;
 };
 
 

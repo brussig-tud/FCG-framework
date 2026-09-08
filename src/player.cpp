@@ -5,6 +5,7 @@
 //
 
 // C++ STL
+#include <format>
 #include <variant>
 
 // SDL3
@@ -85,6 +86,8 @@ void Player::setWindowTitle (const std::string &title)
 }
 
 void Player::pushContinuousRedraw () {
+	if (m_numContinuousRedrawRequests == 0)
+		SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "fcg::Player: starting continuous redraw");
 	++m_numContinuousRedrawRequests;
 }
 
@@ -99,6 +102,8 @@ void Player::popContinuousRedraw ()
 		return;
 	}
 	--m_numContinuousRedrawRequests;
+	if (m_numContinuousRedrawRequests == 0)
+		SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "fcg::Player: stopping continuous redraw");
 }
 
 auto Player::continuousRedrawRequested () const -> bool {
@@ -179,9 +184,7 @@ auto Player::viewportSize() const -> glm::uvec2 {
 
 	// Submit and obtain a fence.
 	SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdBuf);
-	depthReadback.emplace(ReadbackState<float>{
-		.device=device, .extent=extent, .stride=glm::vec2(1, extent.x), .state=fence, .token=readbackToken
-	});
+	depthReadback.emplace(device, extent, glm::vec2(1, extent.x), fence, readbackToken);
 
 	// Done!
 	return readbackToken;

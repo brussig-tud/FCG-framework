@@ -140,6 +140,9 @@ inline auto rotateAround (const glm::vec3& v, float angle, const glm::vec3& axis
 	return v * c + glm::cross(axis, v) * s + axis * glm::dot(axis, v) * (1.f - c);
 }
 
+// Duration of the smooth focus-point transition, in seconds.
+constexpr float focusAnimDuration = 0.5f;
+
 } // namespace
 
 void OrbitCamera::onEvent (const Event& event, EventContext& context, Player& player)
@@ -365,11 +368,21 @@ void OrbitCamera::update (Device& device, Player& player, float dt)
 	}
 	if (std::holds_alternative<glm::vec3>(focusChange))
 	{
-		// TODO: This should smoothly transition over the course of half a second
 		const auto &newFocus = std::get<glm::vec3>(focusChange);
-		translateToFocalPoint(newFocus);
-		focusChange = std::monostate{};
-		player.popContinuousRedraw();
+		focusChange = FocusAnimation{.start=focalPoint(), .target=newFocus, .elapsed=0.f};
+	}
+	if (std::holds_alternative<FocusAnimation>(focusChange))
+	{
+		auto &anim = std::get<FocusAnimation>(focusChange);
+		anim.elapsed += dt;
+		const float t = glm::clamp(anim.elapsed / focusAnimDuration, 0.f, 1.f);
+		const float e = glm::smoothstep(0.f, 1.f, t);
+		translateToFocalPoint(glm::mix(anim.start, anim.target, e));
+		if (t >= 1.f) {
+			translateToFocalPoint(anim.target);
+			focusChange = std::monostate{};
+			player.popContinuousRedraw();
+		}
 	}
 	if (!projMatrix.has_value()) {
 		// Recompute the projection matrix
@@ -389,9 +402,8 @@ void OrbitCamera::update (Device& device, Player& player, float dt)
 }
 
 void OrbitCamera::render (
-	Device& device, RenderState& renderState, SDL_GPURenderPass* renderPass,
-	SDL_GPUCommandBuffer* /*commandBuffer*/, Player& player
-) {
+	Device&, RenderState &renderState, SDL_GPURenderPass*, SDL_GPUCommandBuffer*, Player&
+){
 	// We assume to be the first to touch the stack, so no pushing or popping, we just replace the respective initial
 	// matrices. Would need a beforeRender/afterRender pair of hooks to push/pop if we wanted to do it properly.
 	renderState.loadModelviewMatrix(*viewMatrix);
