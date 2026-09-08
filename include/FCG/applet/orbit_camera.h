@@ -10,8 +10,9 @@
 
 // C++ STL
 #include <cmath>
-#include <memory>
 #include <optional>
+#include <variant>
+#include <chrono>
 
 // FCG Framework
 #include <FCG/applet.h>
@@ -88,6 +89,18 @@ struct OrbitCameraParams
 /// An applet implementing an orbit camera.
 class FCG_FRAMEWORK_EXPORT OrbitCamera : public Applet
 {
+	////
+	// Types
+
+	struct PendingReadbackInfo {
+		/// The token associated with the readback operation.
+		uint64_t token;
+
+		/// The mouse click coordinates.
+		glm::uvec2 clickPos;
+	};
+
+
 public:
 
 	////
@@ -113,7 +126,7 @@ public:
 
 	void gui (Device &device, Player &player) override;
 
-	void update (Device &device, Player &player) override;
+	void update (Device &device, Player &player, float dt) override;
 
 	void render (
 		Device &device, RenderState &renderState, SDL_GPURenderPass *renderPass,
@@ -173,6 +186,10 @@ public:
 	/// Set a new focal point, updating the \link camera parameters params \endlink accordingly.
 	void setFocalPoint (const glm::vec3 &focalPoint);
 
+	/// Translates the camera such that the given point becomes the new focal point, updating the
+	/// \link camera parameters params \endlink accordingly.
+	void translateToFocalPoint (const glm::vec3 &focalPoint);
+
 
 private:
 
@@ -197,8 +214,14 @@ private:
 	/// The mouse button currently dragging the camera, or Unknown.
 	MouseButton activeDragButton = MouseButton::Unknown;
 
+	/// The time of the last left mouse click, if any, for double-click detection.
+	std::optional<std::chrono::steady_clock::time_point> lastLeftClickTime;
+
 	/// Whether Shift was held when the active drag started.
 	bool dragStartedWithShift = false;
+
+	/// For handling double-click-to-focus actions.
+	std::variant<std::monostate, PendingReadbackInfo, glm::vec3> focusChange;
 };
 
 

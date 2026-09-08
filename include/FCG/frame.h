@@ -99,6 +99,16 @@ public:
 		return m_commandBuffer;
 	}
 
+	/// The frame's color target, if any.
+	[[nodiscard]] auto colorTarget () const -> SDL_GPUTexture* {
+		return m_targetTexture;
+	}
+
+	/// The frame's depth texture, if any.
+	[[nodiscard]] auto depthTexture () const -> SDL_GPUTexture* {
+		return m_depthTexture;
+	}
+
 
 	////
 	// Methods
@@ -128,6 +138,7 @@ public:
 	/// this function is to establish an explicit workflow, violations of which can be easily detected and thus avoid
 	/// spurious or hard to track down bugs or crashes.
 	void endRenderPass ();
+
 
 private:
 

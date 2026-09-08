@@ -9,6 +9,7 @@
 #include <memory>
 #include <vector>
 #include <ranges>
+#include <chrono>
 
 // SDL3
 #include <SDL3/SDL.h>
@@ -110,9 +111,9 @@ void handleEvent (const SDL_Event &event, Window &window, Gui &gui, Player &play
 
 
 /// Run the given application(s).
-FCG_FRAMEWORK_EXPORT int run (
+FCG_FRAMEWORK_EXPORT auto run (
 	std::vector<std::unique_ptr<Applet>> _applets, PlayerSettings &&settings
-){
+) -> int {
 	// Info trace
 	SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: starting up...");
 
@@ -147,7 +148,7 @@ FCG_FRAMEWORK_EXPORT int run (
 			auto &device = maybeDevice.value();
 
 			// Create the player that the applets will interact with
-			Player player(window.get());
+			Player player(device, window.get());
 
 			// Claim the window for the GPU device, then create the framework GUI on top of it. The GUI instance is
 			// destroyed at scope exit, before the window is unclaimed below.
@@ -163,6 +164,11 @@ FCG_FRAMEWORK_EXPORT int run (
 			else {
 				exitCode = EXIT_FAILURE;
 				player.requestClose();
+			}
+			/* First-time window-related state initialization */ {
+				std::optional<glm::uvec2> dummy;
+				window->pollViewportSize(dummy);
+				player.recreateDepthReadbackBuffer();
 			}
 			std::vector<std::unique_ptr<Applet>> applets = std::move(_applets);
 			if (gui)
@@ -187,8 +193,16 @@ FCG_FRAMEWORK_EXPORT int run (
 			// redraws, tracked via the pending redraws counter. It is initialized to 2 so the first frames are drawn
 			// right after startup instead of only after some external event unblocks the loop.
 			unsigned pendingRedraws = 2;
+			auto lastFrameTime = std::chrono::high_resolution_clock::now();
 			while (!player.shouldClose())
 			{
+				// Begin the new rendering frame. We need it now because the applets might need to interact with the
+				// player in ways that require the current target textures during their update() or gui() hools (like
+				// scheduling readbacks upon user interaction).
+				player.frame = window->beginFrame(device);
+				// - any readbacks should be done now
+				player.collectReadbackResults();
+
 				// Event handling
 				if (player.continuousRedrawRequested() || pendingRedraws > 0)
 				{
@@ -213,6 +227,7 @@ FCG_FRAMEWORK_EXPORT int run (
 					const int waitTimeoutMs = gui->needsPeriodicRedraw() ? Gui::periodicRedrawIntervalMs : -1;
 					SDL_Event event;
 					if (SDL_WaitEventTimeout(&event, waitTimeoutMs)) {
+						lastFrameTime = std::chrono::high_resolution_clock::now();
 						handleEvent(event, *window, *gui, player, applets);
 						while (SDL_PollEvent(&event))
 							handleEvent(event, *window, *gui, player, applets);
@@ -237,36 +252,50 @@ FCG_FRAMEWORK_EXPORT int run (
 				// The window may have been resized since the last frame – in blocking mode rendering does not
 				// necessarily happen right after a resize event, so keep the viewport dimensions fresh
 				std::optional<glm::uvec2> oldViewportSize;
-				if (window->pollViewportSize(oldViewportSize))
+				if (window->pollViewportSize(oldViewportSize)) {
+					player.recreateDepthReadbackBuffer();
 					for (auto &applet : applets)
 						applet->onViewportResize(device, oldViewportSize.value(), player);
+				}
+
+				// Update frame stats
+				auto now = std::chrono::high_resolution_clock::now();
+				const auto frameDur = std::chrono::duration_cast<std::chrono::nanoseconds>(now - lastFrameTime);
+				lastFrameTime = now;
+				const auto dt = (float)(double(frameDur.count()) / 1000000000.);
 
 				// Begin the GUI frame, then update applet state and let them define their GUI
 				gui->newFrame();
 				for (auto &applet : applets) {
 					applet->gui(device, player);
-					applet->update(device, player);
+					applet->update(device, player, dt);
 				}
 
 				// Render a frame: all applets draw into the primary render pass (with depth buffer), then the GUI is
 				// rendered on top in a separate overlay pass without depth attachment. The ImGui SDL GPU backend
 				// creates pipelines without a depth-stencil target, so it must be recorded into a pass that has none.
-				auto frame = window->beginFrame(device);
-				gui->prepareRender(frame);
-				if (frame)
+				gui->prepareRender(player.frame);
+				if (player.frame)
 				{
 					auto rs = RenderState(device);
-					if (auto *renderPass = frame->beginRenderPass(player.clearColor())) {
+					if (auto *renderPass = player.frame->beginRenderPass(player.clearColor())) {
 						for (auto &applet : applets)
-							applet->render(device, rs, renderPass, frame->commandBuffer(), player);
-						frame->endRenderPass();
+							applet->render(
+								device, rs, renderPass, player.frame->commandBuffer(), player
+							);
+						player.frame->endRenderPass();
 					}
-					if (auto *overlayPass = frame->beginOverlayRenderPass()) {
-						gui->renderDrawData(frame->commandBuffer(), overlayPass);
-						frame->endRenderPass();
+					if (auto *overlayPass = player.frame->beginOverlayRenderPass()) {
+						gui->renderDrawData(player.frame->commandBuffer(), overlayPass);
+						player.frame->endRenderPass();
 					}
+					player.frame = nullptr;
 					window->endFrame();
 				}
+			}
+			if (player.frame) {
+				window->endFrame();
+				player.frame = nullptr;
 			}
 
 			// Clean up

@@ -124,6 +124,13 @@ void OrbitCamera::setFocalPoint (const glm::vec3& focalPoint)
 	projMatrix.reset();
 }
 
+void OrbitCamera::translateToFocalPoint (const glm::vec3& focalPoint) {
+	const glm::vec3 v = focalPoint - this->focalPoint();
+	m_params.extrinsics.eye += v;
+	viewMatrix.reset();
+	m_focalPoint.reset();
+}
+
 namespace {
 
 // Build a rotation of `angle` radians around `axis` and apply it to a vector.
@@ -143,9 +150,32 @@ void OrbitCamera::onEvent (const Event& event, EventContext& context, Player& pl
 	constexpr float zoomFraction = 0.125f;
 	constexpr float rollSpeed = .01f;
 
-	if (event.type() == EventType::MouseButtonDown) {
+	if (event.type() == EventType::MouseButtonDown)
+	{
 		const auto* mouse = event.data<MouseButtonEvent>();
-		if (!mouse) return;
+		if (!mouse)
+			return;
+		if (mouse->button == MouseButton::Left && !lastLeftClickTime) {
+			lastLeftClickTime = std::chrono::steady_clock::now();
+		}
+		else if (mouse->button == MouseButton::Left && lastLeftClickTime) {
+			const auto now = std::chrono::steady_clock::now();
+			const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+				now - *lastLeftClickTime
+			);
+			if (elapsed.count() < 250 && std::holds_alternative<std::monostate>(focusChange)) {
+				focusChange = PendingReadbackInfo{
+					.token=player.scheduleDepthReadback(), .clickPos=glm::vec2(mouse->x, mouse->y)
+				};
+				context.markHandled();
+				lastLeftClickTime.reset();
+			}
+			else
+				lastLeftClickTime = std::chrono::steady_clock::now();
+		}
+		else {
+			lastLeftClickTime.reset();
+		}
 		if (mouse->button == MouseButton::Left || mouse->button == MouseButton::Middle || mouse->button == MouseButton::Right) {
 			activeDragButton = mouse->button;
 			dragStartedWithShift = (event.raw().type == SDL_EVENT_MOUSE_BUTTON_DOWN)
@@ -294,13 +324,53 @@ void OrbitCamera::gui (Device& device, Player& player)
 		ImGui::SliderFloat("Speed factor", &speedFactor, 0.01f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
 		ImGui::Text("LMB drag: orbit, Shift+LMB drag: roll");
 		ImGui::Text("RMB drag: pan, Wheel/MMB drag: dolly");
+		ImGui::Text("double click object to move focus");
 	}
 
 	ImGui::End();
 }
 
-void OrbitCamera::update (Device& device, Player& player)
+void OrbitCamera::update (Device& device, Player& player, float dt)
 {
+	if (std::holds_alternative<PendingReadbackInfo>(focusChange))
+	{
+		const auto &rbInfo = std::get<PendingReadbackInfo>(focusChange);
+		const auto texel = player.getDepthReadbackResult(rbInfo.token).texel(glm::uvec2(rbInfo.clickPos));
+		if (texel < 1.f && projMatrix && viewMatrix)
+		{
+			const glm::vec4 ndc = glm::vec4(
+				2*((float)rbInfo.clickPos.x/(float)player.viewportSize().x) - 1.f,
+				1.f - 2*((float)rbInfo.clickPos.y/(float)player.viewportSize().y),
+				texel, 1.f
+			);
+			glm::vec4 worldPos = glm::inverse(projMatrix.value()*viewMatrix.value()) * ndc; worldPos /= worldPos.w;
+			SDL_Log(
+				"OrbitCamera: depth readback at %u,%u: depth=%f -> world=(%f,%f,%f)",
+				(unsigned)rbInfo.clickPos.x, (unsigned)rbInfo.clickPos.y, texel, worldPos.x, worldPos.y, worldPos.z
+			);
+			focusChange = worldPos / worldPos.w;
+			player.pushContinuousRedraw();
+		}
+		else if (texel < 1.f) {
+			// If we don't have valid matrices, we can't compute the world position, so we just discard the readback.
+			SDL_LogWarn(
+				SDL_LOG_CATEGORY_APPLICATION,
+				"OrbitCamera: matrices are dirty, discarding focus change from depth readback"
+			);
+			focusChange = std::monostate{};
+		}
+		else
+			// No depth value at texel
+			focusChange = std::monostate{};
+	}
+	if (std::holds_alternative<glm::vec3>(focusChange))
+	{
+		// TODO: This should smoothly transition over the course of half a second
+		const auto &newFocus = std::get<glm::vec3>(focusChange);
+		translateToFocalPoint(newFocus);
+		focusChange = std::monostate{};
+		player.popContinuousRedraw();
+	}
 	if (!projMatrix.has_value()) {
 		// Recompute the projection matrix
 		const auto &vp = player.viewportSize();

@@ -80,18 +80,17 @@ public:
 			SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "Creating the pipeline failed: %s", SDL_GetError());
 	}
 
-	void onViewportResize (fcg::Device &device, const glm::uvec2 &oldViewportSize, fcg::Player &player) override {}
+	void onViewportResize (fcg::Device&, const glm::uvec2&, fcg::Player&) override {}
 
-	void gui (fcg::Device &device, fcg::Player &player) override {}
+	void gui (fcg::Device&, fcg::Player&) override {}
 
-	void update (fcg::Device &device, fcg::Player &player) override {
+	void update (fcg::Device&, fcg::Player &player, float) override {
 		if (m_remainingFrames && --m_remainingFrames == 0)
 			player.requestClose();
 	}
 
 	void render (
-		fcg::Device &device, fcg::RenderState &renderState, SDL_GPURenderPass *renderPass,
-		SDL_GPUCommandBuffer *commandBuffer, fcg::Player &player
+		fcg::Device&, fcg::RenderState&, SDL_GPURenderPass *renderPass, SDL_GPUCommandBuffer*, fcg::Player&
 	) override {
 		if (!m_pipeline)
 			return;

@@ -199,7 +199,7 @@ public:
 		ImGui::End();
 	}
 
-	void update (fcg::Device &device, fcg::Player &player) override {
+	void update (fcg::Device &device, fcg::Player &player, float dt) override {
 		// Make sure our shape is up-to-date and ready to render
 		shapes[selectedShape]->update(device);
 	}

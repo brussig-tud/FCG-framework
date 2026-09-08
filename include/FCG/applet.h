@@ -103,11 +103,13 @@ public:
 	virtual void gui (Device &device, Player &player) = 0;
 
 	/// Run all code for updating applet state for the next frame.
-	/// TODO: additional arguments required for update, for example frame stats (delta-t and so on)
 	///
 	/// \param device The active SDL GPU device that is used for rendering.
 	/// \param player Reference to the central applet player.
-	virtual void update (Device &device, Player &player) = 0;
+	/// \param dt
+	/// 	The time elapsed since the last frame, in seconds. In case the app just woke up from blocking on an empty
+	/// 	event queue, this is guaranteed to be very small (typically a few microseconds or less).
+	virtual void update (Device &device, Player &player, float dt) = 0;
 
 	/// Perform all rendering the applet might want to do.
 	///
