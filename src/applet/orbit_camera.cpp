@@ -362,9 +362,13 @@ void OrbitCamera::update (Device& device, Player& player, float dt)
 			);
 			focusChange = std::monostate{};
 		}
-		else
-			// No depth value at texel
+		else {
+			SDL_Log(
+				"OrbitCamera: depth readback at %u,%u: depth=%f -> no fragment, discard",
+				(unsigned)rbInfo.clickPos.x, (unsigned)rbInfo.clickPos.y, texel
+			);
 			focusChange = std::monostate{};
+		}
 	}
 	if (std::holds_alternative<glm::vec3>(focusChange))
 	{

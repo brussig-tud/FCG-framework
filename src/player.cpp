@@ -87,7 +87,7 @@ void Player::setWindowTitle (const std::string &title)
 
 void Player::pushContinuousRedraw () {
 	if (m_numContinuousRedrawRequests == 0)
-		SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "fcg::Player: starting continuous redraw");
+		SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: starting continuous redraw");
 	++m_numContinuousRedrawRequests;
 }
 
@@ -103,7 +103,7 @@ void Player::popContinuousRedraw ()
 	}
 	--m_numContinuousRedrawRequests;
 	if (m_numContinuousRedrawRequests == 0)
-		SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "fcg::Player: stopping continuous redraw");
+		SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: stopping continuous redraw");
 }
 
 auto Player::continuousRedrawRequested () const -> bool {
