@@ -8,6 +8,8 @@
 #include <SDL3/SDL.h>
 
 // GLM library
+#define GLM_FORCE_SWIZZLE
+#include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 // Dear ImGui
@@ -39,6 +41,69 @@ namespace fcg::applet {
 ////
 // Orbit Camera
 
+void OrbitCamera::DoubleClickToFocusController::on (
+	const std::monostate&, const glm::uvec4 &clickGeometry, StateMachine &fsm
+){
+	fsm.transition<glm::uvec4>(clickGeometry);
+}
+
+void OrbitCamera::DoubleClickToFocusController::on (
+	const glm::uvec4 &clickGeometry, std::pair<Player&, const TextureView<float>&> depthReady, StateMachine &fsm
+){
+	const auto &[player, depthBuffer] = depthReady;
+	const auto &vpSize = clickGeometry.xy(), &clickPos = clickGeometry.zw();
+	const auto texel = depthBuffer.texel(glm::uvec2(clickPos));
+	if (texel < 1.f && camera.projMatrix && camera.viewMatrix)
+	{
+		const glm::vec4 ndc = glm::vec4(
+			2*((float)clickPos.x/(float)vpSize.x) - 1.f,
+			1.f - 2*((float)clickPos.y/(float)vpSize.y),
+			texel, 1.f
+		);
+		glm::vec4 worldPos = glm::inverse(camera.projMatrix.value()*camera.viewMatrix.value()) * ndc;
+		          worldPos /= worldPos.w;
+		SDL_Log(
+			"OrbitCamera: depth readback at %u,%u: depth=%f -> world=(%f,%f,%f)",
+			clickPos.x, clickPos.y, texel, worldPos.x, worldPos.y, worldPos.z
+		);
+		fsm.transition<FocusAnimation>(/*start:*/camera.focalPoint(), /*target:*/worldPos/worldPos.w, /*elapsed:*/0.f);
+		player.pushContinuousRedraw();
+	}
+	else if (texel < 1.f) {
+		// If we don't have valid matrices, we can't compute the world position, so we just discard the readback.
+		SDL_LogWarn(
+			SDL_LOG_CATEGORY_APPLICATION,
+			"OrbitCamera: matrices are dirty, discarding focus change from depth readback"
+		);
+		fsm.transition<std::monostate>();
+	}
+	else {
+		SDL_Log(
+			"OrbitCamera: depth readback at %u,%u: depth=%f -> no fragment, discard", clickPos.x, clickPos.y, texel
+		);
+		fsm.transition<std::monostate>();
+	}
+}
+
+void OrbitCamera::DoubleClickToFocusController::on (
+	FocusAnimation &curState, std::pair<Player&,float> animUpdateInfo, StateMachine &fsm
+){
+	// Duration of the smooth focus-point transition, in seconds.
+	constexpr float focusAnimDuration = 0.5f;
+
+	// Update logic
+	const auto [player, dt] = animUpdateInfo;
+	curState.elapsed += dt;
+	const float t = glm::clamp(curState.elapsed / focusAnimDuration, 0.f, 1.f);
+	const float e = glm::smoothstep(0.f, 1.f, t);
+	camera.translateToFocalPoint(glm::mix(curState.start, curState.target, e));
+	if (t >= 1.f) {
+		camera.translateToFocalPoint(curState.target);
+		fsm.transition<std::monostate>();
+		player.popContinuousRedraw();
+	}
+}
+
 OrbitCamera::OrbitCamera()
 	: m_params(OrbitCameraParams{
 		.intrinsics = {.fovY=60, .f=3, .zNear=.125f, .zFar=100},
@@ -55,7 +120,7 @@ auto OrbitCamera::name () -> std::string& {
 
 void OrbitCamera::init (Device&, Player&) {}
 
-void OrbitCamera::onViewportResize (Device& device, const glm::uvec2& oldViewportSize, Player& player) {
+void OrbitCamera::onViewportResize (Device &device, const glm::uvec2 &oldViewportSize, Player &player) {
 	// Potentially updated aspect ratio will require matrix recomputation
 	projMatrix.reset();
 }
@@ -82,24 +147,24 @@ void OrbitCamera::setFarPlane (float zFar) {
 	projMatrix.reset();
 }
 
-void OrbitCamera::setEye (const glm::vec3& eye) {
+void OrbitCamera::setEye (const glm::vec3 &eye) {
 	m_params.extrinsics.eye = eye;
 	m_focalPoint.reset();
 	viewMatrix.reset();
 }
 
-void OrbitCamera::setDir (const glm::vec3& dir) {
+void OrbitCamera::setDir (const glm::vec3 &dir) {
 	m_params.extrinsics.dir = glm::normalize(dir);
 	m_focalPoint.reset();
 	viewMatrix.reset();
 }
 
-void OrbitCamera::setUp (const glm::vec3& up) {
+void OrbitCamera::setUp (const glm::vec3 &up) {
 	m_params.extrinsics.up = glm::normalize(up);
 	viewMatrix.reset();
 }
 
-void OrbitCamera::setFocalPoint (const glm::vec3& focalPoint)
+void OrbitCamera::setFocalPoint (const glm::vec3 &focalPoint)
 {
 	// Bail out on degenerate case
 	const glm::vec3 v = focalPoint - m_params.extrinsics.eye;
@@ -124,7 +189,7 @@ void OrbitCamera::setFocalPoint (const glm::vec3& focalPoint)
 	projMatrix.reset();
 }
 
-void OrbitCamera::translateToFocalPoint (const glm::vec3& focalPoint) {
+void OrbitCamera::translateToFocalPoint (const glm::vec3 &focalPoint) {
 	const glm::vec3 v = focalPoint - this->focalPoint();
 	m_params.extrinsics.eye += v;
 	viewMatrix.reset();
@@ -134,18 +199,15 @@ void OrbitCamera::translateToFocalPoint (const glm::vec3& focalPoint) {
 namespace {
 
 // Build a rotation of `angle` radians around `axis` and apply it to a vector.
-inline auto rotateAround (const glm::vec3& v, float angle, const glm::vec3& axis) -> glm::vec3 {
+inline auto rotateAround (const glm::vec3 &v, float angle, const glm::vec3 &axis) -> glm::vec3 {
 	const float c = std::cos(angle);
 	const float s = std::sin(angle);
 	return v * c + glm::cross(axis, v) * s + axis * glm::dot(axis, v) * (1.f - c);
 }
 
-// Duration of the smooth focus-point transition, in seconds.
-constexpr float focusAnimDuration = 0.5f;
-
 } // namespace
 
-void OrbitCamera::onEvent (const Event& event, EventContext& context, Player& player)
+void OrbitCamera::onEvent (const Event &event, EventContext &context, Player &player)
 {
 	constexpr float orbitSpeed = .01f;
 	constexpr float panScale = .001f;
@@ -166,10 +228,10 @@ void OrbitCamera::onEvent (const Event& event, EventContext& context, Player& pl
 			const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
 				now - *lastLeftClickTime
 			);
-			if (elapsed.count() < 250 && std::holds_alternative<std::monostate>(focusChange_old)) {
-				focusChange_old = PendingReadbackInfo{
-					.token=player.scheduleDepthReadback(), .clickPos=glm::vec2(mouse->x, mouse->y)
-				};
+			if (elapsed.count() < 250) {
+				assert(!pendingDepthReadback); // this would be a logic error
+				pendingDepthReadback = player.scheduleDepthReadback();
+				focusChange.fsm.handle(glm::uvec4(player.viewportSize(), mouse->x, mouse->y));
 				context.markHandled();
 				lastLeftClickTime.reset();
 			}
@@ -200,7 +262,7 @@ void OrbitCamera::onEvent (const Event& event, EventContext& context, Player& pl
 
 	if (event.type() == EventType::MouseMotion)
 	{
-		auto handleTranslation = [this](const glm::vec3& translation) {
+		auto handleTranslation = [this](const glm::vec3 &translation) {
 			m_params.extrinsics.eye += translation;
 			m_focalPoint.reset();
 			viewMatrix.reset();
@@ -212,9 +274,9 @@ void OrbitCamera::onEvent (const Event& event, EventContext& context, Player& pl
 		const float dx = motion->relativeX;
 		const float dy = motion->relativeY;
 		const float f = m_params.intrinsics.f;
-		const auto& dir = m_params.extrinsics.dir;
-		const auto& up = m_params.extrinsics.up;
-		const auto& eye = m_params.extrinsics.eye;
+		const auto &dir = m_params.extrinsics.dir;
+		const auto &up = m_params.extrinsics.up;
+		const auto &eye = m_params.extrinsics.eye;
 
 		if (activeDragButton == MouseButton::Left)
 		{
@@ -265,17 +327,16 @@ void OrbitCamera::onEvent (const Event& event, EventContext& context, Player& pl
 		viewMatrix.reset();
 		projMatrix.reset();
 		context.markHandled();
-		return;
 	}
 }
 
-void OrbitCamera::gui (Device& device, Player& player)
+void OrbitCamera::gui (Device &device, Player &player)
 {
 	ImGui::SetNextWindowSize({0, 0}, ImGuiCond_FirstUseEver);
 	ImGui::Begin("Orbit Camera");
 
-	auto& in = m_params.intrinsics;
-	auto& ex = m_params.extrinsics;
+	auto &in = m_params.intrinsics;
+	auto &ex = m_params.extrinsics;
 
 	if (ImGui::CollapsingHeader("Intrinsics", ImGuiTreeNodeFlags_DefaultOpen)) {
 		float fovY = in.fovY;
@@ -333,61 +394,17 @@ void OrbitCamera::gui (Device& device, Player& player)
 	ImGui::End();
 }
 
-void OrbitCamera::update (Device& device, Player& player, float dt)
+void OrbitCamera::update (Device &device, Player &player, float dt)
 {
-	if (std::holds_alternative<PendingReadbackInfo>(focusChange_old))
-	{
-		const auto &rbInfo = std::get<PendingReadbackInfo>(focusChange_old);
-		const auto texel = player.getDepthReadbackResult(rbInfo.token).texel(glm::uvec2(rbInfo.clickPos));
-		if (texel < 1.f && projMatrix && viewMatrix)
-		{
-			const glm::vec4 ndc = glm::vec4(
-				2*((float)rbInfo.clickPos.x/(float)player.viewportSize().x) - 1.f,
-				1.f - 2*((float)rbInfo.clickPos.y/(float)player.viewportSize().y),
-				texel, 1.f
-			);
-			glm::vec4 worldPos = glm::inverse(projMatrix.value()*viewMatrix.value()) * ndc; worldPos /= worldPos.w;
-			SDL_Log(
-				"OrbitCamera: depth readback at %u,%u: depth=%f -> world=(%f,%f,%f)",
-				(unsigned)rbInfo.clickPos.x, (unsigned)rbInfo.clickPos.y, texel, worldPos.x, worldPos.y, worldPos.z
-			);
-			focusChange_old = worldPos / worldPos.w;
-			player.pushContinuousRedraw();
-		}
-		else if (texel < 1.f) {
-			// If we don't have valid matrices, we can't compute the world position, so we just discard the readback.
-			SDL_LogWarn(
-				SDL_LOG_CATEGORY_APPLICATION,
-				"OrbitCamera: matrices are dirty, discarding focus change from depth readback"
-			);
-			focusChange_old = std::monostate{};
-		}
-		else {
-			SDL_Log(
-				"OrbitCamera: depth readback at %u,%u: depth=%f -> no fragment, discard",
-				(unsigned)rbInfo.clickPos.x, (unsigned)rbInfo.clickPos.y, texel
-			);
-			focusChange_old = std::monostate{};
-		}
+	// Handle focus change animation logic
+	if (pendingDepthReadback) {
+		const auto depthBufferView = player.getDepthReadbackResult(*pendingDepthReadback);
+		pendingDepthReadback.reset();
+		focusChange.fsm.handle(std::pair<Player&, const TextureView<float>&>{player, depthBufferView});
 	}
-	if (std::holds_alternative<glm::vec3>(focusChange_old))
-	{
-		const auto &newFocus = std::get<glm::vec3>(focusChange_old);
-		focusChange_old = FocusAnimation{.start=focalPoint(), .target=newFocus, .elapsed=0.f};
-	}
-	if (std::holds_alternative<FocusAnimation>(focusChange_old))
-	{
-		auto &anim = std::get<FocusAnimation>(focusChange_old);
-		anim.elapsed += dt;
-		const float t = glm::clamp(anim.elapsed / focusAnimDuration, 0.f, 1.f);
-		const float e = glm::smoothstep(0.f, 1.f, t);
-		translateToFocalPoint(glm::mix(anim.start, anim.target, e));
-		if (t >= 1.f) {
-			translateToFocalPoint(anim.target);
-			focusChange_old = std::monostate{};
-			player.popContinuousRedraw();
-		}
-	}
+	focusChange.fsm.handle(std::pair<Player&,float>{player, dt});
+
+	// Keep matrices up-to-date
 	if (!projMatrix.has_value()) {
 		// Recompute the projection matrix
 		const auto &vp = player.viewportSize();

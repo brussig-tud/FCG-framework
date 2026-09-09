@@ -93,14 +93,6 @@ class FCG_FRAMEWORK_EXPORT OrbitCamera : public Applet
 	////
 	// Types
 
-	struct PendingReadbackInfo {
-		/// The token associated with the readback operation.
-		uint64_t token;
-
-		/// The mouse click coordinates.
-		glm::uvec2 clickPos;
-	};
-
 	struct FocusAnimation {
 		/// The focal point when the animation began.
 		glm::vec3 start;
@@ -112,11 +104,27 @@ class FCG_FRAMEWORK_EXPORT OrbitCamera : public Applet
 		float elapsed;
 	};
 
-	struct DoubleClickToFocusController {
-		DoubleClickToFocusController(OrbitCamera &camera) : camera(camera) {}
+	struct DoubleClickToFocusController
+	{
+		using StateMachine = fcg::StateMachine<
+			DoubleClickToFocusController, std::monostate, glm::uvec4, glm::vec3, FocusAnimation
+		>;
+		DoubleClickToFocusController(OrbitCamera &camera) : fsm(*this, {}), camera(camera) {}
+
+		StateMachine fsm;
 		OrbitCamera &camera;
+
+		/// Handle newly initiated double-click to focus event
+		inline void on (const std::monostate&, const glm::uvec4 &clickGeometry, StateMachine &fsm);
+
+		/// Handle depth buffer readback becoming available
+		inline void on (
+			const glm::uvec4 &curState, std::pair<Player&, const TextureView<float>&> depthReady, StateMachine &fsm
+		);
+
+		/// Handle new update tick while animating
+		inline void on (FocusAnimation &curState, std::pair<Player&,float> animUpdateInfo, StateMachine &fsm);
 	};
-	friend class DoubleClickToFocusController;
 
 
 public:
@@ -238,16 +246,14 @@ private:
 	/// Whether Shift was held when the active drag started.
 	bool dragStartedWithShift = false;
 
-	/// For handling double-click-to-focus actions. TODO: transition to FSM-based \ref focusChange.
-	std::variant<std::monostate, PendingReadbackInfo, glm::vec3, FocusAnimation> focusChange_old;
+	/*/// For handling double-click-to-focus actions. TODO: transition to FSM-based \ref focusChange.
+	std::variant<std::monostate, PendingReadbackInfo, glm::vec3, FocusAnimation> focusChange_old;*/
+
+	/// For signaling if we wait for a depth buffer readback (contains the token identifying the readback).
+	std::optional<uint64_t> pendingDepthReadback;
 
 	/// For handling double-click-to-focus actions. The controller for \ref focusChange.
-	DoubleClickToFocusController focusChangeController{*this};
-
-	/// The double-click-to-focus state machine.
-	StateMachine<
-		DoubleClickToFocusController, std::monostate, PendingReadbackInfo, glm::vec3, FocusAnimation
-	> focusChange{focusChangeController, {}};
+	DoubleClickToFocusController focusChange{*this};
 };
 
 
