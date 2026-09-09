@@ -14,9 +14,10 @@
 #include <variant>
 #include <chrono>
 
-// FCG Framework
-#include <FCG/applet.h>
-
+// Local includes
+#include "FCG/export.h"
+#include "FCG/applet.h"
+#include "FCG/util.h"
 
 
 
@@ -110,6 +111,12 @@ class FCG_FRAMEWORK_EXPORT OrbitCamera : public Applet
 		/// Accumulated seconds since the animation began, in [0, duration].
 		float elapsed;
 	};
+
+	struct DoubleClickToFocusController {
+		DoubleClickToFocusController(OrbitCamera &camera) : camera(camera) {}
+		OrbitCamera &camera;
+	};
+	friend class DoubleClickToFocusController;
 
 
 public:
@@ -231,8 +238,16 @@ private:
 	/// Whether Shift was held when the active drag started.
 	bool dragStartedWithShift = false;
 
-	/// For handling double-click-to-focus actions.
-	std::variant<std::monostate, PendingReadbackInfo, glm::vec3, FocusAnimation> focusChange;
+	/// For handling double-click-to-focus actions. TODO: transition to FSM-based \ref focusChange.
+	std::variant<std::monostate, PendingReadbackInfo, glm::vec3, FocusAnimation> focusChange_old;
+
+	/// For handling double-click-to-focus actions. The controller for \ref focusChange.
+	DoubleClickToFocusController focusChangeController{*this};
+
+	/// The double-click-to-focus state machine.
+	StateMachine<
+		DoubleClickToFocusController, std::monostate, PendingReadbackInfo, glm::vec3, FocusAnimation
+	> focusChange{focusChangeController, {}};
 };
 
 

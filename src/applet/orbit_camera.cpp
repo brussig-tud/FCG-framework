@@ -166,8 +166,8 @@ void OrbitCamera::onEvent (const Event& event, EventContext& context, Player& pl
 			const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
 				now - *lastLeftClickTime
 			);
-			if (elapsed.count() < 250 && std::holds_alternative<std::monostate>(focusChange)) {
-				focusChange = PendingReadbackInfo{
+			if (elapsed.count() < 250 && std::holds_alternative<std::monostate>(focusChange_old)) {
+				focusChange_old = PendingReadbackInfo{
 					.token=player.scheduleDepthReadback(), .clickPos=glm::vec2(mouse->x, mouse->y)
 				};
 				context.markHandled();
@@ -335,9 +335,9 @@ void OrbitCamera::gui (Device& device, Player& player)
 
 void OrbitCamera::update (Device& device, Player& player, float dt)
 {
-	if (std::holds_alternative<PendingReadbackInfo>(focusChange))
+	if (std::holds_alternative<PendingReadbackInfo>(focusChange_old))
 	{
-		const auto &rbInfo = std::get<PendingReadbackInfo>(focusChange);
+		const auto &rbInfo = std::get<PendingReadbackInfo>(focusChange_old);
 		const auto texel = player.getDepthReadbackResult(rbInfo.token).texel(glm::uvec2(rbInfo.clickPos));
 		if (texel < 1.f && projMatrix && viewMatrix)
 		{
@@ -351,7 +351,7 @@ void OrbitCamera::update (Device& device, Player& player, float dt)
 				"OrbitCamera: depth readback at %u,%u: depth=%f -> world=(%f,%f,%f)",
 				(unsigned)rbInfo.clickPos.x, (unsigned)rbInfo.clickPos.y, texel, worldPos.x, worldPos.y, worldPos.z
 			);
-			focusChange = worldPos / worldPos.w;
+			focusChange_old = worldPos / worldPos.w;
 			player.pushContinuousRedraw();
 		}
 		else if (texel < 1.f) {
@@ -360,31 +360,31 @@ void OrbitCamera::update (Device& device, Player& player, float dt)
 				SDL_LOG_CATEGORY_APPLICATION,
 				"OrbitCamera: matrices are dirty, discarding focus change from depth readback"
 			);
-			focusChange = std::monostate{};
+			focusChange_old = std::monostate{};
 		}
 		else {
 			SDL_Log(
 				"OrbitCamera: depth readback at %u,%u: depth=%f -> no fragment, discard",
 				(unsigned)rbInfo.clickPos.x, (unsigned)rbInfo.clickPos.y, texel
 			);
-			focusChange = std::monostate{};
+			focusChange_old = std::monostate{};
 		}
 	}
-	if (std::holds_alternative<glm::vec3>(focusChange))
+	if (std::holds_alternative<glm::vec3>(focusChange_old))
 	{
-		const auto &newFocus = std::get<glm::vec3>(focusChange);
-		focusChange = FocusAnimation{.start=focalPoint(), .target=newFocus, .elapsed=0.f};
+		const auto &newFocus = std::get<glm::vec3>(focusChange_old);
+		focusChange_old = FocusAnimation{.start=focalPoint(), .target=newFocus, .elapsed=0.f};
 	}
-	if (std::holds_alternative<FocusAnimation>(focusChange))
+	if (std::holds_alternative<FocusAnimation>(focusChange_old))
 	{
-		auto &anim = std::get<FocusAnimation>(focusChange);
+		auto &anim = std::get<FocusAnimation>(focusChange_old);
 		anim.elapsed += dt;
 		const float t = glm::clamp(anim.elapsed / focusAnimDuration, 0.f, 1.f);
 		const float e = glm::smoothstep(0.f, 1.f, t);
 		translateToFocalPoint(glm::mix(anim.start, anim.target, e));
 		if (t >= 1.f) {
 			translateToFocalPoint(anim.target);
-			focusChange = std::monostate{};
+			focusChange_old = std::monostate{};
 			player.popContinuousRedraw();
 		}
 	}
