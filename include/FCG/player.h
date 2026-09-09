@@ -13,6 +13,7 @@
 #include <span>
 #include <atomic>
 #include <string>
+#include <utility>
 
 // GLM library
 #include <glm/glm.hpp>
@@ -21,6 +22,7 @@
 #include "FCG/export.h"
 #include "FCG/run.h"
 #include "FCG/applet.h"
+#include "FCG/util.h"
 
 
 
@@ -142,8 +144,28 @@ public:
 		  device(device), buffer(buffer)
 	{}
 
+	/// An owning view manages the lifetime of its GPU mapping and therefore cannot be copied.
+	OwningTextureView (const OwningTextureView&) = delete;
+	auto operator= (const OwningTextureView&) -> OwningTextureView& = delete;
+
+	/// Moving transfers the mapping; the moved-from view no longer unmaps the transfer buffer.
+	OwningTextureView (OwningTextureView &&other) noexcept
+		: view(other.view), device(other.device), buffer(std::exchange(other.buffer, nullptr))
+	{}
+
+	auto operator= (OwningTextureView &&other) noexcept -> OwningTextureView& {
+		if (this != &other) {
+			if (buffer)
+				SDL_UnmapGPUTransferBuffer(device.handle(), buffer);
+			view = other.view;
+			buffer = std::exchange(other.buffer, nullptr);
+		}
+		return *this;
+	}
+
 	~OwningTextureView () {
-		SDL_UnmapGPUTransferBuffer(device.handle(), buffer);
+		if (buffer)
+			SDL_UnmapGPUTransferBuffer(device.handle(), buffer);
 	}
 
 	[[nodiscard]] inline operator TextureView<Texel, Dims> () {
@@ -171,17 +193,34 @@ class FCG_FRAMEWORK_EXPORT Player
 	////
 	// Types
 
-	/// State of a single readback operation.
-	template <class Texel> requires (sizeof(Texel) > 0)
-	struct ReadbackState
+	/// The state of a readback operation that has been dispatched but whose GPU fence has not yet been
+	/// signaled, i.e. the readback is still in flight.
+	struct PendingReadback
 	{
-		~ReadbackState();
+		~PendingReadback();
 
-		/// Transition to the mapped state, potentially blocking until the GPU fence is signaled.
-		void transitionToMapped (SDL_GPUTransferBuffer *buffer);
+		/// A pending readback own GPU resource (a fence) and therefore cannot be copied.
+		PendingReadback (const PendingReadback&) = delete;
+		auto operator= (const PendingReadback&) -> PendingReadback& = delete;
 
-		/// The device the readback operation was dispatched on.
+		/// The move constructor.
+		PendingReadback (PendingReadback &&other) noexcept
+			: device(other.device), fence(std::exchange(other.fence, nullptr)),
+			  extent(other.extent), stride(other.stride), token(other.token)
+		{}
+
+		/// Construct from the dispatch site's knowns.
+		PendingReadback (
+			Device &device, SDL_GPUFence *fence, const glm::uvec2 &extent, const glm::uvec2 &stride, uint64_t token
+		)
+			: device(device), fence(fence), extent(extent), stride(stride), token(token)
+		{}
+
+		/// The device the readback operation was dispatched on. Needed to release \ref fence.
 		Device &device;
+
+		/// The fence guarding the readback copy, or \c nullptr once it has been waited on and released.
+		SDL_GPUFence *fence = nullptr;
 
 		/// The texture dimensions of the targeted texture.
 		glm::uvec2 extent;
@@ -189,11 +228,66 @@ class FCG_FRAMEWORK_EXPORT Player
 		/// The per-dimension strides of the targeted texture.
 		glm::uvec2 stride;
 
-		/// The readback state and its associated data.
-		std::variant<SDL_GPUFence*, OwningTextureView<Texel, 2>> state;
-
-		/// The token of the readback operation, as returned by \ref dispatchDepthReadback.
+		/// The token of the readback operation, as returned by \ref scheduleDepthReadback.
 		uint64_t token = -1;
+	};
+
+	/// The state of a readback operation whose result has been mapped and is ready to be queried.
+	template <class Texel>
+	struct ReadyReadback {
+		/// The mapped readback view.
+		OwningTextureView<Texel, 2> view;
+
+		/// The token of the readback operation, as returned by \ref scheduleDepthReadback.
+		uint64_t token = -1;
+	};
+
+	/// Event: a new frame has begun, i.e. any in-flight readback results should be collected.
+	struct FrameBegin {};
+
+	/// Event: \ref scheduleDepthReadback was invoked and a new readback should be dispatched.
+	struct ScheduleReadback {};
+
+	/// Event: a readback result was queried via \ref getDepthReadbackResult.
+	struct QueryReadback {
+		/// The token of the readback operation whose result is being queried.
+		uint64_t token;
+	};
+
+	/// The controller bundling all depth buffer readback state machine logic.
+	template <class Texel>
+	struct ReadbackController
+	{
+		using StateMachine = fcg::StateMachine<
+			ReadbackController, std::monostate, PendingReadback, ReadyReadback<Texel>
+		>;
+		ReadbackController(Player &p) : fsm(*this), player(p) {}
+
+		/// Handle a readback being scheduled.
+		inline void on (const std::monostate&, const ScheduleReadback &event, StateMachine &fsm);
+		inline void on (PendingReadback &curState, const ScheduleReadback &event, StateMachine &fsm);
+		inline void on (ReadyReadback<Texel> &curState, const ScheduleReadback &event, StateMachine &fsm);
+
+		/// Handle a readback result being queried.
+		inline void on (const std::monostate&, const QueryReadback &event, StateMachine &fsm);
+		inline void on (PendingReadback &curState, const QueryReadback &event, StateMachine &fsm);
+		inline void on (ReadyReadback<Texel> &curState, const QueryReadback &event, StateMachine &fsm);
+
+		/// Handle a new frame starting, collecting in-flight readback results.
+		inline void on (PendingReadback &curState, const FrameBegin &event, StateMachine &fsm);
+
+		/// The state machine itself.
+		StateMachine fsm;
+
+		/// The player whose readback machinery we drive.
+		Player &player;
+
+	private:
+		/// Dispatch a new depth buffer readback and return the state tracking the submitted fence.
+		auto dispatch () -> PendingReadback;
+
+		/// Wait for the GPU to finish a pending readback copy, release its fence and map the results.
+		auto completeReadback (PendingReadback &pending) -> OwningTextureView<Texel, 2>;
 	};
 
 
@@ -289,8 +383,8 @@ private:
 	////
 	// Methods
 
-	/// Manage the depth readback buffer.
-	void recreateDepthReadbackBuffer ();
+	/// Manage the readback buffers.
+	void recreateReadbackBuffers ();
 
 	/// Collect the results of any dispatched readback operations.
 	void collectReadbackResults ();
@@ -321,8 +415,8 @@ private:
 	/// The buffer used for depth buffer readback operations.
 	SDL_GPUTransferBuffer *depthReadbackBuffer = nullptr;
 
-	/// The pending depth readback operation, if any.
-	std::optional<ReadbackState<float>> depthReadback;
+	/// The controller handling the depth buffer readback state machine.
+	ReadbackController<float> depthReadback{*this};
 
 	/// The current frame's readback token.
 	uint64_t readbackToken = 0;

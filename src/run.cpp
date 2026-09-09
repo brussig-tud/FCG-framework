@@ -168,7 +168,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 			/* First-time window-related state initialization */ {
 				std::optional<glm::uvec2> dummy;
 				window->pollViewportSize(dummy);
-				player.recreateDepthReadbackBuffer();
+				player.recreateReadbackBuffers();
 			}
 			std::vector<std::unique_ptr<Applet>> applets = std::move(_applets);
 			if (gui)
@@ -253,7 +253,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 				// necessarily happen right after a resize event, so keep the viewport dimensions fresh
 				std::optional<glm::uvec2> oldViewportSize;
 				if (window->pollViewportSize(oldViewportSize)) {
-					player.recreateDepthReadbackBuffer();
+					player.recreateReadbackBuffers();
 					for (auto &applet : applets)
 						applet->onViewportResize(device, oldViewportSize.value(), player);
 				}
