@@ -15,18 +15,18 @@ set(SOURCES
 
 # Collect interface headers
 set(HEADERS
-	${CMAKE_SOURCE_DIR}/include/FCG/applet/orbit_camera.h
-	${CMAKE_SOURCE_DIR}/include/FCG/applet.h
-	${CMAKE_SOURCE_DIR}/include/FCG/event.h
-	${CMAKE_SOURCE_DIR}/include/FCG/device.h
-	${CMAKE_SOURCE_DIR}/include/FCG/frame.h
-	${CMAKE_SOURCE_DIR}/include/FCG/gui.h
-	${CMAKE_SOURCE_DIR}/include/FCG/player.h
-	${CMAKE_SOURCE_DIR}/include/FCG/render_state.h
-	${CMAKE_SOURCE_DIR}/include/FCG/res.h
-	${CMAKE_SOURCE_DIR}/include/FCG/run.h
-	${CMAKE_SOURCE_DIR}/include/FCG/util.h
-	${CMAKE_SOURCE_DIR}/include/FCG/window.h
+	${PROJECT_SOURCE_DIR}/include/FCG/applet/orbit_camera.h
+	${PROJECT_SOURCE_DIR}/include/FCG/applet.h
+	${PROJECT_SOURCE_DIR}/include/FCG/event.h
+	${PROJECT_SOURCE_DIR}/include/FCG/device.h
+	${PROJECT_SOURCE_DIR}/include/FCG/frame.h
+	${PROJECT_SOURCE_DIR}/include/FCG/gui.h
+	${PROJECT_SOURCE_DIR}/include/FCG/player.h
+	${PROJECT_SOURCE_DIR}/include/FCG/render_state.h
+	${PROJECT_SOURCE_DIR}/include/FCG/res.h
+	${PROJECT_SOURCE_DIR}/include/FCG/run.h
+	${PROJECT_SOURCE_DIR}/include/FCG/util.h
+	${PROJECT_SOURCE_DIR}/include/FCG/window.h
 )
 
 # Add to our target

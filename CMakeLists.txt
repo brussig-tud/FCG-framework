@@ -75,68 +75,14 @@ target_link_libraries(Core PRIVATE "$<BUILD_INTERFACE:fcg-resources>")
 # (Optional) apps to build.
 add_subdirectory(app)
 
+string(COMPARE EQUAL "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}" is_top_level)
+option(FCG_INCLUDE_PACKAGING "Include packaging rules for the FCG Framework library" "${is_top_level}")
+
 # Smoke tests (Tier 0: installability, Tier 1: app lifecycle) - see tests/.
 enable_testing()
 add_subdirectory(tests)
 
 # Packaging rules. Based on https://alexreinking.com/blog/building-a-dual-shared-and-static-library-with-cmake.html
-string(COMPARE EQUAL "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}" is_top_level)
-option(FCG_INCLUDE_PACKAGING "Include packaging rules for the FCG Framework library" "${is_top_level}")
 if (FCG_INCLUDE_PACKAGING)
 	add_subdirectory(packaging)
 endif()
-
-# Install logic. Based on https://alexreinking.com/blog/building-a-dual-shared-and-static-library-with-cmake.html
-# - configuration-time feedback about installed targets
-if(NOT FCG_APP_TARGETS)
-	set(FCG_INCLUDED_APPS "<none>")
-else()
-	set(FCG_INCLUDED_APPS "${FCG_APP_TARGETS}")
-endif()
-message("Targets configured for install: ${FCG_INCLUDED_LIBS} – apps: ${FCG_INCLUDED_APPS}")
-# - actual isntall logic
-install(
-	TARGETS ${FCG_INCLUDED_LIBS} ${FCG_APP_TARGETS} EXPORT FCG_Targets
-	RUNTIME COMPONENT FCG_Runtime
-	LIBRARY COMPONENT FCG_Runtime
-	NAMELINK_COMPONENT FCG_Development
-	ARCHIVE COMPONENT FCG_Development
-	INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
-)
-# Install fetched ImGui binaries alongside the framework so that shared-framework executables can find
-# the library at runtime. Exporting the ImGui CMake target is left for future packaging work, mirroring
-# how SDL3 and GLM are currently handled.
-if (FCG_IMGUI_BUILT_HERE)
-	install(TARGETS imgui
-		RUNTIME COMPONENT FCG_Runtime
-		LIBRARY COMPONENT FCG_Runtime
-	)
-endif()
-install(
-	DIRECTORY "${PROJECT_SOURCE_DIR}/include/" "${PROJECT_BINARY_DIR}/include/"
-	TYPE INCLUDE
-	COMPONENT FCG_Development
-)
-if (BUILD_SHARED_LIBS)
-	set(type shared)
-else ()
-	set(type static)
-endif ()
-install(
-	EXPORT FCG_Targets
-	DESTINATION "${FCG_INSTALL_CMAKEDIR}"
-	NAMESPACE ${FCG_PROJECT_NAME}::
-	FILE FCG-${type}-targets.cmake
-	COMPONENT FCG_Development
-)
-include(CMakePackageConfigHelpers)
-write_basic_package_version_file(
-	"FCGConfigVersion.cmake"
-	VERSION ${FCG_FRAMEWORK_VERSION}
-	COMPATIBILITY SameMajorVersion
-)
-install(
-	FILES "${CMAKE_CURRENT_SOURCE_DIR}/FCGConfig.cmake" "${CMAKE_CURRENT_BINARY_DIR}/FCGConfigVersion.cmake"
-	DESTINATION "${FCG_INSTALL_CMAKEDIR}"
-	COMPONENT FCG_Development
-)

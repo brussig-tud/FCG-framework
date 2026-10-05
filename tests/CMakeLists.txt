@@ -16,22 +16,24 @@
 # (components, destinations, export sets) with a test instead of a broken
 # future consumer.
 # ---------------------------------------------------------------------------
-add_test(
-	NAME install-smoke
-	COMMAND "${CMAKE_COMMAND}"
-		--install "${CMAKE_BINARY_DIR}"
-		--prefix "${CMAKE_CURRENT_BINARY_DIR}/install-prefix"
-)
+if (FCG_INCLUDE_PACKAGING)
+	add_test(
+		NAME install-smoke
+		COMMAND "${CMAKE_COMMAND}"
+			--install "${CMAKE_BINARY_DIR}"
+			--prefix "${CMAKE_CURRENT_BINARY_DIR}/install-prefix"
+	)
 
-add_test(
-	NAME install-smoke-verify
-	COMMAND "${CMAKE_COMMAND}"
-		"-DPREFIX=${CMAKE_CURRENT_BINARY_DIR}/install-prefix"
-		-P "${CMAKE_CURRENT_SOURCE_DIR}/verify-install.cmake"
-)
-set_tests_properties(install-smoke-verify PROPERTIES
-	DEPENDS install-smoke
-)
+	add_test(
+		NAME install-smoke-verify
+		COMMAND "${CMAKE_COMMAND}"
+			"-DPREFIX=${CMAKE_CURRENT_BINARY_DIR}/install-prefix"
+			-P "${CMAKE_CURRENT_SOURCE_DIR}/verify-install.cmake"
+	)
+	set_tests_properties(install-smoke-verify PROPERTIES
+		DEPENDS install-smoke
+	)
+endif()
 
 # ---------------------------------------------------------------------------
 # Tier 1 - app lifecycle: run a trivial probe applet through fcg::run()
