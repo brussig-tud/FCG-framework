@@ -31,7 +31,8 @@ CMRC_DECLARE(hello_res);
 #include <FCG/applet/orbit_camera.h>
 
 // Local includes
-#include <shapes.h>
+#include <shapes/convex_poly.h>
+#include <shapes/platonic_solid.h>
 
 
 
@@ -207,10 +208,10 @@ public:
 	void render (
 		fcg::Device &device, fcg::RenderState &rs, SDL_GPURenderPass *renderPass,
 		SDL_GPUCommandBuffer *commandBuffer, fcg::Player &player
-	) override {
-		if (!m_pipeline) {
+	) override
+	{
+		if (!m_pipeline)
 			return;
-		}
 
 		const auto &shape = *shapes[selectedShape];
 
@@ -237,7 +238,9 @@ public:
 		SDL_BindGPUIndexBuffer(renderPass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
 
 		// Draw the indexed triangle list.
-		SDL_DrawGPUIndexedPrimitives(renderPass, shape.numIndices(), 1, 0, 0, 0);
+		SDL_DrawGPUIndexedPrimitives(
+			renderPass, shape.numIndices(), 1, 0, 0, 0
+		);
 	}
 
 

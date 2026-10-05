@@ -33,7 +33,9 @@
 ///   struct Vertex { glm::vec4 position; glm::vec4 normal; };
 ///
 /// This will be the vertex format used by the future pipeline/shader.
-class ConvexPolygon : public SimpleShape {
+class ConvexPolygon : public SimpleShape
+{
+
 public:
 
 	////

@@ -35,7 +35,9 @@
 ///
 /// Supports all five platonic solids (tetrahedron, cube, octahedron, dodecahedron, icosahedron), with a
 /// configurable size that can be interpreted as circumradius, inradius or edge length.
-class PlatonicSolid : public SimpleShape {
+class PlatonicSolid : public SimpleShape
+{
+
 public:
 
 	////
@@ -243,11 +245,9 @@ private:
 			.vertices = normalized({
 				{ 1,  1,  1}, { 1, -1, -1}, {-1,  1, -1}, {-1, -1,  1}
 			}),
-			.faces = {
-				{0, 1, 2}, {0, 3, 1}, {0, 2, 3}, {1, 3, 2}
-			},
-			.inradiusOverCircumradius = 1.0f/3.0f,
-			.edgeOverCircumradius = 2.0f*std::sqrt(6.0f)/3.0f
+			.faces = {{0, 1, 2}, {0, 3, 1}, {0, 2, 3}, {1, 3, 2}},
+			.inradiusOverCircumradius = 1/3.f,
+			.edgeOverCircumradius = 2*std::sqrt(6.f)/3.f
 		};
 
 		static const SolidData cube {
@@ -256,40 +256,40 @@ private:
 				{-1,  1,  1}, {-1,  1, -1}, {-1, -1,  1}, {-1, -1, -1}
 			}),
 			.faces = {
-				{0, 1, 3, 2}, {4, 6, 7, 5}, {0, 2, 6, 4},
-				{1, 5, 7, 3}, {0, 4, 5, 1}, {2, 3, 7, 6}
+				{0, 1, 3, 2}, {4, 6, 7, 5}, {0, 2, 6, 4}, {1, 5, 7, 3}, {0, 4, 5, 1}, {2, 3, 7, 6}
 			},
-			.inradiusOverCircumradius = 1.0f/std::sqrt(3.0f),
-			.edgeOverCircumradius = 2.0f/std::sqrt(3.0f)
+			.inradiusOverCircumradius = 1/std::sqrt(3.f),
+			.edgeOverCircumradius = 2/std::sqrt(3.f)
 		};
 
 		static const SolidData octahedron {
 			.vertices = normalized({
-				{ 1,  0,  0}, {-1,  0,  0}, { 0,  1,  0}, { 0, -1,  0}, { 0,  0,  1}, { 0,  0, -1}
+				{ 1,  0,  0}, {-1,  0,  0}, { 0,  1,  0}, { 0, -1,  0},
+				{ 0,  0,  1}, { 0,  0, -1}
 			}),
 			.faces = {
-				{0, 2, 4}, {0, 4, 3}, {0, 3, 5}, {0, 5, 2},
-				{1, 4, 2}, {1, 3, 4}, {1, 5, 3}, {1, 2, 5}
+				{0, 2, 4}, {0, 4, 3}, {0, 3, 5}, {0, 5, 2}, {1, 4, 2}, {1, 3, 4}, {1, 5, 3},
+				{1, 2, 5}
 			},
-			.inradiusOverCircumradius = 1.0f/std::sqrt(3.0f),
-			.edgeOverCircumradius = std::sqrt(2.0f)
+			.inradiusOverCircumradius = 1/std::sqrt(3.f),
+			.edgeOverCircumradius = std::sqrt(2.f)
 		};
 
-		static const float phi = (1.0f + std::sqrt(5.0f)) / 2.0f;
+		static const float phi = .5f*(1 + std::sqrt(5.f));
 
 		static const SolidData dodecahedron {
 			.vertices = normalized({
 				{ 1,  1,  1}, { 1,  1, -1}, { 1, -1,  1}, { 1, -1, -1},
 				{-1,  1,  1}, {-1,  1, -1}, {-1, -1,  1}, {-1, -1, -1},
-				{0, 1.0f/phi, phi}, {0, 1.0f/phi, -phi}, {0, -1.0f/phi, phi}, {0, -1.0f/phi, -phi},
-				{1.0f/phi, phi, 0}, {1.0f/phi, -phi, 0}, {-1.0f/phi, phi, 0}, {-1.0f/phi, -phi, 0},
-				{phi, 0, 1.0f/phi}, {phi, 0, -1.0f/phi}, {-phi, 0, 1.0f/phi}, {-phi, 0, -1.0f/phi}
+				{0, 1/phi, phi}, {0, 1/phi, -phi}, {0, -1/phi, phi},
+				{0, -1/phi, -phi}, {1/phi, phi, 0}, {1/phi, -phi, 0},
+				{-1/phi, phi, 0}, {-1/phi, -phi, 0}, {phi, 0, 1/phi},
+				{phi, 0, -1/phi}, {-phi, 0, 1/phi}, {-phi, 0, -1/phi}
 			}),
 			.faces = {
-				{0, 8, 4, 14, 12}, {0, 12, 1, 17, 16}, {0, 16, 2, 10, 8},
-				{8, 10, 6, 18, 4}, {12, 14, 5, 9, 1}, {16, 17, 3, 13, 2},
-				{1, 9, 11, 3, 17}, {2, 13, 15, 6, 10}, {3, 11, 7, 15, 13},
-				{4, 18, 19, 5, 14}, {5, 19, 7, 11, 9}, {6, 15, 7, 19, 18}
+				{0, 8, 4, 14, 12}, {0, 12, 1, 17, 16}, {0, 16, 2, 10, 8}, {8, 10, 6, 18, 4},
+				{12, 14, 5, 9, 1}, {16, 17, 3, 13, 2}, {1, 9, 11, 3, 17}, {2, 13, 15, 6, 10},
+				{3, 11, 7, 15, 13}, {4, 18, 19, 5, 14}, {5, 19, 7, 11, 9}, {6, 15, 7, 19, 18}
 			},
 			.inradiusOverCircumradius = 0.7946544723f,
 			.edgeOverCircumradius = 0.7136440765f
@@ -333,7 +333,7 @@ private:
 	int sizeSemantics = (int)SizeSemantics::Circumradius;
 
 	/// The configured size, interpreted according to \ref sizeSemantics.
-	float size = 1.0f;
+	float size = 1;
 
 	/// CPU-side vertex buffer.
 	std::vector<Vertex> m_vertices;

@@ -18,22 +18,29 @@
 
 //////
 //
-// Helper
+// Module-private symbols
 //
 
+// Anonymous namespace begin
 namespace {
-	/// Create a GPU buffer with the given size and usage flags.
-	auto createBuffer(SDL_GPUDevice *device, std::size_t size, SDL_GPUBufferUsageFlags usage) -> SDL_GPUBuffer* {
-		if (size == 0) {
-			return nullptr;
-		}
 
-		const SDL_GPUBufferCreateInfo createInfo = {
-			.usage = usage,
-			.size = static_cast<Uint32>(size)
-		};
-		return SDL_CreateGPUBuffer(device, &createInfo);
+/// Create a GPU buffer with the given size and usage flags.
+auto createBuffer(SDL_GPUDevice *device, std::size_t size, SDL_GPUBufferUsageFlags usage) -> SDL_GPUBuffer*
+{
+	// Sanity check
+	if (size == 0) {
+		return nullptr;
 	}
+
+	// Create buffer with given usage
+	const SDL_GPUBufferCreateInfo createInfo = {
+		.usage = usage,
+		.size = static_cast<Uint32>(size)
+	};
+	return SDL_CreateGPUBuffer(device, &createInfo);
+}
+
+// Anonymous namespace end
 }
 
 
@@ -43,22 +50,20 @@ namespace {
 // SimpleShape
 //
 
-SimpleShape::~SimpleShape() {
+SimpleShape::~SimpleShape()
+{
 	if (device != nullptr) {
-		if (m_vertexBuffer != nullptr) {
+		if (m_vertexBuffer != nullptr)
 			SDL_ReleaseGPUBuffer(device->handle(), m_vertexBuffer);
-		}
-		if (m_indexBuffer != nullptr) {
+		if (m_indexBuffer != nullptr)
 			SDL_ReleaseGPUBuffer(device->handle(), m_indexBuffer);
-		}
 	}
 }
 
 void SimpleShape::uploadGeometry(
-	fcg::Device &device,
-	const void *vertexData, std::size_t vertexDataSize,
-	const std::uint32_t *indexData, std::size_t numIndices
-) {
+	fcg::Device &device, const void *vertexData, std::size_t vertexDataSize, const std::uint32_t *indexData,
+	std::size_t numIndices
+){
 	// Cache the device pointer so the destructor can release buffers later.
 	this->device = &device;
 
@@ -76,13 +81,15 @@ void SimpleShape::uploadGeometry(
 	);
 
 	// Upload vertex data via a transfer buffer.
-	if (newVertexBuffer != nullptr && vertexDataSize > 0) {
+	if (newVertexBuffer != nullptr && vertexDataSize > 0)
+	{
 		const SDL_GPUTransferBufferCreateInfo transferInfo = {
 			.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
 			.size = static_cast<Uint32>(vertexDataSize)
 		};
 		SDL_GPUTransferBuffer *transferBuffer = SDL_CreateGPUTransferBuffer(device.handle(), &transferInfo);
-		if (transferBuffer != nullptr) {
+		if (transferBuffer != nullptr)
+		{
 			void *dst = SDL_MapGPUTransferBuffer(device.handle(), transferBuffer, false);
 			if (dst != nullptr) {
 				std::memcpy(dst, vertexData, vertexDataSize);
@@ -105,13 +112,15 @@ void SimpleShape::uploadGeometry(
 	}
 
 	// Upload index data via a transfer buffer.
-	if (newIndexBuffer != nullptr && indexDataSize > 0) {
+	if (newIndexBuffer != nullptr && indexDataSize > 0)
+	{
 		const SDL_GPUTransferBufferCreateInfo transferInfo = {
 			.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
 			.size = static_cast<Uint32>(indexDataSize)
 		};
 		SDL_GPUTransferBuffer *transferBuffer = SDL_CreateGPUTransferBuffer(device.handle(), &transferInfo);
-		if (transferBuffer != nullptr) {
+		if (transferBuffer != nullptr)
+		{
 			void *dst = SDL_MapGPUTransferBuffer(device.handle(), transferBuffer, false);
 			if (dst != nullptr) {
 				std::memcpy(dst, indexData, indexDataSize);
@@ -136,13 +145,11 @@ void SimpleShape::uploadGeometry(
 	// Wait until the GPU is done with the old buffers before releasing them.
 	device.waitIdle();
 
-	if (m_vertexBuffer != nullptr) {
+	// Commit changes
+	if (m_vertexBuffer != nullptr)
 		SDL_ReleaseGPUBuffer(device.handle(), m_vertexBuffer);
-	}
-	if (m_indexBuffer != nullptr) {
+	if (m_indexBuffer != nullptr)
 		SDL_ReleaseGPUBuffer(device.handle(), m_indexBuffer);
-	}
-
 	m_vertexBuffer = newVertexBuffer;
 	m_indexBuffer = newIndexBuffer;
 	m_numIndices = numIndices;
