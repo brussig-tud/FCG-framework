@@ -13,8 +13,8 @@
 
 include(${CMAKE_CURRENT_LIST_DIR}/CPM.cmake)
 
-# Mirror the framework's shared/static decision onto source-built dependencies.
-# (Presets don't apply to embedded consumers, so this must stay in CMake code.)
+# Mirror the framework's shared/static decision onto source-built dependencies. (Presets don't apply to embedded
+# consumers, so this must stay in CMake code.)
 if (FCG_USE_SHARED_SDL)
 	set(SDL_SHARED ON)
 	set(SDL_STATIC OFF)
@@ -30,8 +30,8 @@ CPMFindPackage(
 	GIT_TAG           release-3.4.14
 	VERSION           3.4.14
 	OPTIONS
-		# XTest is a niche runtime feature (X11 mouse warping, currently disabled
-		# upstream) also used by SDL's own tests - off avoids the libxtst dependency
+		# XTest is a niche runtime feature (X11 mouse warping, currently disabled upstream) also used by SDL's own tests
+		# - off avoids the libxtst dependency
 		"SDL_X11_XTEST OFF"
 		# We don't need any screensaver functionality - off avoids this niche dependency
 		"SDL_X11_XSCRNSAVER OFF"
@@ -54,9 +54,8 @@ CPMFindPackage(
 	DOWNLOAD_ONLY     TRUE  # upstream ships no CMake build system
 )
 if (NOT TARGET imgui)
-	# Must be shared when the framework is shared: applets call ImGui global
-	# functions directly, and the framework owns the global ImGui context
-	# (GImGui). Two static copies would give the applet a null context.
+	# Must be shared when the framework is shared: applets call ImGui global functions directly, and the framework owns
+	# the global ImGui context (GImGui). Two static copies would give the applet a null context.
 	add_library(imgui
 		"${imgui_SOURCE_DIR}/imgui.cpp"
 		"${imgui_SOURCE_DIR}/imgui_draw.cpp"
@@ -81,12 +80,10 @@ if (NOT TARGET imgui)
 	set(FCG_IMGUI_BUILT_HERE ON)  # used by install logic in the root CMakeLists
 endif()
 
-# glslang: GLSL front-end for build-time shader compilation (GLSL -> SPIR-V).
-# Fetched, not system-first: SPIR-V is embedded into binaries, so the tool
-# version must be locked. The tool is always built statically and without the
-# debug postfix - it is used at build time only, and CMake's order-only
-# dependency expansion for the tool would otherwise not match the postfixed
-# output names. The block restores the surrounding configuration afterwards.
+# glslang: GLSL front-end for build-time shader compilation (GLSL -> SPIR-V). Fetched, not system-first: SPIR-V is
+# embedded into binaries, so the tool version must be locked. The tool is always built statically and without the debug
+# postfix - it is used at build time only, and CMake's order-only dependency expansion for the tool would otherwise not
+# match the postfixed output names. The block restores the surrounding configuration afterwards.
 block (SCOPE_FOR VARIABLES)
 	set(BUILD_SHARED_LIBS OFF)
 	set(CMAKE_DEBUG_POSTFIX "")
@@ -104,9 +101,8 @@ block (SCOPE_FOR VARIABLES)
 	)
 endblock ()
 
-# SDL_shadercross: runtime SPIR-V translation for the non-Vulkan SDL GPU
-# backends (Metal via SPIRV-Cross, D3D12 via DXC). No upstream releases yet,
-# hence the pinned commit. DXC off until the Windows strategy is settled.
+# SDL_shadercross: runtime SPIR-V translation for the non-Vulkan SDL GPU backends (Metal via SPIRV-Cross, D3D12 via
+# DXC). No upstream releases yet, hence the pinned commit. DXC off until the Windows strategy is settled.
 CPMAddPackage(
 	NAME              SDL_shadercross
 	GITHUB_REPOSITORY libsdl-org/SDL_shadercross
@@ -119,4 +115,12 @@ CPMAddPackage(
 		"SDLSHADERCROSS_STATIC ON"
 		"SDLSHADERCROSS_CLI OFF"
 		"SDLSHADERCROSS_INSTALL OFF"
+)
+
+# cpp-embedlib: Baking of entire filesystems into library or executable targets, accessible through customizable C++
+# namespaces
+CPMAddPackage(
+	NAME              cpp-embedlib
+	GITHUB_REPOSITORY yhirose/cpp-embedlib
+	GIT_TAG           main
 )

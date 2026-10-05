@@ -70,7 +70,7 @@ add_subdirectory(src)
 
 # Embedded shaders (cmake/Shaders.cmake).
 add_subdirectory(shaders)
-target_link_libraries(Core PRIVATE "$<BUILD_INTERFACE:fcg-resources>")
+target_link_libraries(Core PRIVATE "$<BUILD_INTERFACE:fcg-shaders>")
 
 # (Optional) apps to build.
 add_subdirectory(app)
@@ -78,7 +78,7 @@ add_subdirectory(app)
 string(COMPARE EQUAL "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}" is_top_level)
 option(FCG_INCLUDE_PACKAGING "Include packaging rules for the FCG Framework library" "${is_top_level}")
 
-# Smoke tests (Tier 0: installability, Tier 1: app lifecycle) - see tests/.
+# Setup testing
 enable_testing()
 add_subdirectory(tests)
 

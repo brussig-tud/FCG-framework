@@ -142,7 +142,7 @@ public:
 	////
 	// Interface: fcg::Applet
 
-	auto name () -> std::string& override;
+	[[nodiscard]] auto name () const -> const std::string& override;
 
 	void init (Device &device, Player &player) override;
 

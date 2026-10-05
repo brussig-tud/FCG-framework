@@ -73,7 +73,7 @@ public:
 	// Methods
 
 	/// The human-readable name of the applet.
-	virtual auto name () -> std::string& = 0;
+	[[nodiscard]] virtual auto name () const -> const std::string& = 0;
 
 	/// Run any post-creation initialization code. The GPU device that the applet will later use for rendering is
 	/// provided, e.g. for creating pipelines, buffers and textures.

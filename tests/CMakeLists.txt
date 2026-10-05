@@ -2,13 +2,28 @@
 # Smoke tests for the FCG framework.
 #
 # Tier 0 tests verify the buildsystem's own contracts (installability), Tier 1
-# tests exercise the framework's runtime lifecycle headlessly. Both target the
-# stable outer shell of the project (packaging, lifecycle), not the API
-# surface, which is still in flux.
+# tests exercise the framework's runtime lifecycle headlessly. Resource tests additionally verify the shader
+# build pipeline and the contract between configure-time resource names and C++ lookup.
 #
 # Note: install-smoke installs from the *current* build tree, so CTest must run
 # on a fully built tree (e.g. via `cmake --build` then `ctest`, or testPresets).
 # ============================================================================
+
+# Shader resources: exercise lookup without a GPU and validate the custom-command dependency graph independently.
+add_subdirectory(resources)
+add_test(
+	NAME shader-build-smoke
+	COMMAND "${CMAKE_COMMAND}"
+		"-DTEST_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/shader-build/fixture"
+		"-DTEST_BINARY=${CMAKE_CURRENT_BINARY_DIR}/shader-build"
+		"-DFCG_SHADER_CMAKE=${PROJECT_SOURCE_DIR}/cmake/Shaders.cmake"
+		"-DEMBEDLIB_CMAKE=${cpp-embedlib_SOURCE_DIR}/cmake/cpp-embedlib.cmake"
+		"-DGLSLANG_EXECUTABLE=$<TARGET_FILE:glslang-standalone>"
+		"-DTEST_GENERATOR=${CMAKE_GENERATOR}"
+		"-DTEST_COMPILER=${CMAKE_CXX_COMPILER}"
+		-P "${CMAKE_CURRENT_SOURCE_DIR}/shader-build/run.cmake"
+)
+set_tests_properties(shader-build-smoke PROPERTIES TIMEOUT 180)
 
 # ---------------------------------------------------------------------------
 # Tier 0 - installability: install the current build tree into a scratch
@@ -48,9 +63,10 @@ target_link_libraries(lifecycle-smoke PRIVATE Core)
 add_test(
 	NAME lifecycle-smoke
 	COMMAND "${CMAKE_COMMAND}" -E env
-		"SDL_VIDEODRIVER=offscreen"
 		"$<TARGET_FILE:lifecycle-smoke>"
 )
 set_tests_properties(lifecycle-smoke PROPERTIES
 	TIMEOUT 60
+	# Validation diagnostics can be emitted even when the process exits successfully, including during teardown.
+	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-"
 )

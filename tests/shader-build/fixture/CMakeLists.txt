@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 3.31)
+project(ShaderBuildProbe LANGUAGES CXX)
+
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+include("${EMBEDLIB_CMAKE}")
+include("${FCG_SHADER_CMAKE}")
+add_executable(glslang-standalone IMPORTED GLOBAL)
+set_target_properties(glslang-standalone PROPERTIES IMPORTED_LOCATION "${GLSLANG_EXECUTABLE}")
+
+option(INCLUDE_EXTRA "Include a shader which will later be removed" ON)
+add_subdirectory(first)
+add_subdirectory(second)
+add_executable(shader-probe main.cpp)
+target_link_libraries(shader-probe PRIVATE first-resources second-resources)
+target_compile_definitions(shader-probe PRIVATE "EXPECT_EXTRA=$<BOOL:${INCLUDE_EXTRA}>")
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/probe-$<CONFIG>.txt" CONTENT "$<TARGET_FILE:shader-probe>")

@@ -6,6 +6,7 @@ set(missing "")
 # Library: Core (static with debug postfix, static release, or shared)
 if (NOT EXISTS "${PREFIX}/lib/libCored.a"
 	AND NOT EXISTS "${PREFIX}/lib/libCore.a"
+	AND NOT EXISTS "${PREFIX}/lib/libCored.so"
 	AND NOT EXISTS "${PREFIX}/lib/libCore.so")
 	list(APPEND missing "libCore (static or shared) in lib/")
 endif()

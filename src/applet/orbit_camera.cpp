@@ -113,8 +113,8 @@ OrbitCamera::OrbitCamera()
 
 OrbitCamera::~OrbitCamera() = default;
 
-auto OrbitCamera::name () -> std::string& {
-	static std::string name = "Orbit Camera";
+auto OrbitCamera::name () const -> const std::string& {
+	constexpr static std::string name = "Orbit Camera";
 	return name;
 }
 
