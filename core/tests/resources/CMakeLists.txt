@@ -13,7 +13,7 @@ add_dependencies(test-bytecode-only test-resources)
 
 add_executable(resource-smoke main.cpp)
 target_link_libraries(resource-smoke PRIVATE Core test-resources test-bytecode-only)
-set(resource_roots "${PROJECT_BINARY_DIR}/shaders/shaders" "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+set(resource_roots "${PROJECT_BINARY_DIR}/core/shaders/shaders" "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 if (TARGET hello-resources)
 	target_link_libraries(resource-smoke PRIVATE hello-resources)
 	target_compile_definitions(resource-smoke PRIVATE FCG_TEST_HELLO)

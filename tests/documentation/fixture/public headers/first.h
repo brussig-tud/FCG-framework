@@ -14,3 +14,7 @@ private:
  */
 /** \ingroup fixture_mobile */
 struct MobileApi {};
+
+/** \page fixture_library_guide Fixture library guide
+ * Authored guide for the fixture library.
+ */

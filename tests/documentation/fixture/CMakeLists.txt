@@ -11,7 +11,7 @@ else()
     list(APPEND first_components fixture_mobile)
 endif()
 fcg_register_documentation(
-    LIBRARY First LINK_TARGET Fixture::First COMPONENTS ${first_components}
+    LIBRARY First LINK_TARGET Fixture::First GUIDE fixture_library_guide COMPONENTS ${first_components}
     INPUTS "public headers" "public headers/first.h"
     PREDEFINED FIXTURE_EXPORT=
 )
@@ -23,6 +23,9 @@ fcg_register_documentation(
 )
 if(CONFLICT)
     fcg_register_documentation(LIBRARY Second LINK_TARGET Fixture::Second COMPONENTS fixture_first)
+endif()
+if(CONFLICT_GUIDE)
+    fcg_register_documentation(LIBRARY First LINK_TARGET Fixture::First GUIDE conflicting_guide)
 endif()
 if(BAD_REFERENCE)
     fcg_register_documentation(LIBRARY First LINK_TARGET Fixture::First INPUTS "bad.h")

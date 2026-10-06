@@ -39,7 +39,7 @@ incomplete** notice, and sections with these suffixes:
 - `<group>_examples`: Examples
 
 Do not guess uninvestigated behavior. Expand the stub as contracts are investigated. The buffer guide in
-`include/FCG/buffer.h` is a complete example, with snippets from `tests/buffers/buffer_examples.cpp`. The normal build
+`core/include/FCG/buffer.h` is a complete example, with snippets from `core/tests/buffers/buffer_examples.cpp`. The normal build
 compiles these as `buffer-examples`. Register snippet directories even when their library binaries or example
 executables are disabled; examples are never API inputs.
 
@@ -58,8 +58,8 @@ Keep the framework-owned manifest in `docs/Documentation.cmake`, outside binary 
 fcg_register_documentation(LIBRARY Core
     LINK_TARGET FCG-framework::Core
     COMPONENTS fcg_buffers fcg_devices
-    INPUTS "${PROJECT_SOURCE_DIR}/include/FCG"
-    EXAMPLE_DIRS "${PROJECT_SOURCE_DIR}/tests/buffers"
+    INPUTS "${PROJECT_SOURCE_DIR}/core/include/FCG"
+    EXAMPLE_DIRS "${PROJECT_SOURCE_DIR}/core/tests/buffers"
     PREDEFINED FCG_FRAMEWORK_EXPORT=
 )
 ```
@@ -86,3 +86,9 @@ explicit so independent fixtures can use the same builder without framework inpu
 
 Run `ctest --preset debug -R documentation` for the registration/manual fixture. It needs Doxygen for HTML checks and
 still checks configuration behavior when Doxygen is unavailable.
+
+Library registrations may include `GUIDE <page_id>` to link an authored library guide from the generated library
+page. The guide belongs in a registered public header, alongside the component guides; repeated registrations must
+agree on its ID. Image's full example is in `image/include/FCG/image_loader.h`, with compiled snippets in
+`image/tests/image_examples.cpp`. Link `FCG-framework::Image` for CPU image loading. See its guide for source codec
+configuration through upstream `SDLIMAGE_*` options and automatic registration in static/shared builds.

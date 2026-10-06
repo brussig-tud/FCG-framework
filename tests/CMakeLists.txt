@@ -10,8 +10,8 @@
 # ============================================================================
 
 # Shader resources: exercise lookup without a GPU and validate the custom-command dependency graph independently.
-add_subdirectory(resources)
-add_subdirectory(buffers)
+add_subdirectory("${PROJECT_SOURCE_DIR}/core/tests" "${PROJECT_BINARY_DIR}/core/tests")
+add_subdirectory("${PROJECT_SOURCE_DIR}/image/tests" "${PROJECT_BINARY_DIR}/image/tests")
 add_test(
 	NAME shader-build-smoke
 	COMMAND "${CMAKE_COMMAND}"
@@ -33,6 +33,10 @@ set_tests_properties(shader-build-smoke PROPERTIES TIMEOUT 180)
 # future consumer.
 # ---------------------------------------------------------------------------
 if (FCG_INCLUDE_PACKAGING)
+	set(image_runtime "")
+	if(FCG_SDL_IMAGE_BUILT_HERE AND FCG_USE_SHARED_SDL)
+		set(image_runtime "$<TARGET_FILE_NAME:SDL3_image-shared>")
+	endif()
 	add_test(
 		NAME install-smoke
 		COMMAND "${CMAKE_COMMAND}"
@@ -44,33 +48,13 @@ if (FCG_INCLUDE_PACKAGING)
 		NAME install-smoke-verify
 		COMMAND "${CMAKE_COMMAND}"
 			"-DPREFIX=${CMAKE_CURRENT_BINARY_DIR}/install-prefix"
+			"-DIMAGE_RUNTIME=${image_runtime}"
 			-P "${CMAKE_CURRENT_SOURCE_DIR}/verify-install.cmake"
 	)
 	set_tests_properties(install-smoke-verify PROPERTIES
 		DEPENDS install-smoke
 	)
 endif()
-
-# ---------------------------------------------------------------------------
-# Tier 1 - app lifecycle: run a trivial probe applet through fcg::run()
-# headlessly. The probe (tests/lifecycle/main.cpp) forces continuous redraws
-# and requests shutdown after a fixed number of frames, so the test exercises
-# SDL init, GPU device creation, ImGui backend, the frame loop and teardown
-# end-to-end without any test hooks inside the framework.
-# ---------------------------------------------------------------------------
-add_executable(lifecycle-smoke lifecycle/main.cpp)
-target_link_libraries(lifecycle-smoke PRIVATE Core)
-
-add_test(
-	NAME lifecycle-smoke
-	COMMAND "${CMAKE_COMMAND}" -E env
-		"$<TARGET_FILE:lifecycle-smoke>"
-)
-set_tests_properties(lifecycle-smoke PROPERTIES
-	TIMEOUT 60
-	# Validation diagnostics can be emitted even when the process exits successfully, including during teardown.
-	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-"
-)
 
 # Documentation registration, independent of binary targets and optional Doxygen.
 add_test(

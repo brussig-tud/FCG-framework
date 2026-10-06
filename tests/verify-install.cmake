@@ -3,16 +3,23 @@
 
 set(missing "")
 
-# Library: Core (static with debug postfix, static release, or shared)
-if (NOT EXISTS "${PREFIX}/lib/libCored.a"
-	AND NOT EXISTS "${PREFIX}/lib/libCore.a"
-	AND NOT EXISTS "${PREFIX}/lib/libCored.so"
-	AND NOT EXISTS "${PREFIX}/lib/libCore.so")
-	list(APPEND missing "libCore (static or shared) in lib/")
+# Libraries (static with debug postfix, static release, or shared).
+foreach(library Core Image)
+    if(NOT EXISTS "${PREFIX}/lib/lib${library}d.a"
+        AND NOT EXISTS "${PREFIX}/lib/lib${library}.a"
+        AND NOT EXISTS "${PREFIX}/lib/lib${library}d.so"
+        AND NOT EXISTS "${PREFIX}/lib/lib${library}.so")
+        list(APPEND missing "lib${library} (static or shared) in lib/")
+    endif()
+endforeach()
+
+# The source-built shared backend must accompany the installed framework runtime.
+if(IMAGE_RUNTIME AND NOT EXISTS "${PREFIX}/lib/${IMAGE_RUNTIME}" AND NOT EXISTS "${PREFIX}/bin/${IMAGE_RUNTIME}")
+    list(APPEND missing "${IMAGE_RUNTIME} runtime")
 endif()
 
 # Public headers
-foreach (header run.h window.h applet.h event.h export.h buffer.h)
+foreach (header run.h window.h applet.h event.h export.h buffer.h image_export.h image.h image_loader.h sdl_image.h)
 	if (NOT EXISTS "${PREFIX}/include/FCG/${header}")
 		list(APPEND missing "include/FCG/${header}")
 	endif()
@@ -28,6 +35,17 @@ if (NOT EXISTS "${PREFIX}/lib/cmake/FCG/FCG-static-targets.cmake"
 	AND NOT EXISTS "${PREFIX}/lib/cmake/FCG/FCG-shared-targets.cmake")
 	list(APPEND missing "lib/cmake/FCG/FCG-<type>-targets.cmake (static or shared)")
 endif()
+
+# Both public library targets must be exported.
+file(GLOB target_files "${PREFIX}/lib/cmake/FCG/FCG-*-targets.cmake")
+foreach(target_file IN LISTS target_files)
+    file(READ "${target_file}" targets)
+    foreach(library Core Image)
+        if(NOT targets MATCHES "add_library\\(FCG-framework::${library}")
+            list(APPEND missing "FCG-framework::${library} in ${target_file}")
+        endif()
+    endforeach()
+endforeach()
 
 if (missing)
 	message(FATAL_ERROR "install-smoke: missing deliverables:\n  ${missing}")

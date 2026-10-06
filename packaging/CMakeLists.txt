@@ -32,11 +32,24 @@ if (FCG_IMGUI_BUILT_HERE)
 		LIBRARY COMPONENT FCG_Runtime
 	)
 endif()
-install(
-	DIRECTORY "${PROJECT_SOURCE_DIR}/include/" "${PROJECT_BINARY_DIR}/include/"
-	TYPE INCLUDE
-	COMPONENT FCG_Development
-)
+foreach(library core image)
+	install(
+		DIRECTORY "${PROJECT_SOURCE_DIR}/${library}/include/" "${PROJECT_BINARY_DIR}/${library}/include/"
+		TYPE INCLUDE
+		COMPONENT FCG_Development
+	)
+endforeach()
+# A source-built shared SDL_image is part of the framework runtime.
+if(FCG_SDL_IMAGE_BUILT_HERE AND FCG_USE_SHARED_SDL)
+	# Copy runtime artifacts without introducing a partial third-party target export. Installing this target
+	# directly would make CMake require it in Image's export set, including all of its upstream dependencies.
+	if(WIN32)
+		install(FILES "$<TARGET_FILE:SDL3_image-shared>" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT FCG_Runtime)
+	else()
+		install(FILES "$<TARGET_FILE:SDL3_image-shared>" "$<TARGET_SONAME_FILE:SDL3_image-shared>"
+			DESTINATION "${CMAKE_INSTALL_LIBDIR}" COMPONENT FCG_Runtime)
+	endif()
+endif()
 if (BUILD_SHARED_LIBS)
 	set(type shared)
 else ()
