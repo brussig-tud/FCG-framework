@@ -12,7 +12,7 @@ if (NOT EXISTS "${PREFIX}/lib/libCored.a"
 endif()
 
 # Public headers
-foreach (header run.h window.h applet.h event.h export.h)
+foreach (header run.h window.h applet.h event.h export.h buffer.h)
 	if (NOT EXISTS "${PREFIX}/include/FCG/${header}")
 		list(APPEND missing "include/FCG/${header}")
 	endif()

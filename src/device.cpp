@@ -69,7 +69,8 @@ Device::~Device ()
 	if (m_handle)
 	{
 		// Wait for the GPU to finish all pending work before destroying the device
-		SDL_WaitForGPUIdle(m_handle);
+		const bool idle = SDL_WaitForGPUIdle(m_handle);
+		collectRetiredFences(idle);
 
 		// Release all window claims
 		for (auto *window : m_claimedWindows)
@@ -81,7 +82,33 @@ Device::~Device ()
 }
 
 void Device::waitIdle () const {
-	SDL_WaitForGPUIdle(m_handle);
+	collectRetiredFences(SDL_WaitForGPUIdle(m_handle));
+}
+
+void Device::retireFence (std::unique_ptr<RetiredFence> fence) {
+	if (!fence || !fence->handle)
+		return;
+	if (SDL_QueryGPUFence(m_handle, fence->handle)) {
+		SDL_ReleaseGPUFence(m_handle, fence->handle);
+		return;
+	}
+	std::lock_guard lock(m_fenceMutex);
+	fence->next = std::move(m_retiredFences);
+	m_retiredFences = std::move(fence);
+}
+
+void Device::collectRetiredFences (bool idle) const {
+	std::lock_guard lock(m_fenceMutex);
+	auto *link = &m_retiredFences;
+	while (*link) {
+		if (idle || SDL_QueryGPUFence(m_handle, (*link)->handle)) {
+			auto fence = std::move(*link);
+			*link = std::move(fence->next);
+			SDL_ReleaseGPUFence(m_handle, fence->handle);
+		} else {
+			link = &(*link)->next;
+		}
+	}
 }
 
 auto Device::claimWindow (std::unique_ptr<Window> &window) -> bool {
@@ -100,8 +127,19 @@ auto Device::createShader (
 	ShaderStage stage, std::span<const std::byte> spirv, unsigned numUniformBlocks, std::string_view entrypoint
 ) const -> SDL_GPUShader*
 {
-	if (stage == ShaderStage::COMPUTE) {
+	return createShader(stage, spirv, ShaderResources{.uniformBuffers = numUniformBlocks}, entrypoint);
+}
+
+auto Device::createShader (
+	ShaderStage stage, std::span<const std::byte> spirv, const ShaderResources &resources, std::string_view entrypoint
+) const -> SDL_GPUShader*
+{
+	if (stage != ShaderStage::VERTEX && stage != ShaderStage::FRAGMENT) {
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Creating compute shaders is not supported yet");
+		return nullptr;
+	}
+	if (resources.uniformBuffers > 4) {
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "A shader stage supports at most four uniform blocks");
 		return nullptr;
 	}
 	if (spirv.empty()) {
@@ -121,7 +159,10 @@ auto Device::createShader (
 		info.entrypoint = entry.c_str();
 		info.format = SDL_GPU_SHADERFORMAT_SPIRV;
 		info.stage = sdlStage;
-		info.num_uniform_buffers = numUniformBlocks;
+		info.num_uniform_buffers = resources.uniformBuffers;
+		info.num_storage_buffers = resources.storageBuffers;
+		info.num_storage_textures = resources.storageTextures;
+		info.num_samplers = resources.samplers;
 
 		SDL_GPUShader *shader = SDL_CreateGPUShader(m_handle, &info);
 		if (!shader)
@@ -140,14 +181,14 @@ auto Device::createShader (
 	info.shader_stage = (stage == ShaderStage::VERTEX)
 		? SDL_SHADERCROSS_SHADERSTAGE_VERTEX : SDL_SHADERCROSS_SHADERSTAGE_FRAGMENT;
 
-	// The resource counts the shader uses must be known for pipeline creation – reflect them from the
-	// bytecode, since the build system does not track them
-	SDL_ShaderCross_GraphicsShaderMetadata *meta =
-		SDL_ShaderCross_ReflectGraphicsSPIRV(info.bytecode, info.bytecode_size, 0);
-	SDL_GPUShader *shader = SDL_ShaderCross_CompileGraphicsShaderFromSPIRV(
-		m_handle, &info, meta ? &meta->resource_info : nullptr, 0
-	);
-	SDL_free(meta);
+	// Use the same explicit resource contract on every backend.
+	const SDL_ShaderCross_GraphicsShaderResourceInfo resourceInfo {
+		.num_samplers = resources.samplers,
+		.num_storage_textures = resources.storageTextures,
+		.num_storage_buffers = resources.storageBuffers,
+		.num_uniform_buffers = resources.uniformBuffers
+	};
+	SDL_GPUShader *shader = SDL_ShaderCross_CompileGraphicsShaderFromSPIRV(m_handle, &info, &resourceInfo, 0);
 	if (!shader)
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Transpiling a shader failed: %s", SDL_GetError());
 	return shader;

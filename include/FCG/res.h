@@ -1,3 +1,27 @@
+/**
+ * \defgroup fcg_resources Resources
+ * \ingroup fcg_components
+ *
+ * \ref fcg::res::Shader represents embedded shader resources. \ref fcg::res::ShaderStageData describes the artifacts for one shader stage.
+ *
+ * \par Guide incomplete
+ * This guide is a stub. Consult the API declarations below for currently documented behavior.
+ *
+ * \section fcg_resources_workflows Common workflows
+ * Guide incomplete: workflow descriptions remain to be investigated and written.
+ *
+ * \section fcg_resources_lifetime Ownership and lifetime
+ * Guide incomplete: consult individual type and member contracts.
+ *
+ * \section fcg_resources_errors Errors
+ * Guide incomplete: error handling remains to be investigated and written.
+ *
+ * \section fcg_resources_examples Examples
+ * Guide incomplete: worked examples remain to be added and compiled.
+ *
+ * \see \ref fcg_devices
+ */
+
 
 #ifndef __FCG_RES_H__
 #define __FCG_RES_H__
@@ -41,6 +65,10 @@ namespace cpp_embedlib {
 
 /// Our module namespace.
 namespace fcg::res {
+
+/** \addtogroup fcg_resources
+ * @{
+ */
 
 
 
@@ -147,6 +175,8 @@ private:
 [[nodiscard]] FCG_FRAMEWORK_EXPORT auto shader (std::string_view name) -> std::optional<Shader>;
 
 
+
+/** @} */
 
 //////
 //

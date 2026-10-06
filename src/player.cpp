@@ -7,6 +7,8 @@
 // C++ STL
 #include <format>
 #include <variant>
+#include <limits>
+#include <stdexcept>
 
 // SDL3
 #include <SDL3/SDL.h>
@@ -36,18 +38,28 @@ namespace fcg {
 // Player
 
 Player::PendingReadback::~PendingReadback() {
-	if (fence) {
-		SDL_ReleaseGPUFence(device.handle(), fence);
-		fence = nullptr;
-	}
+	device.retireFence(std::move(fence));
 }
 
 template <class Texel>
 auto Player::ReadbackController<Texel>::dispatch () -> PendingReadback
 {
-	// Start copy pass
+	if (!player.frame || !player.frame->depthTexture() || !player.depthReadbackBuffer.handle())
+		throw std::runtime_error("Player: no depth texture or download storage is available");
+
+	player.device.collectRetiredFences();
+	auto fenceOwner = std::make_unique<Device::RetiredFence>();
+
+	// Start copy pass. No invalid handle may reach SDL's validation assertions.
 	SDL_GPUCommandBuffer *cmdBuf = SDL_AcquireGPUCommandBuffer(player.device.handle());
+	if (!cmdBuf)
+		throw std::runtime_error(std::string("Player: acquiring depth readback commands: ") + SDL_GetError());
 	SDL_GPUCopyPass *copyPass = SDL_BeginGPUCopyPass(cmdBuf);
+	if (!copyPass) {
+		const auto message = std::string("Player: beginning depth copy pass: ") + SDL_GetError();
+		SDL_CancelGPUCommandBuffer(cmdBuf);
+		throw std::runtime_error(message);
+	}
 	const auto extent = player.viewportSize();
 	const SDL_GPUTextureRegion source {
 		.texture = player.frame->depthTexture(), .mip_level = 0, .layer = 0, .x = 0, .y = 0, .z = 0,
@@ -56,7 +68,7 @@ auto Player::ReadbackController<Texel>::dispatch () -> PendingReadback
 
 	// Describe copy geometry
 	SDL_GPUTextureTransferInfo destination {
-		.transfer_buffer = player.depthReadbackBuffer, .offset = 0, .pixels_per_row = extent.x,
+		.transfer_buffer = player.depthReadbackBuffer.handle(), .offset = 0, .pixels_per_row = extent.x,
 		.rows_per_layer = extent.y
 	};
 	SDL_DownloadFromGPUTexture(copyPass, &source, &destination);
@@ -64,9 +76,12 @@ auto Player::ReadbackController<Texel>::dispatch () -> PendingReadback
 
 	// Submit and obtain a fence.
 	SDL_GPUFence *fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdBuf);
+	if (!fence)
+		throw std::runtime_error(std::string("Player: submitting depth readback: ") + SDL_GetError());
 
 	// Done – hand the resulting state (and its fence) to the readback state machine.
-	return {player.device, fence, extent, glm::vec2(1, extent.x), player.readbackToken};
+	fenceOwner->handle = fence;
+	return {player.device, std::move(fenceOwner), extent, glm::uvec2(1, extent.x), player.readbackToken};
 }
 
 template <class Texel>
@@ -74,13 +89,16 @@ auto Player::ReadbackController<Texel>::completeReadback (PendingReadback &pendi
 {
 	// Wait for the GPU to finish the readback operation and release the fence
 	if (pending.fence) {
-		SDL_WaitForGPUFences(player.device.handle(), true, &pending.fence, 1);
-		SDL_ReleaseGPUFence(player.device.handle(), pending.fence);
-		pending.fence = nullptr;
+		if (!SDL_WaitForGPUFences(player.device.handle(), true, &pending.fence->handle, 1))
+			throw std::runtime_error(std::string("Player: waiting for depth readback: ") + SDL_GetError());
+		player.device.retireFence(std::move(pending.fence));
 	}
 
 	// Map the readback buffer for CPU access
-	return OwningTextureView<Texel, 2>(player.device, player.depthReadbackBuffer, pending.extent, pending.stride);
+	auto mapping = player.depthReadbackBuffer.map();
+	if (!mapping)
+		throw std::runtime_error("Player: mapping depth readback: " + mapping.error().message);
+	return OwningTextureView<Texel, 2>(std::move(*mapping), pending.extent, pending.stride);
 }
 
 template <class Texel>
@@ -117,7 +135,8 @@ void Player::ReadbackController<Texel>::on (
 		// Readback for this frame has already been scheduled (and was collected).
 		return;
 
-	// The previous readback operation was completed and can be overwritten.
+	// Release the previous CPU mapping before scheduling a GPU write into the reused transfer storage.
+	fsm.template transition<std::monostate>();
 	fsm.template transition<PendingReadback>(dispatch());
 }
 
@@ -176,10 +195,7 @@ Player::Player (Device &device, Window *mainWindow) : device(device), m_window(m
 Player::~Player() {
 	// Abandon any in-flight readback so its mapping and fence are released before we tear down the buffer below.
 	depthReadback.fsm.transition<std::monostate>();
-	if (depthReadbackBuffer) {
-		SDL_ReleaseGPUTransferBuffer(device.handle(), depthReadbackBuffer);
-		depthReadbackBuffer = nullptr;
-	}
+	depthReadbackBuffer = {};
 }
 
 void Player::setWindowTitle (const std::string &title)
@@ -270,28 +286,25 @@ void Player::recreateReadbackBuffers ()
 	depthReadback.fsm.transition<std::monostate>();
 
 	// Destroy old buffer if it exists
-	if (depthReadbackBuffer) {
-		SDL_ReleaseGPUTransferBuffer(device.handle(), depthReadbackBuffer);
-		depthReadbackBuffer = nullptr;
+	depthReadbackBuffer = {};
+
+	const auto vpSize = viewportSize();
+	if (!vpSize.x || !vpSize.y)
+		return;
+	// D32_FLOAT depth data; reject overflow before creating the SDL transfer allocation.
+	const auto maxTexels = std::numeric_limits<Uint32>::max() / sizeof(float);
+	if (vpSize.x > maxTexels / vpSize.y) {
+		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Player: depth readback allocation exceeds SDL's size limit");
+		return;
 	}
-
-	// Query viewport size. FIXME: does not take into account headless players with no main window.
-	const auto vpSize = m_window->viewportSize();
-
-	// Determine buffer geometry
-	SDL_GPUTransferBufferCreateInfo bi {
-		.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD,
-		.size = (Uint32)(vpSize.x * vpSize.y * sizeof(float)) // FIXME: Assumes the hardcoded D32_FLOAT depth format
-	};
-
-	// Create the buffer
-	depthReadbackBuffer = SDL_CreateGPUTransferBuffer(device.handle(), &bi);
-	if (!depthReadbackBuffer) {
-		SDL_LogError(
-			SDL_LOG_CATEGORY_ERROR, "Player: failed to create main viewport depth readback buffer: %s",
-			SDL_GetError()
-		);
+	auto buffer = TransferBuffer::create(
+		device, std::size_t(vpSize.x) * vpSize.y * sizeof(float), SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD
+	);
+	if (!buffer) {
+		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Player: creating depth readback buffer: %s", buffer.error().message.c_str());
+		return;
 	}
+	depthReadbackBuffer = std::move(*buffer);
 }
 
 void Player::collectReadbackResults () {

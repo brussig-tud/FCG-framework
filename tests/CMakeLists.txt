@@ -11,6 +11,7 @@
 
 # Shader resources: exercise lookup without a GPU and validate the custom-command dependency graph independently.
 add_subdirectory(resources)
+add_subdirectory(buffers)
 add_test(
 	NAME shader-build-smoke
 	COMMAND "${CMAKE_COMMAND}"
@@ -70,3 +71,15 @@ set_tests_properties(lifecycle-smoke PROPERTIES
 	# Validation diagnostics can be emitted even when the process exits successfully, including during teardown.
 	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-"
 )
+
+# Documentation registration, independent of binary targets and optional Doxygen.
+add_test(
+    NAME documentation-smoke
+    COMMAND "${CMAKE_COMMAND}"
+        "-DTEST_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/documentation/fixture"
+        "-DTEST_BINARY=${CMAKE_CURRENT_BINARY_DIR}/documentation"
+        "-DFCG_DOCUMENTATION_CMAKE=${PROJECT_SOURCE_DIR}/cmake/Documentation.cmake"
+        "-DFCG_DOXYFILE_TEMPLATE=${PROJECT_SOURCE_DIR}/docs/Doxyfile.in"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/documentation/run.cmake"
+)
+set_tests_properties(documentation-smoke PROPERTIES TIMEOUT 180)

@@ -82,6 +82,15 @@ option(FCG_INCLUDE_PACKAGING "Include packaging rules for the FCG Framework libr
 enable_testing()
 add_subdirectory(tests)
 
+# Documentation registrations are independent of library build options.
+option(FCG_BUILD_DOCUMENTATION "Enable the optional framework documentation target" "${is_top_level}")
+include(cmake/Documentation.cmake)
+include(docs/Documentation.cmake)
+fcg_add_documentation(
+    TEMPLATE "${PROJECT_SOURCE_DIR}/docs/Doxyfile.in"
+    MAIN_PAGE "${PROJECT_SOURCE_DIR}/docs/main.dox"
+)
+
 # Packaging rules. Based on https://alexreinking.com/blog/building-a-dual-shared-and-static-library-with-cmake.html
 if (FCG_INCLUDE_PACKAGING)
 	add_subdirectory(packaging)

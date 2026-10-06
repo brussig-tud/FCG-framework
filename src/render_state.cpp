@@ -12,6 +12,7 @@
 
 // Local includes
 #include "FCG/device.h"
+#include "FCG/buffer.h"
 #include "FCG/render_state.h"
 
 
@@ -40,34 +41,14 @@ RenderState::~RenderState() = default;
 
 void RenderState::pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot)
 {
-	switch (stage)
-	{
-		case ShaderStage::VERTEX:
-			SDL_PushGPUVertexUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
-			break;
-		case ShaderStage::FRAGMENT:
-			SDL_PushGPUFragmentUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
-			break;
-		case ShaderStage::COMPUTE:
-			SDL_PushGPUComputeUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
-			break;
-	}
+	if (auto result = pushUniforms(commandBuffer, stage, slot, viewingUniforms()); !result)
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Pushing viewing uniforms: %s", result.error().message.c_str());
 }
 
 void RenderState::pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot) const
 {
-	switch (stage)
-	{
-		case ShaderStage::VERTEX:
-			SDL_PushGPUVertexUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
-			break;
-		case ShaderStage::FRAGMENT:
-			SDL_PushGPUFragmentUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
-			break;
-		case ShaderStage::COMPUTE:
-			SDL_PushGPUComputeUniformData(commandBuffer, slot, &viewingUniforms(), sizeof(ViewingUniforms));
-			break;
-	}
+	if (auto result = pushUniforms(commandBuffer, stage, slot, viewingUniforms()); !result)
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Pushing viewing uniforms: %s", result.error().message.c_str());
 }
 
 

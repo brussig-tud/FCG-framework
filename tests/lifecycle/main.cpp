@@ -19,6 +19,8 @@
 // C++ STL
 #include <cstdlib>
 #include <memory>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -55,6 +57,7 @@ public:
 
 	/// The framework destroys applets before the GPU device, so releasing our pipeline here is safe.
 	~LifecycleProbe () override {
+		rendered = rendered && depthChecks >= 2 && resized;
 		if (pipeline)
 			SDL_ReleaseGPUGraphicsPipeline(gpuDevice, pipeline);
 	}
@@ -122,11 +125,40 @@ public:
 		gpuDevice = device.handle();
 	}
 
-	void onViewportResize (fcg::Device&, const glm::uvec2&, fcg::Player&) override {}
+	void onViewportResize (fcg::Device&, const glm::uvec2&, fcg::Player&) override {
+		// Resize replaces the texture with uninitialized storage; render it before asking for its previous contents.
+		depthToken.reset();
+		readbackCooldown = 2;
+	}
 
 	void gui (fcg::Device&, fcg::Player&) override {}
 
 	void update (fcg::Device&, fcg::Player &player, float) override {
+		// Collect each token before requesting another. The frame loop has already waited for pending downloads.
+		if (depthToken) {
+			const auto view = player.getDepthReadbackResult(*depthToken);
+			const auto extent = view.extent();
+			const auto depth = view.texel({extent.x / 2, extent.y / 2});
+			if (depth != 1.f)
+				throw std::runtime_error("Depth readback differs at update " + std::to_string(updates)
+					+ ": " + std::to_string(depth));
+			++depthChecks;
+			depthToken.reset();
+		}
+		++updates;
+		if (updates == 10) {
+			// Resize between readbacks, so the next frame recreates both depth texture and transfer storage.
+			int count = 0;
+			auto **windows = SDL_GetWindows(&count);
+			resized = windows && count > 0 && SDL_SetWindowSize(windows[0], 480, 320);
+			SDL_free(windows);
+			if (!resized)
+				throw std::runtime_error("Could not resize lifecycle test window");
+		} else if (readbackCooldown) {
+			--readbackCooldown;
+		} else if (rendered && updates > 1) {
+			depthToken = player.scheduleDepthReadback();
+		}
 		if (remainingFrames && --remainingFrames == 0)
 			player.requestClose();
 	}
@@ -147,6 +179,18 @@ public:
 
 	/// The device that owns our pipeline; outlives the applet.
 	SDL_GPUDevice *gpuDevice = nullptr;
+
+	/// The previous frame's depth-download token, consumed before requesting another.
+	std::optional<uint64_t> depthToken;
+
+	/// Number of verified depth downloads and update iterations.
+	unsigned depthChecks = 0, updates = 0;
+
+	/// Newly allocated depth textures need a rendered frame before readback.
+	unsigned readbackCooldown = 2;
+
+	/// Whether the resize operation succeeded during the lifecycle run.
+	bool resized = false;
 
 	/// Our test pipeline
 	SDL_GPUGraphicsPipeline *pipeline = nullptr;

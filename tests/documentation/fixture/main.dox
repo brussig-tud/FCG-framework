@@ -1,0 +1,4 @@
+/** \mainpage Documentation fixture
+ * \ref fcg_components and \ref fcg_libraries.
+ */
+/** \defgroup fcg_components Framework components */

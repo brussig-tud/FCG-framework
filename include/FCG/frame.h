@@ -39,6 +39,10 @@ struct SDL_GPUTexture;
 /// The library top-level namespace.
 namespace fcg {
 
+/** \addtogroup fcg_windows
+ * @{
+ */
+
 
 
 //////
@@ -134,7 +138,7 @@ public:
 	auto beginOverlayRenderPass () -> SDL_GPURenderPass*;
 
 	/// End the current render pass, marking this frame as not having a currently ongoing render pass being recorded
-	/// (and thus making it safe to \link end fcg::Window::endFrame \endlink. The main reason for requiring a call to
+	/// (and thus making it safe to \link fcg::Window::endFrame end \endlink. The main reason for requiring a call to
 	/// this function is to establish an explicit workflow, violations of which can be easily detected and thus avoid
 	/// spurious or hard to track down bugs or crashes.
 	void endRenderPass ();
@@ -166,6 +170,8 @@ private:
 };
 
 
+
+/** @} */
 
 //////
 //

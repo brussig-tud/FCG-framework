@@ -1,6 +1,7 @@
 
 # Collect sources
 set(SOURCES
+	buffer.cpp
 	applet/orbit_camera.cpp
 	event.cpp
 	device.cpp
@@ -15,6 +16,7 @@ set(SOURCES
 
 # Collect interface headers
 set(HEADERS
+	${PROJECT_SOURCE_DIR}/include/FCG/buffer.h
 	${PROJECT_SOURCE_DIR}/include/FCG/applet/orbit_camera.h
 	${PROJECT_SOURCE_DIR}/include/FCG/applet.h
 	${PROJECT_SOURCE_DIR}/include/FCG/event.h

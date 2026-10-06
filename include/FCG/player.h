@@ -23,6 +23,7 @@
 #include "FCG/run.h"
 #include "FCG/applet.h"
 #include "FCG/util.h"
+#include "FCG/buffer.h"
 
 
 
@@ -33,11 +34,6 @@
 
 // Opaque SDL3 types
 struct SDL_GPUFence;
-struct SDL_GPUTransferBuffer;
-
-// Required SDL3 function prototypes
-extern void* SDL_MapGPUTransferBuffer(SDL_GPUDevice*, SDL_GPUTransferBuffer*, bool);
-extern void SDL_UnmapGPUTransferBuffer(SDL_GPUDevice*, SDL_GPUTransferBuffer*);
 
 // Framework types
 namespace fcg {
@@ -54,6 +50,10 @@ namespace fcg {
 
 /// The library top-level namespace.
 namespace fcg {
+
+/** \addtogroup fcg_runtime
+ * @{
+ */
 
 
 
@@ -127,54 +127,65 @@ public:
 	}
 };
 
-///	\todo Once we have proper texture facilities, move this there.
+/// Texture interpretation of a scoped transfer mapping.
+///
+/// Owns only the mapping, not its TransferBuffer. The transfer buffer must remain alive and unmoved until this
+/// view is destroyed. Moving the view transfers mapping ownership; borrowed TextureViews expire on unmapping.
+/// \todo Once we have proper texture facilities, move this there.
 template <class Texel, unsigned Dims=2>
 	requires (sizeof(Texel) > 0 && Dims >= 1 && Dims <= 3)
 class OwningTextureView
 {
-	TextureView<Texel, Dims> view;
-	Device &device;
-	SDL_GPUTransferBuffer *buffer;
 public:
+
+	////
+	// Object construction/destruction
+
+	/// Interpret an already successful mapping using caller-supplied texel geometry.
+	/// \param mapping Completed GPU download mapping, moved into this object.
+	/// \param extent Dimensions in texels. \param stride Per-axis strides in texels, not bytes.
+	/// \pre The mapped allocation covers this geometry and is suitably aligned for Texel.
 	OwningTextureView (
-		Device &device, SDL_GPUTransferBuffer *buffer, const glm::vec<Dims, unsigned> &extent,
+		TransferBuffer::Mapping &&mapping, const glm::vec<Dims, unsigned> &extent,
 		const glm::vec<Dims, unsigned> &stride
 	)
-		: view((Texel*)SDL_MapGPUTransferBuffer(device.handle(), buffer, false), extent, stride),
-		  device(device), buffer(buffer)
+		: mapping(std::move(mapping)), extent(extent), stride(stride)
 	{}
 
-	/// An owning view manages the lifetime of its GPU mapping and therefore cannot be copied.
+	/// Exactly one owner unmaps the storage; views cannot be copied.
 	OwningTextureView (const OwningTextureView&) = delete;
+	/// Owning views cannot be copy-assigned.
 	auto operator= (const OwningTextureView&) -> OwningTextureView& = delete;
+	/// Transfer the mapping; previously borrowed views remain valid until the new owner releases it.
+	OwningTextureView (OwningTextureView&&) noexcept = default;
+	/// Unmap the previous storage and take another mapping. Invalidates views into the previous storage.
+	auto operator= (OwningTextureView&&) noexcept -> OwningTextureView& = default;
+	/// Unmap the transfer storage, invalidating all derived TextureViews, without waiting on the GPU.
+	~OwningTextureView () = default;
 
-	/// Moving transfers the mapping; the moved-from view no longer unmaps the transfer buffer.
-	OwningTextureView (OwningTextureView &&other) noexcept
-		: view(other.view), device(other.device), buffer(std::exchange(other.buffer, nullptr))
-	{}
 
-	auto operator= (OwningTextureView &&other) noexcept -> OwningTextureView& {
-		if (this != &other) {
-			if (buffer)
-				SDL_UnmapGPUTransferBuffer(device.handle(), buffer);
-			view = other.view;
-			buffer = std::exchange(other.buffer, nullptr);
-		}
-		return *this;
+	////
+	// Accessors
+
+	/// Borrow a texture interpretation. Valid only while this object's mapping remains active.
+	[[nodiscard]] operator TextureView<Texel, Dims> () {
+		return {reinterpret_cast<Texel*>(mapping.data().data()), extent, stride};
 	}
 
-	~OwningTextureView () {
-		if (buffer)
-			SDL_UnmapGPUTransferBuffer(device.handle(), buffer);
+	/// Borrow a read-only interpretation, whose lifetime is bounded by this object's mapping.
+	[[nodiscard]] operator TextureView<const Texel, Dims> () const {
+		return {reinterpret_cast<const Texel*>(mapping.data().data()), extent, stride};
 	}
 
-	[[nodiscard]] inline operator TextureView<Texel, Dims> () {
-		return view;
-	}
 
-	[[nodiscard]] inline operator TextureView<const Texel, Dims> () const {
-		return view;
-	}
+private:
+
+	////
+	// Fields
+
+	TransferBuffer::Mapping mapping; ///< Scoped CPU access; the transfer allocation is owned by Player.
+	glm::vec<Dims, unsigned> extent; ///< Logical texture dimensions in texels.
+	glm::vec<Dims, unsigned> stride; ///< Memory strides in texels.
 };
 
 /// The central state of the \ref fcg::run main loop.
@@ -205,22 +216,23 @@ class FCG_FRAMEWORK_EXPORT Player
 
 		/// The move constructor.
 		PendingReadback (PendingReadback &&other) noexcept
-			: device(other.device), fence(std::exchange(other.fence, nullptr)),
+			: device(other.device), fence(std::move(other.fence)),
 			  extent(other.extent), stride(other.stride), token(other.token)
 		{}
 
 		/// Construct from the dispatch site's knowns.
 		PendingReadback (
-			Device &device, SDL_GPUFence *fence, const glm::uvec2 &extent, const glm::uvec2 &stride, uint64_t token
+			Device &device, std::unique_ptr<Device::RetiredFence> fence, const glm::uvec2 &extent,
+			const glm::uvec2 &stride, uint64_t token
 		)
-			: device(device), fence(fence), extent(extent), stride(stride), token(token)
+			: device(device), fence(std::move(fence)), extent(extent), stride(stride), token(token)
 		{}
 
 		/// The device the readback operation was dispatched on. Needed to release \ref fence.
 		Device &device;
 
 		/// The fence guarding the readback copy, or \c nullptr once it has been waited on and released.
-		SDL_GPUFence *fence = nullptr;
+		std::unique_ptr<Device::RetiredFence> fence;
 
 		/// The texture dimensions of the targeted texture.
 		glm::uvec2 extent;
@@ -413,7 +425,7 @@ private:
 	std::atomic<bool> m_closeRequested{false};
 
 	/// The buffer used for depth buffer readback operations.
-	SDL_GPUTransferBuffer *depthReadbackBuffer = nullptr;
+	TransferBuffer depthReadbackBuffer;
 
 	/// The controller handling the depth buffer readback state machine.
 	ReadbackController<float> depthReadback{*this};
@@ -423,6 +435,8 @@ private:
 };
 
 
+
+/** @} */
 
 //////
 //

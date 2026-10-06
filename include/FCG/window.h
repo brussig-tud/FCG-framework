@@ -1,3 +1,27 @@
+/**
+ * \defgroup fcg_windows Windows and frames
+ * \ingroup fcg_components
+ *
+ * \ref fcg::Window and \ref fcg::WindowSettings describe windows and their creation settings. \ref fcg::Frame exposes frame recording and render passes.
+ *
+ * \par Guide incomplete
+ * This guide is a stub. Consult the API declarations below for currently documented behavior.
+ *
+ * \section fcg_windows_workflows Common workflows
+ * Guide incomplete: workflow descriptions remain to be investigated and written.
+ *
+ * \section fcg_windows_lifetime Ownership and lifetime
+ * Guide incomplete: consult individual type and member contracts.
+ *
+ * \section fcg_windows_errors Errors
+ * Guide incomplete: error handling remains to be investigated and written.
+ *
+ * \section fcg_windows_examples Examples
+ * Guide incomplete: worked examples remain to be added and compiled.
+ *
+ * \see \ref fcg_devices, \ref fcg_render_state, \ref fcg_runtime
+ */
+
 
 #ifndef __FCG_WINDOW_H__
 #define __FCG_WINDOW_H__
@@ -50,6 +74,10 @@ namespace fcg {
 /// The library top-level namespace.
 namespace fcg {
 
+/** \addtogroup fcg_windows
+ * @{
+ */
+
 
 
 //////
@@ -80,7 +108,7 @@ struct WindowSettings
 // Classes
 //
 
-/// A window that can be rendered into using a \link GPU device fcg::Device \endlink.
+/// A window that can be rendered into using a \link fcg::Device GPU device \endlink.
 class FCG_FRAMEWORK_EXPORT Window
 {
 	////
@@ -143,7 +171,7 @@ public:
 	////
 	// Methods
 
-	/// Begin the next \link frame fcg::Frame \endlink, which will contain th acquires swapchain texture of this window
+	/// Begin the next \link fcg::Frame frame \endlink, which will contain th acquires swapchain texture of this window
 	/// as target, a depth buffer of matching size, and a command buffer to begin render passes on.
 	///
 	/// \param device The GPU device to render the frame with. Must have a current claim to this window.
@@ -221,6 +249,8 @@ private:
 };
 
 
+
+/** @} */
 
 //////
 //

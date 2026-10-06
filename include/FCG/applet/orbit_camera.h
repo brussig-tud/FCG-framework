@@ -1,3 +1,27 @@
+/**
+ * \defgroup fcg_orbit_camera Orbit camera
+ * \ingroup fcg_components
+ *
+ * \ref fcg::applet::OrbitCamera is a camera applet. \ref fcg::applet::OrbitCameraParams describes its camera parameters.
+ *
+ * \par Guide incomplete
+ * This guide is a stub. Consult the API declarations below for currently documented behavior.
+ *
+ * \section fcg_orbit_camera_workflows Common workflows
+ * Guide incomplete: workflow descriptions remain to be investigated and written.
+ *
+ * \section fcg_orbit_camera_lifetime Ownership and lifetime
+ * Guide incomplete: consult individual type and member contracts.
+ *
+ * \section fcg_orbit_camera_errors Errors
+ * Guide incomplete: error handling remains to be investigated and written.
+ *
+ * \section fcg_orbit_camera_examples Examples
+ * Guide incomplete: worked examples remain to be added and compiled.
+ *
+ * \see \ref fcg_applets, \ref fcg_events, \ref fcg_render_state
+ */
+
 
 #ifndef __FCG_ORBIT_CAMERA_H__
 #define __FCG_ORBIT_CAMERA_H__
@@ -28,6 +52,10 @@
 
 /// Our module namespace.
 namespace fcg::applet {
+
+/** \addtogroup fcg_orbit_camera
+ * @{
+ */
 
 
 
@@ -209,11 +237,11 @@ public:
 	/// Set a new up direction.
 	void setUp (const glm::vec3 &up);
 
-	/// Set a new focal point, updating the \link camera parameters params \endlink accordingly.
+	/// Set a new focal point, updating the \link params camera parameters \endlink accordingly.
 	void setFocalPoint (const glm::vec3 &focalPoint);
 
 	/// Translates the camera such that the given point becomes the new focal point, updating the
-	/// \link camera parameters params \endlink accordingly.
+	/// \link params camera parameters \endlink accordingly.
 	void translateToFocalPoint (const glm::vec3 &focalPoint);
 
 
@@ -257,6 +285,8 @@ private:
 };
 
 
+
+/** @} */
 
 //////
 //

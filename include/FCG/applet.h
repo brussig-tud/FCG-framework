@@ -1,3 +1,27 @@
+/**
+ * \defgroup fcg_applets Applets
+ * \ingroup fcg_components
+ *
+ * \ref fcg::Applet defines the application callbacks used by the player. Its declarations describe event handling, updates, rendering, and GUI integration.
+ *
+ * \par Guide incomplete
+ * This guide is a stub. Consult the API declarations below for currently documented behavior.
+ *
+ * \section fcg_applets_workflows Common workflows
+ * Guide incomplete: workflow descriptions remain to be investigated and written.
+ *
+ * \section fcg_applets_lifetime Ownership and lifetime
+ * Guide incomplete: consult individual type and member contracts.
+ *
+ * \section fcg_applets_errors Errors
+ * Guide incomplete: error handling remains to be investigated and written.
+ *
+ * \section fcg_applets_examples Examples
+ * Guide incomplete: worked examples remain to be added and compiled.
+ *
+ * \see \ref fcg_runtime, \ref fcg_events, \ref fcg_render_state
+ */
+
 
 #ifndef __FCG_APPLET_H__
 #define __FCG_APPLET_H__
@@ -49,6 +73,10 @@ namespace fcg {
 
 /// The library top-level namespace.
 namespace fcg {
+
+/** \addtogroup fcg_applets
+ * @{
+ */
 
 
 
@@ -127,7 +155,7 @@ public:
 	) = 0;
 };
 
-/// The concept of behaving like an \ref Applet.
+/// The concept of behaving like an \ref fcg::Applet.
 template <class A>
 concept AppletConcept =
 	   std::derived_from<A, Applet>/*
@@ -139,6 +167,8 @@ concept AppletConcept =
 }*/;
 
 
+
+/** @} */
 
 //////
 //

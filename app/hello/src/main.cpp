@@ -195,8 +195,8 @@ public:
 			return;
 
 		const auto &shape = *shapes[selectedShape];
-
-		rs.pushModelviewMatrix();
+		if (!shape.numIndices())
+			return;
 
 		// Bind the pipeline and the shape's geometry buffers.
 		SDL_BindGPUGraphicsPipeline(renderPass, m_pipeline);
@@ -204,19 +204,13 @@ public:
 		// Push the viewing uniforms so the shader can transform vertices.
 		rs.pushViewingUniforms(commandBuffer, fcg::ShaderStage::VERTEX, 0);
 
-		// Bind vertex buffer
-		const SDL_GPUBufferBinding vertexBinding {
-			.buffer = shape.vertexBuffer(),
-			.offset = 0
-		};
-		SDL_BindGPUVertexBuffers(renderPass, 0, &vertexBinding, 1);
-
-		// Bind index buffer
-		const SDL_GPUBufferBinding indexBinding {
-			.buffer = shape.indexBuffer(),
-			.offset = 0
-		};
-		SDL_BindGPUIndexBuffer(renderPass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+		auto vertexBinding = shape.vertexBuffer().bindVertex(renderPass);
+		auto indexBinding = shape.indexBuffer().bindIndex(renderPass, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+		if (!vertexBinding || !indexBinding) {
+			const auto &error = !vertexBinding ? vertexBinding.error() : indexBinding.error();
+			SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Binding geometry: %s", error.message.c_str());
+			return;
+		}
 
 		// Draw the indexed triangle list.
 		SDL_DrawGPUIndexedPrimitives(

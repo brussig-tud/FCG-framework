@@ -1,3 +1,27 @@
+/**
+ * \defgroup fcg_events Events
+ * \ingroup fcg_components
+ *
+ * \ref fcg::Event carries a normalized framework event and its payload. \ref fcg::EventType identifies event kinds; \ref fcg::EventContext carries shared dispatch context.
+ *
+ * \par Guide incomplete
+ * This guide is a stub. Consult the API declarations below for currently documented behavior.
+ *
+ * \section fcg_events_workflows Common workflows
+ * Guide incomplete: workflow descriptions remain to be investigated and written.
+ *
+ * \section fcg_events_lifetime Ownership and lifetime
+ * Guide incomplete: consult individual type and member contracts.
+ *
+ * \section fcg_events_errors Errors
+ * Guide incomplete: error handling remains to be investigated and written.
+ *
+ * \section fcg_events_examples Examples
+ * Guide incomplete: worked examples remain to be added and compiled.
+ *
+ * \see \ref fcg_applets, \ref fcg_runtime
+ */
+
 
 #ifndef __FCG_EVENT_H__
 #define __FCG_EVENT_H__
@@ -38,6 +62,10 @@ union SDL_Event;
 /// The library top-level namespace.
 namespace fcg {
 
+/** \addtogroup fcg_events
+ * @{
+ */
+
 
 
 //////
@@ -45,7 +73,7 @@ namespace fcg {
 // Enums
 //
 
-/// The type of an \ref Event.
+/// The type of an \ref fcg::Event.
 enum class EventType
 {
 	/// An unrecognized or unhandled SDL event.
@@ -328,6 +356,8 @@ private:
 FCG_FRAMEWORK_EXPORT auto makeEvent (const SDL_Event &event) -> Event;
 
 
+
+/** @} */
 
 //////
 //

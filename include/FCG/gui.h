@@ -1,3 +1,27 @@
+/**
+ * \defgroup fcg_gui GUI
+ * \ingroup fcg_components
+ *
+ * \ref fcg::Gui integrates Dear ImGui with the framework runtime and SDL backends. Applets contribute GUI content through \ref fcg::Applet::gui.
+ *
+ * \par Guide incomplete
+ * This guide is a stub. Consult the API declarations below for currently documented behavior.
+ *
+ * \section fcg_gui_workflows Common workflows
+ * Guide incomplete: workflow descriptions remain to be investigated and written.
+ *
+ * \section fcg_gui_lifetime Ownership and lifetime
+ * Guide incomplete: consult individual type and member contracts.
+ *
+ * \section fcg_gui_errors Errors
+ * Guide incomplete: error handling remains to be investigated and written.
+ *
+ * \section fcg_gui_examples Examples
+ * Guide incomplete: worked examples remain to be added and compiled.
+ *
+ * \see \ref fcg_runtime, \ref fcg_applets, \ref fcg_windows
+ */
+
 
 #ifndef __FCG_GUI_H__
 #define __FCG_GUI_H__
@@ -43,6 +67,10 @@ namespace fcg {
 
 /// The library top-level namespace.
 namespace fcg {
+
+/** \addtogroup fcg_gui
+ * @{
+ */
 
 
 
@@ -160,6 +188,8 @@ private:
 };
 
 
+
+/** @} */
 
 //////
 //

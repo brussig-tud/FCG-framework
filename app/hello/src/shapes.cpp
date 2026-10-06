@@ -4,44 +4,8 @@
 // Includes
 //
 
-// C++ STL
-#include <cstring>
-#include <vector>
-
-// SDL3 library
-#include <SDL3/SDL.h>
-
 // Local includes
 #include "shapes.h"
-
-
-
-//////
-//
-// Module-private symbols
-//
-
-// Anonymous namespace begin
-namespace {
-
-/// Create a GPU buffer with the given size and usage flags.
-auto createBuffer(SDL_GPUDevice *device, std::size_t size, SDL_GPUBufferUsageFlags usage) -> SDL_GPUBuffer*
-{
-	// Sanity check
-	if (size == 0) {
-		return nullptr;
-	}
-
-	// Create buffer with given usage
-	const SDL_GPUBufferCreateInfo createInfo = {
-		.usage = usage,
-		.size = static_cast<Uint32>(size)
-	};
-	return SDL_CreateGPUBuffer(device, &createInfo);
-}
-
-// Anonymous namespace end
-}
 
 
 
@@ -50,107 +14,46 @@ auto createBuffer(SDL_GPUDevice *device, std::size_t size, SDL_GPUBufferUsageFla
 // SimpleShape
 //
 
-SimpleShape::~SimpleShape()
+SimpleShape::~SimpleShape () = default;
+
+auto SimpleShape::uploadGeometry (
+	fcg::Device &device, std::span<const Vertex> vertices, std::span<const std::uint32_t> indices
+) -> bool
 {
-	if (device != nullptr) {
-		if (m_vertexBuffer != nullptr)
-			SDL_ReleaseGPUBuffer(device->handle(), m_vertexBuffer);
-		if (m_indexBuffer != nullptr)
-			SDL_ReleaseGPUBuffer(device->handle(), m_indexBuffer);
+	// Empty geometry is a successful replacement and must not allocate zero-byte SDL resources.
+	if (vertices.empty() || indices.empty()) {
+		m_vertexBuffer = {};
+		m_indexBuffer = {};
+		m_numIndices = 0;
+		return true;
 	}
-}
-
-void SimpleShape::uploadGeometry(
-	fcg::Device &device, const void *vertexData, std::size_t vertexDataSize, const std::uint32_t *indexData,
-	std::size_t numIndices
-){
-	// Cache the device pointer so the destructor can release buffers later.
-	this->device = &device;
-
-	// Create new GPU buffers. We build new ones first, then release the old ones after waiting for
-	// the GPU to be idle, so any in-flight draw commands still see valid memory.
-	SDL_GPUBuffer *newVertexBuffer = createBuffer(
-		device.handle(), vertexDataSize,
-		SDL_GPU_BUFFERUSAGE_VERTEX
-	);
-
-	const std::size_t indexDataSize = numIndices * sizeof(std::uint32_t);
-	SDL_GPUBuffer *newIndexBuffer = createBuffer(
-		device.handle(), indexDataSize,
-		SDL_GPU_BUFFERUSAGE_INDEX
-	);
-
-	// Upload vertex data via a transfer buffer.
-	if (newVertexBuffer != nullptr && vertexDataSize > 0)
-	{
-		const SDL_GPUTransferBufferCreateInfo transferInfo = {
-			.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
-			.size = static_cast<Uint32>(vertexDataSize)
-		};
-		SDL_GPUTransferBuffer *transferBuffer = SDL_CreateGPUTransferBuffer(device.handle(), &transferInfo);
-		if (transferBuffer != nullptr)
-		{
-			void *dst = SDL_MapGPUTransferBuffer(device.handle(), transferBuffer, false);
-			if (dst != nullptr) {
-				std::memcpy(dst, vertexData, vertexDataSize);
-				SDL_UnmapGPUTransferBuffer(device.handle(), transferBuffer);
-			}
-
-			SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(device.handle());
-			SDL_GPUCopyPass *copyPass = SDL_BeginGPUCopyPass(cmd);
-			const SDL_GPUTransferBufferLocation src = { .transfer_buffer = transferBuffer, .offset = 0 };
-			const SDL_GPUBufferRegion dstRegion = {
-				.buffer = newVertexBuffer,
-				.offset = 0,
-				.size = static_cast<Uint32>(vertexDataSize)
-			};
-			SDL_UploadToGPUBuffer(copyPass, &src, &dstRegion, false);
-			SDL_EndGPUCopyPass(copyPass);
-			SDL_SubmitGPUCommandBuffer(cmd);
-			SDL_ReleaseGPUTransferBuffer(device.handle(), transferBuffer);
-		}
+	if (!uploads)
+		uploads.emplace(device);
+	if (auto *previous = m_vertexBuffer.device(); previous && previous != &device) {
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Cannot migrate a shape between GPU devices");
+		return false;
 	}
 
-	// Upload index data via a transfer buffer.
-	if (newIndexBuffer != nullptr && indexDataSize > 0)
-	{
-		const SDL_GPUTransferBufferCreateInfo transferInfo = {
-			.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
-			.size = static_cast<Uint32>(indexDataSize)
-		};
-		SDL_GPUTransferBuffer *transferBuffer = SDL_CreateGPUTransferBuffer(device.handle(), &transferInfo);
-		if (transferBuffer != nullptr)
-		{
-			void *dst = SDL_MapGPUTransferBuffer(device.handle(), transferBuffer, false);
-			if (dst != nullptr) {
-				std::memcpy(dst, indexData, indexDataSize);
-				SDL_UnmapGPUTransferBuffer(device.handle(), transferBuffer);
-			}
-
-			SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(device.handle());
-			SDL_GPUCopyPass *copyPass = SDL_BeginGPUCopyPass(cmd);
-			const SDL_GPUTransferBufferLocation src = { .transfer_buffer = transferBuffer, .offset = 0 };
-			const SDL_GPUBufferRegion dstRegion = {
-				.buffer = newIndexBuffer,
-				.offset = 0,
-				.size = static_cast<Uint32>(indexDataSize)
-			};
-			SDL_UploadToGPUBuffer(copyPass, &src, &dstRegion, false);
-			SDL_EndGPUCopyPass(copyPass);
-			SDL_SubmitGPUCommandBuffer(cmd);
-			SDL_ReleaseGPUTransferBuffer(device.handle(), transferBuffer);
-		}
+	// Build replacements first. Failure leaves the old GPU geometry and dirty flag intact.
+	auto vertex = fcg::Buffer::create(device, vertices.size_bytes(), SDL_GPU_BUFFERUSAGE_VERTEX);
+	auto index = fcg::Buffer::create(device, indices.size_bytes(), SDL_GPU_BUFFERUSAGE_INDEX);
+	if (!vertex || !index) {
+		const auto &error = !vertex ? vertex.error() : index.error();
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Creating geometry: %s", error.message.c_str());
+		return false;
 	}
-
-	// Wait until the GPU is done with the old buffers before releasing them.
-	device.waitIdle();
-
-	// Commit changes
-	if (m_vertexBuffer != nullptr)
-		SDL_ReleaseGPUBuffer(device.handle(), m_vertexBuffer);
-	if (m_indexBuffer != nullptr)
-		SDL_ReleaseGPUBuffer(device.handle(), m_indexBuffer);
-	m_vertexBuffer = newVertexBuffer;
-	m_indexBuffer = newIndexBuffer;
-	m_numIndices = numIndices;
+	auto result = uploads->upload(*vertex, vertices);
+	if (result)
+		result = uploads->upload(*index, indices);
+	if (result)
+		result = uploads->submit();
+	if (!result) {
+		uploads->clear(); // Drop borrowed handles before the replacement owners leave scope.
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Uploading geometry: %s", result.error().message.c_str());
+		return false;
+	}
+	m_vertexBuffer = std::move(*vertex);
+	m_indexBuffer = std::move(*index);
+	m_numIndices = indices.size();
+	return true;
 }

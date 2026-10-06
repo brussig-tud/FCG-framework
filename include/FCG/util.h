@@ -1,3 +1,27 @@
+/**
+ * \defgroup fcg_utilities Utilities
+ * \ingroup fcg_components
+ *
+ * \ref fcg::StateMachine is a generic finite state machine utility. The declarations in \ref fcg::fsm describe optional controller hooks.
+ *
+ * \par Guide incomplete
+ * This guide is a stub. Consult the API declarations below for currently documented behavior.
+ *
+ * \section fcg_utilities_workflows Common workflows
+ * Guide incomplete: workflow descriptions remain to be investigated and written.
+ *
+ * \section fcg_utilities_lifetime Ownership and lifetime
+ * Guide incomplete: consult individual type and member contracts.
+ *
+ * \section fcg_utilities_errors Errors
+ * Guide incomplete: error handling remains to be investigated and written.
+ *
+ * \section fcg_utilities_examples Examples
+ * Guide incomplete: worked examples remain to be added and compiled.
+ *
+ * \see \ref fcg_runtime, \ref fcg_orbit_camera
+ */
+
 #ifndef __FCG_UTIL_H__
 #define __FCG_UTIL_H__
 
@@ -23,6 +47,10 @@
 
 /// The library top-level namespace.
 namespace fcg {
+
+/** \addtogroup fcg_utilities
+ * @{
+ */
 
 
 
@@ -148,6 +176,8 @@ private:
 };
 
 
+
+/** @} */
 
 //////
 //

@@ -1,3 +1,27 @@
+/**
+ * \defgroup fcg_render_state Render state
+ * \ingroup fcg_components
+ *
+ * \ref fcg::RenderState collects rendering state. \ref fcg::ViewingUniforms describes the viewing matrices passed to shaders.
+ *
+ * \par Guide incomplete
+ * This guide is a stub. Consult the API declarations below for currently documented behavior.
+ *
+ * \section fcg_render_state_workflows Common workflows
+ * Guide incomplete: workflow descriptions remain to be investigated and written.
+ *
+ * \section fcg_render_state_lifetime Ownership and lifetime
+ * Guide incomplete: consult individual type and member contracts.
+ *
+ * \section fcg_render_state_errors Errors
+ * Guide incomplete: error handling remains to be investigated and written.
+ *
+ * \section fcg_render_state_examples Examples
+ * Guide incomplete: worked examples remain to be added and compiled.
+ *
+ * \see \ref fcg_windows, \ref fcg_buffers, \ref fcg_orbit_camera
+ */
+
 
 #ifndef __FCG_RENDER_STATE_H__
 #define __FCG_RENDER_STATE_H__
@@ -44,6 +68,10 @@ namespace fcg {
 
 /// The library top-level namespace.
 namespace fcg {
+
+/** \addtogroup fcg_render_state
+ * @{
+ */
 
 
 
@@ -394,6 +422,8 @@ private:
 };
 
 
+
+/** @} */
 
 //////
 //
