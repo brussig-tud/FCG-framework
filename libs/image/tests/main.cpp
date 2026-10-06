@@ -17,7 +17,7 @@
 #include <SDL3/SDL.h>
 
 // FCG Framework
-#include <FCG/sdl_image.h>
+#include <FCG/Image/sdl_image.h>
 
 
 //////
@@ -162,7 +162,7 @@ void registry ()
 	const auto count = fcg::ImageLoader::global().handlerCount();
 	bool threw = false;
 	try {
-		fcg::ImageFormatRegistration invalid("", nullptr);
+		fcg::FormatHandlerRegistration invalid("", nullptr);
 	}
 	catch (const std::invalid_argument &) {
 		threw = true;

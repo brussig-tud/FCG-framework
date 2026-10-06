@@ -9,7 +9,7 @@
 #include <memory>
 
 // FCG Framework
-#include <FCG/image_loader.h>
+#include <FCG/Image/image_loader.h>
 
 
 //////
@@ -37,7 +37,7 @@ public:
 	}
 };
 
-const fcg::ImageFormatRegistration registration{"test_only", std::make_unique<TestHandler>()};
+const fcg::FormatHandlerRegistration registration{"test_only", std::make_unique<TestHandler>()};
 
 // Anonymous namespace end
 }

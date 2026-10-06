@@ -1,3 +1,4 @@
+
 //////
 //
 // Includes
@@ -18,9 +19,10 @@
 #include "image_internal.h"
 
 
+
 //////
 //
-// Implementation namespace open
+// Implementation details
 //
 
 // Private implementation helpers.
@@ -64,13 +66,13 @@ auto imageHint (std::span<const std::byte> bytes, std::string_view hint) -> std:
 	return normalized;
 }
 
-auto imageSDLError (ImageErrorCode code, const char *operation) -> std::unexpected<ImageError>
-{
+auto imageSDLError (ImageErrorCode code, const char *operation) -> std::unexpected<ImageError> {
 	return std::unexpected(ImageError{code, std::string(operation) + ": " + SDL_GetError()});
 }
 
 // namespace fcg::detail
 }
+
 
 
 //////
@@ -80,6 +82,7 @@ auto imageSDLError (ImageErrorCode code, const char *operation) -> std::unexpect
 
 /// The library top-level namespace.
 namespace fcg {
+
 
 
 //////
@@ -105,8 +108,7 @@ auto ImageFormatHandler::load (const std::filesystem::path &path) const -> std::
 ////
 // ImageLoader
 
-auto ImageLoader::global () -> ImageLoader&
-{
+auto ImageLoader::global () -> ImageLoader& {
 	// Intentionally process-lifetime: static registrars and teardown code must not observe a destroyed registry.
 	static auto *loader = new ImageLoader;
 	// Initialize storage before touching the anchor: deferred TU initialization may itself call global().
@@ -129,13 +131,11 @@ auto ImageLoader::registerHandler (std::string id, std::unique_ptr<ImageFormatHa
 	return {};
 }
 
-auto ImageLoader::removeHandler (std::string_view id) -> bool
-{
+auto ImageLoader::removeHandler (std::string_view id) -> bool {
 	return std::erase_if(m_handlers, [id] (const Entry &entry) { return entry.id == id; }) != 0;
 }
 
-auto ImageLoader::load (const std::filesystem::path &path) const -> std::expected<Image, ImageError>
-{
+auto ImageLoader::load (const std::filesystem::path &path) const -> std::expected<Image, ImageError> {
 	auto input = detail::readImageFile(path);
 	if (!input)
 		return std::unexpected(std::move(input.error()));
@@ -174,15 +174,16 @@ auto ImageLoader::load (std::span<const std::byte> bytes, std::string_view hint)
 
 
 ////
-// ImageFormatRegistration
+// FormatHandlerRegistration
 
-ImageFormatRegistration::ImageFormatRegistration (std::string id, std::unique_ptr<ImageFormatHandler> handler,
-												  int priority)
-{
+FormatHandlerRegistration::FormatHandlerRegistration (
+	std::string id, std::unique_ptr<ImageFormatHandler> handler, int priority
+){
 	auto result = ImageLoader::global().registerHandler(std::move(id), std::move(handler), priority);
 	if (!result)
 		throw std::invalid_argument(result.error().message);
 }
+
 
 
 //////

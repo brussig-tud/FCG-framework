@@ -12,8 +12,8 @@
 #include <SDL3/SDL_error.h>
 
 //! [includes]
-#include <FCG/image_loader.h>
-#include <FCG/sdl_image.h>
+#include <FCG/Image/image_loader.h>
+#include <FCG/Image/sdl_image.h>
 //! [includes]
 
 
@@ -126,7 +126,7 @@ private:
 };
 
 // Outside every function, in the defining translation unit. Priority zero precedes the builtin's -100.
-const fcg::ImageFormatRegistration exampleRegistration{"example_decoder", std::make_unique<ExampleHandler>()};
+const fcg::FormatHandlerRegistration exampleRegistration{"example_decoder", std::make_unique<ExampleHandler>()};
 //! [registration]
 
 // namespace image_examples

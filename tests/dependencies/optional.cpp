@@ -4,7 +4,7 @@
 //
 
 // FCG Framework
-#include <FCG/image_loader.h>
+#include <FCG/Image/image_loader.h>
 
 
 //////

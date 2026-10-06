@@ -8,7 +8,8 @@
 //
 
 // Local includes
-#include "FCG/image_loader.h"
+#include "FCG/Image/image_loader.h"
+
 
 
 //////
@@ -19,6 +20,13 @@
 // Private implementation helpers shared by the reader, registry, and backend.
 namespace fcg::detail {
 
+
+
+//////
+//
+// Structs & enums
+//
+
 /// Owned file bytes and an advisory extension hint.
 struct EncodedImage
 {
@@ -28,6 +36,13 @@ struct EncodedImage
 	/// Native path's extension encoded as UTF-8.
 	std::string hint;
 };
+
+
+
+//////
+//
+// Functions
+//
 
 /// Read one file completely without exposing SDL IO abstractions in the handler interface.
 auto readImageFile (const std::filesystem::path &path) -> std::expected<EncodedImage, ImageError>;
@@ -40,6 +55,13 @@ auto imageSDLError (ImageErrorCode code, const char *operation) -> std::unexpect
 
 /// Keep the shipped registrar's translation unit reachable from the singleton in ordinary static links.
 void linkSDLImageHandler ();
+
+
+
+//////
+//
+// Namespaces close
+//
 
 // namespace fcg::detail
 }

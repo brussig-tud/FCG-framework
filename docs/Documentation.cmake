@@ -13,7 +13,7 @@ fcg_register_documentation(
     LINK_TARGET FCG-framework::Image
     GUIDE fcg_image_guide
     COMPONENTS fcg_images fcg_image_loading fcg_sdl_image
-    INPUTS "${CMAKE_CURRENT_LIST_DIR}/../image/include/FCG"
-    EXAMPLE_DIRS "${CMAKE_CURRENT_LIST_DIR}/../image/tests"
+    INPUTS "${CMAKE_CURRENT_LIST_DIR}/../libs/image/include/FCG/Image"
+    EXAMPLE_DIRS "${CMAKE_CURRENT_LIST_DIR}/../libs/image/tests"
     PREDEFINED FCG_IMAGE_EXPORT=
 )

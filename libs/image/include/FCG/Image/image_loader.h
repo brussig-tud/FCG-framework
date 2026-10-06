@@ -1,3 +1,4 @@
+
 #ifndef __FCG_IMAGE_LOADER_H__
 #define __FCG_IMAGE_LOADER_H__
 
@@ -7,54 +8,52 @@
 // Module documentation
 //
 
-/**
-\page fcg_image_guide Image library guide
+/// \page fcg_image_guide Image library guide
+///
+/// Link the Image CMake target to decode CPU images:
+/// \verbatim
+/// FCG-framework::Image
+/// \endverbatim
+/// Include <FCG/Image/image_loader.h> for the generic loader and
+/// <FCG/Image/sdl_image.h> for direct backend use. This library uses SDL3 surfaces but does not require Core, an applet,
+/// SDL video initialization, or a GPU device. The \ref fcg_images, \ref fcg_image_loading, and \ref fcg_sdl_image
+/// guides describe its components. Core remains responsible for rendering and GPU buffers; texture upload and
+/// format conversion are explicit client operations. Core lives in core/ and exposes headers under FCG/;
+/// Image lives in libs/image/ and exposes headers under FCG/Image/.
+///
+/// \section image_library_build Build and dependencies
+/// FCG_SHARED_LIBS selects framework linkage; FCG_USE_SHARED_SDL selects SDL linkage, defaulting to the framework
+/// choice. Source-built SDL_image follows the latter because a shared SDL_image requires shared SDL3. SDL3_image
+/// 3.4.4 is the pinned source fallback. Compatible system packages and previously provided SDL3_image::SDL3_image
+/// targets are reused as-is; source configuration cannot change their codecs or linkage. As with Core, installed
+/// targets currently defer full third-party dependency exports. CPM/add_subdirectory consumers receive build-time
+/// dependency targets transitively.
+///
+/// The source fallback enables built-in formats and avoids external codec dependencies by default. AVIF, JPEG XL,
+/// TIFF, WebP, libpng, and codec vendoring default to OFF. PNG uses SDL's built-in decoder and JPEG uses SDL_image's
+/// stb backend. Change the upstream SDLIMAGE_* variables before adding the framework; FCG respects normal variables
+/// and cache entries and introduces no bespoke codec switches. To decode WebP with installed codec dependencies:
+/// \code{.cmake}
+/// set(SDLIMAGE_WEBP ON CACHE BOOL "Enable WebP decoding")
+/// set(SDLIMAGE_STRICT ON CACHE BOOL "Require requested codec dependencies")
+/// CPMAddPackage(NAME FCG SOURCE_DIR "/path/to/framework")
+/// target_link_libraries(my_app PRIVATE FCG-framework::Image)
+/// \endcode
+/// Replace the source path with your framework checkout, or use your pinned GITHUB_REPOSITORY/GIT_TAG in CPM.
+/// Set SDLIMAGE_VENDORED=ON to fetch requested external codec sources; enabled codec submodules are fetched with the
+/// pinned SDL_image checkout. Enable SDLIMAGE_AVIF, SDLIMAGE_JXL, SDLIMAGE_TIF, or SDLIMAGE_PNG_LIBPNG similarly.
+/// SDLIMAGE_STRICT makes missing dependencies a configuration error rather than silently disabling a requested codec.
+/// Vendored codecs link statically by default (SDLIMAGE_DEPS_SHARED=OFF), keeping them inside SDL_image.
+/// Options also work with -D on the command line. Prebuilt packages may support more or fewer formats.
+///
+/// \section image_library_start Starting points
+/// Use ImageLoader::global() for the shipped automatic registry, a local ImageLoader for explicit control, or
+/// SDLImageFormatHandler directly when backend choice is intentional. All loads are synchronous and return
+/// std::expected. No initialization call, logger, GPU allocation, cache, or background task is introduced.
+/// Registration exists for loaded translation units; see \ref image_loading_registration for static-archive retention.
+/// Saving, animation sequences, resizing, automatic conversion, and GPU upload are outside this library's loading API.
+/// SDL_image's still-image API supplies one surface even for formats that can contain multiple frames.
 
-Link the Image CMake target to decode CPU images:
-\verbatim
-FCG-framework::Image
-\endverbatim
-Include <FCG/image_loader.h> for the generic loader and
-<FCG/sdl_image.h> for direct backend use. This library uses SDL3 surfaces but does not require Core, an applet,
-SDL video initialization, or a GPU device. The \ref fcg_images, \ref fcg_image_loading, and \ref fcg_sdl_image
-guides describe its components. Core remains responsible for rendering and GPU buffers; texture upload and
-format conversion are explicit client operations. Source libraries live in lower-case core/ and image/ folders;
-installed public include paths retain the common FCG/ prefix.
-
-\section image_library_build Build and dependencies
-FCG_SHARED_LIBS selects framework linkage; FCG_USE_SHARED_SDL selects SDL linkage, defaulting to the framework
-choice. Source-built SDL_image follows the latter because a shared SDL_image requires shared SDL3. SDL3_image
-3.4.4 is the pinned source fallback. Compatible system packages and previously provided SDL3_image::SDL3_image
-targets are reused as-is; source configuration cannot change their codecs or linkage. As with Core, installed
-targets currently defer full third-party dependency exports. CPM/add_subdirectory consumers receive build-time
-dependency targets transitively.
-
-The source fallback enables built-in formats and avoids external codec dependencies by default. AVIF, JPEG XL,
-TIFF, WebP, libpng, and codec vendoring default to OFF. PNG uses SDL's built-in decoder and JPEG uses SDL_image's
-stb backend. Change the upstream SDLIMAGE_* variables before adding the framework; FCG respects normal variables
-and cache entries and introduces no bespoke codec switches. To decode WebP with installed codec dependencies:
-\code{.cmake}
-set(SDLIMAGE_WEBP ON CACHE BOOL "Enable WebP decoding")
-set(SDLIMAGE_STRICT ON CACHE BOOL "Require requested codec dependencies")
-CPMAddPackage(NAME FCG SOURCE_DIR "/path/to/framework")
-target_link_libraries(my_app PRIVATE FCG-framework::Image)
-\endcode
-Replace the source path with your framework checkout, or use your pinned GITHUB_REPOSITORY/GIT_TAG in CPM.
-Set SDLIMAGE_VENDORED=ON to fetch requested external codec sources; enabled codec submodules are fetched with the
-pinned SDL_image checkout. Enable SDLIMAGE_AVIF, SDLIMAGE_JXL, SDLIMAGE_TIF, or SDLIMAGE_PNG_LIBPNG similarly.
-SDLIMAGE_STRICT makes missing dependencies a configuration error rather than silently disabling a requested codec.
-Vendored codecs link statically by default (SDLIMAGE_DEPS_SHARED=OFF), keeping them inside SDL_image.
-Options also work with -D on the command line. Prebuilt packages may support more or fewer formats.
-
-\section image_library_start Starting points
-Use ImageLoader::global() for the shipped automatic registry, a local ImageLoader for explicit control, or
-SDLImageFormatHandler directly when backend choice is intentional. All loads are synchronous and return
-std::expected. No initialization call, logger, GPU allocation, cache, or background task is introduced.
-Registration exists for loaded translation units; see \ref image_loading_registration for static-archive retention.
-Saving, animation sequences, resizing, automatic conversion, and GPU upload are outside this library's loading API.
-SDL_image's still-image API supplies one surface even for formats that can contain multiple frames.
-
-*/
 
 
 //////
@@ -100,7 +99,7 @@ SDL_image's still-image API supplies one surface even for formats that can conta
 /// helpers never unregister on destruction. Avoid unloading a module while its handler remains registered.
 /// \snippet image_examples.cpp registration
 ///
-/// A namespace-scope ImageFormatRegistration transfers a constructed handler to this registry during dynamic static
+/// A namespace-scope FormatHandlerRegistration transfers a constructed handler to this registry during dynamic static
 /// initialization. It needs no function-scope bootstrap call. Invalid/duplicate registrations throw
 /// std::invalid_argument; an uncaught exception in a static initializer terminates startup. Allocation exceptions can
 /// also propagate. Singleton access is safe during static initialization, but loaders in unrelated global constructors
@@ -121,6 +120,7 @@ SDL_image's still-image API supplies one surface even for formats that can conta
 /// \snippet image_examples.cpp errors
 
 
+
 //////
 //
 // Includes
@@ -136,7 +136,8 @@ SDL_image's still-image API supplies one surface even for formats that can conta
 #include <vector>
 
 // Local includes
-#include "FCG/image.h"
+#include "FCG/Image/image.h"
+
 
 
 //////
@@ -146,6 +147,7 @@ SDL_image's still-image API supplies one surface even for formats that can conta
 
 /// The library top-level namespace.
 namespace fcg {
+
 
 
 //////
@@ -169,18 +171,23 @@ public:
 	// Methods
 
 	/// Inspect encoded bytes without retaining or changing them. Acceptance need not imply decode success.
+	///
 	/// \param bytes Encoded data, borrowed during the call. \param hint Normalized extension, possibly empty.
+	///
 	/// \returns Whether decoding should be attempted, or a recoverable probe failure.
 	[[nodiscard]] virtual auto accepts (std::span<const std::byte> bytes, std::string_view hint={}) const
 		-> std::expected<bool, ImageError> = 0;
 
 	/// Decode borrowed bytes synchronously into an independently owned surface.
+	///
 	/// \param bytes Encoded data, borrowed during the call. \param hint Extension hint; never retained.
+	///
 	/// \returns A decoded Image or an owned error. Implementations may be called without a preceding accepts().
 	[[nodiscard]] virtual auto load (std::span<const std::byte> bytes, std::string_view hint={}) const
 		-> std::expected<Image, ImageError> = 0;
 
 	/// Read a file once, derive its extension hint, and invoke the byte decoder directly.
+	///
 	/// \param path Native filesystem path. \returns A decoded image or input/I/O/decoder failure.
 	[[nodiscard]] auto load (const std::filesystem::path &path) const -> std::expected<Image, ImageError>;
 };
@@ -216,21 +223,26 @@ public:
 	// Registry
 
 	/// Obtain the process-lifetime singleton. Full automatic registration completes after static initialization.
+	///
 	/// \returns The shared registry; serialize subsequent operations externally.
 	[[nodiscard]] static auto global () -> ImageLoader&;
 
 	/// Transfer a handler into this registry, ordered by descending priority and ascending ID.
+	///
 	/// \param id Unique nonempty ID, copied/owned by the registry; embedded NULs are invalid.
 	/// \param handler Non-null owner, consumed even if registration fails. \param priority Higher values run first.
+	///
 	/// \returns Success, InvalidArgument, or DuplicateHandler. Allocation exceptions may propagate.
 	[[nodiscard]] auto registerHandler (std::string id, std::unique_ptr<ImageFormatHandler> handler, int priority=0)
 		-> std::expected<void, ImageError>;
 
 	/// Remove and destroy a handler by ID. Must not be called from this loader's callbacks.
+	///
 	/// \param id Registered ID. \returns Whether an entry was removed.
 	auto removeHandler (std::string_view id) -> bool;
 
 	/// Inspect registry size without exposing borrowed handler objects.
+	///
 	/// \returns The number of owned handlers.
 	[[nodiscard]] auto handlerCount () const -> std::size_t { return m_handlers.size(); }
 
@@ -239,12 +251,15 @@ public:
 	// Loading
 
 	/// Read a file once and dispatch its bytes to accepting handlers in registry order.
+	///
 	/// \param path Native path; its extension is advisory. \returns A decoded image or input/I/O/dispatch failure.
 	[[nodiscard]] auto load (const std::filesystem::path &path) const -> std::expected<Image, ImageError>;
 
 	/// Try accepting handlers until one succeeds. Input is not retained and no implicit conversion occurs.
-	/// \param bytes Nonempty encoded image. \param hint Optional extension, with optional leading dot;
-	/// case-insensitive.
+	///
+	/// \param bytes
+	/// 	Nonempty encoded image. \param hint Optional extension, with optional leading dot; case-insensitive.
+	///
 	/// \returns An image, UnsupportedFormat if all decline, or an ordered aggregate DecodeFailure.
 	[[nodiscard]] auto load (std::span<const std::byte> bytes, std::string_view hint={}) const
 		-> std::expected<Image, ImageError>;
@@ -277,7 +292,7 @@ private:
 };
 
 /// \brief Namespace-scope registration of an owned handler with ImageLoader::global(). \ingroup fcg_image_loading
-class FCG_IMAGE_EXPORT ImageFormatRegistration
+class FCG_IMAGE_EXPORT FormatHandlerRegistration
 {
 public:
 
@@ -285,19 +300,21 @@ public:
 	// Object construction/destruction
 
 	/// Register immediately. Invalid or duplicate registration throws std::invalid_argument; never logs.
+	///
 	/// \param id Unique nonempty registry ID. \param handler Owner transferred to the singleton.
 	/// \param priority Dispatch priority, higher first. Allocation exceptions may propagate.
-	ImageFormatRegistration (std::string id, std::unique_ptr<ImageFormatHandler> handler, int priority=0);
+	FormatHandlerRegistration (std::string id, std::unique_ptr<ImageFormatHandler> handler, int priority=0);
 
 	/// No deregistration occurs; handler ownership belongs to the singleton.
-	~ImageFormatRegistration () = default;
+	~FormatHandlerRegistration () = default;
 
 	/// Registration helpers represent one construction-time action and cannot be copied.
-	ImageFormatRegistration (const ImageFormatRegistration&) = delete;
+	FormatHandlerRegistration (const FormatHandlerRegistration&) = delete;
 
 	/// Helpers cannot be copy-assigned.
-	auto operator= (const ImageFormatRegistration&) -> ImageFormatRegistration& = delete;
+	auto operator= (const FormatHandlerRegistration&) -> FormatHandlerRegistration& = delete;
 };
+
 
 
 //////

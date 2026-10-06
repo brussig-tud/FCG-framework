@@ -1,3 +1,4 @@
+
 #ifndef __FCG_SDL_IMAGE_H__
 #define __FCG_SDL_IMAGE_H__
 
@@ -51,13 +52,15 @@
 /// Direct load(path) shares the same file reader as ImageLoader and adds its input/I/O errors. No failures are logged.
 
 
+
 //////
 //
 // Includes
 //
 
 // Local includes
-#include "FCG/image_loader.h"
+#include "FCG/Image/image_loader.h"
+
 
 
 //////
@@ -67,6 +70,7 @@
 
 /// The library top-level namespace.
 namespace fcg {
+
 
 
 //////
@@ -104,6 +108,7 @@ public:
 	[[nodiscard]] auto load (std::span<const std::byte> bytes, std::string_view hint={}) const
 		-> std::expected<Image, ImageError> override;
 };
+
 
 
 //////

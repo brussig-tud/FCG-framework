@@ -19,10 +19,18 @@ if(IMAGE_RUNTIME AND NOT EXISTS "${PREFIX}/lib/${IMAGE_RUNTIME}" AND NOT EXISTS 
 endif()
 
 # Public headers
-foreach (header run.h window.h applet.h event.h export.h buffer.h image_export.h image.h image_loader.h sdl_image.h)
+foreach (header run.h window.h applet.h event.h export.h buffer.h
+    Image/export.h Image/image.h Image/image_loader.h Image/sdl_image.h)
 	if (NOT EXISTS "${PREFIX}/include/FCG/${header}")
 		list(APPEND missing "include/FCG/${header}")
 	endif()
+endforeach()
+
+# Fresh installs must expose Image only through its library-specific include directory.
+foreach(header image_export.h image.h image_loader.h sdl_image.h)
+    if(EXISTS "${PREFIX}/include/FCG/${header}")
+        message(FATAL_ERROR "install-smoke: obsolete header include/FCG/${header}; use a clean installation prefix")
+    endif()
 endforeach()
 
 # CMake package: config + version file, plus at least one target export set
@@ -41,8 +49,8 @@ file(GLOB target_files "${PREFIX}/lib/cmake/FCG/FCG-*-targets.cmake")
 foreach(target_file IN LISTS target_files)
     file(READ "${target_file}" targets)
     foreach(library Core Image)
-        if(NOT targets MATCHES "add_library\\(FCG-framework::${library}")
-            list(APPEND missing "FCG-framework::${library} in ${target_file}")
+        if(NOT targets MATCHES "add_library\\(FCG-Framework::${library}")
+            list(APPEND missing "FCG-Framework::${library} in ${target_file}")
         endif()
     endforeach()
 endforeach()

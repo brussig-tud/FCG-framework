@@ -11,7 +11,8 @@
 
 # Shader resources: exercise lookup without a GPU and validate the custom-command dependency graph independently.
 add_subdirectory("${PROJECT_SOURCE_DIR}/core/tests" "${PROJECT_BINARY_DIR}/core/tests")
-add_subdirectory("${PROJECT_SOURCE_DIR}/image/tests" "${PROJECT_BINARY_DIR}/image/tests")
+add_subdirectory("${PROJECT_SOURCE_DIR}/libs/image/tests" "${PROJECT_BINARY_DIR}/libs/image/tests")
+include(dependencies/Tests.cmake)
 add_test(
 	NAME shader-build-smoke
 	COMMAND "${CMAKE_COMMAND}"
@@ -64,6 +65,9 @@ add_test(
         "-DTEST_BINARY=${CMAKE_CURRENT_BINARY_DIR}/documentation"
         "-DFCG_DOCUMENTATION_CMAKE=${PROJECT_SOURCE_DIR}/cmake/Documentation.cmake"
         "-DFCG_DOXYFILE_TEMPLATE=${PROJECT_SOURCE_DIR}/docs/Doxyfile.in"
+        "-DFCG_DEPENDENCIES_DIR=${PROJECT_SOURCE_DIR}/cmake/Dependencies"
+        "-DTEST_DOXYGEN_FOUND=${DOXYGEN_FOUND}"
+        "-DDOXYGEN_EXECUTABLE=${DOXYGEN_EXECUTABLE}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/documentation/run.cmake"
 )
 set_tests_properties(documentation-smoke PROPERTIES TIMEOUT 180)

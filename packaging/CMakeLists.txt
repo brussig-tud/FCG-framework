@@ -32,9 +32,11 @@ if (FCG_IMGUI_BUILT_HERE)
 		LIBRARY COMPONENT FCG_Runtime
 	)
 endif()
-foreach(library core image)
+foreach(library IN LISTS FCG_INCLUDED_LIBS)
+	get_target_property(library_source_dir ${library} SOURCE_DIR)
+	get_target_property(library_binary_dir ${library} BINARY_DIR)
 	install(
-		DIRECTORY "${PROJECT_SOURCE_DIR}/${library}/include/" "${PROJECT_BINARY_DIR}/${library}/include/"
+		DIRECTORY "${library_source_dir}/include/" "${library_binary_dir}/include/"
 		TYPE INCLUDE
 		COMPONENT FCG_Development
 	)

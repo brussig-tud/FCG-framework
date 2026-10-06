@@ -48,6 +48,7 @@
 /// automatically. See \ref fcg_image_loading for unsupported formats and fallback diagnostics.
 
 
+
 //////
 //
 // Includes
@@ -57,11 +58,12 @@
 #include <expected>
 #include <string>
 
-// SDL3 library (public surface and pixel-format interoperability)
+// SDL3 library
 #include <SDL3/SDL_surface.h>
 
 // Local includes
-#include "FCG/image_export.h"
+#include "FCG/Image/export.h"
+
 
 
 //////
@@ -71,6 +73,7 @@
 
 /// The library top-level namespace.
 namespace fcg {
+
 
 
 //////
@@ -109,6 +112,7 @@ struct ImageError
 	/// Human-readable context; loader failures include the IDs of failed handlers in attempt order.
 	std::string message;
 };
+
 
 
 //////
@@ -191,6 +195,7 @@ private:
 	/// Owned SDL surface; null after move.
 	SDL_Surface *m_handle = nullptr;
 };
+
 
 
 //////

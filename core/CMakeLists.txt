@@ -18,9 +18,11 @@ target_link_libraries(
 target_link_libraries(Core PRIVATE "$<BUILD_INTERFACE:SDL3_shadercross::SDL3_shadercross>")
 # Enable the experimental GLM GTX extensions (e.g. GLM_GTX_color_space used for color handling).
 target_compile_definitions(Core PUBLIC GLM_ENABLE_EXPERIMENTAL)
+
+# Collect sources
+set(FCG_CORE_BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 add_subdirectory(src)
 
 # Embedded shaders (cmake/Shaders.cmake).
 add_subdirectory(shaders)
 target_link_libraries(Core PRIVATE "$<BUILD_INTERFACE:fcg-shaders>")
-

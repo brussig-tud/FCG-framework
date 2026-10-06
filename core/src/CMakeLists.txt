@@ -14,21 +14,25 @@ set(SOURCES
 	window.cpp
 )
 
-# Collect interface headers
+# Collect headers
 set(HEADERS
-	${CMAKE_CURRENT_SOURCE_DIR}/../include/FCG/buffer.h
-	${CMAKE_CURRENT_SOURCE_DIR}/../include/FCG/applet/orbit_camera.h
-	${CMAKE_CURRENT_SOURCE_DIR}/../include/FCG/applet.h
-	${CMAKE_CURRENT_SOURCE_DIR}/../include/FCG/event.h
-	${CMAKE_CURRENT_SOURCE_DIR}/../include/FCG/device.h
-	${CMAKE_CURRENT_SOURCE_DIR}/../include/FCG/frame.h
-	${CMAKE_CURRENT_SOURCE_DIR}/../include/FCG/gui.h
-	${CMAKE_CURRENT_SOURCE_DIR}/../include/FCG/player.h
-	${CMAKE_CURRENT_SOURCE_DIR}/../include/FCG/render_state.h
-	${CMAKE_CURRENT_SOURCE_DIR}/../include/FCG/res.h
-	${CMAKE_CURRENT_SOURCE_DIR}/../include/FCG/run.h
-	${CMAKE_CURRENT_SOURCE_DIR}/../include/FCG/util.h
-	${CMAKE_CURRENT_SOURCE_DIR}/../include/FCG/window.h
+	# Public interface
+	${FCG_CORE_BASE_DIR}/include/FCG/buffer.h
+	${FCG_CORE_BASE_DIR}/include/FCG/applet/orbit_camera.h
+	${FCG_CORE_BASE_DIR}/include/FCG/applet.h
+	${FCG_CORE_BASE_DIR}/include/FCG/event.h
+	${FCG_CORE_BASE_DIR}/include/FCG/device.h
+	${FCG_CORE_BASE_DIR}/include/FCG/frame.h
+	${FCG_CORE_BASE_DIR}/include/FCG/gui.h
+	${FCG_CORE_BASE_DIR}/include/FCG/player.h
+	${FCG_CORE_BASE_DIR}/include/FCG/render_state.h
+	${FCG_CORE_BASE_DIR}/include/FCG/res.h
+	${FCG_CORE_BASE_DIR}/include/FCG/run.h
+	${FCG_CORE_BASE_DIR}/include/FCG/util.h
+	${FCG_CORE_BASE_DIR}/include/FCG/window.h
+
+	# Internal
+	#<nothing here yet>
 )
 
 # Add to our target

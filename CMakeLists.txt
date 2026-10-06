@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.31)
 
 # Setup CMake project.
-set(FCG_PROJECT_NAME FCG-framework)
+set(FCG_PROJECT_NAME FCG-Framework)
 project(${FCG_PROJECT_NAME})
 
 # Library version
@@ -42,26 +42,26 @@ else()
 endif()
 option(FCG_USE_SHARED_SDL "Use shared SDL3 library" "${SDL_SHARED_DEFAULT}")
 
-# Dependencies (SDL3, GLM, ImGui) - declared in cmake/Dependencies.cmake.
+string(COMPARE EQUAL "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}" is_top_level)
+option(FCG_INCLUDE_PACKAGING "Include packaging rules for the FCG Framework library" "${is_top_level}")
+option(FCG_BUILD_DOCUMENTATION "Enable the optional framework documentation target" "${is_top_level}")
+
+# Resolve all build dependencies and optional tools before configuring any consumers.
 include(cmake/Dependencies.cmake)
 include(cmake/Shaders.cmake)
-# Framework libraries live in their own lower-case source directories.
+# Core lives at the root; additional framework libraries are registered under libs/.
 add_subdirectory(core)
-add_subdirectory(image)
-list(APPEND FCG_INCLUDED_LIBS Core Image)
+add_subdirectory(libs)
+set(FCG_INCLUDED_LIBS Core ${FCG_ADDITIONAL_LIBS})
 
 # (Optional) apps to build.
 add_subdirectory(app)
-
-string(COMPARE EQUAL "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}" is_top_level)
-option(FCG_INCLUDE_PACKAGING "Include packaging rules for the FCG Framework library" "${is_top_level}")
 
 # Setup testing
 enable_testing()
 add_subdirectory(tests)
 
 # Documentation registrations are independent of library build options.
-option(FCG_BUILD_DOCUMENTATION "Enable the optional framework documentation target" "${is_top_level}")
 include(cmake/Documentation.cmake)
 include(docs/Documentation.cmake)
 fcg_add_documentation(

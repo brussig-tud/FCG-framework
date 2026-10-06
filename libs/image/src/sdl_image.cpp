@@ -1,3 +1,4 @@
+
 //////
 //
 // Includes
@@ -9,12 +10,12 @@
 #include <string_view>
 #include <utility>
 
-// SDL3 and SDL3_image libraries
+// SDL3 library
 #include <SDL3/SDL_iostream.h>
 #include <SDL3_image/SDL_image.h>
 
 // Local includes
-#include "FCG/sdl_image.h"
+#include "FCG/Image/sdl_image.h"
 #include "image_internal.h"
 
 
@@ -32,11 +33,11 @@ using Stream = std::unique_ptr<SDL_IOStream, decltype(&SDL_CloseIO)>;
 /// Probe one signature and reset between attempts. False probes are normal, even when they leave an SDL diagnostic.
 auto detectedType (SDL_IOStream *stream) -> std::expected<const char*, fcg::ImageError>
 {
-	struct Probe
-	{
+	struct Probe {
 		const char *type;
 		bool(SDLCALL *is)(SDL_IOStream *);
 	};
+
 	// Match the still-image formats supported by IMG_LoadTyped_IO; ANI has only an animation loader.
 	static constexpr Probe probes[] {
 		{"AVIF", IMG_isAVIF}, {"CUR", IMG_isCUR}, {"ICO", IMG_isICO}, {"BMP", IMG_isBMP},
@@ -45,18 +46,18 @@ auto detectedType (SDL_IOStream *stream) -> std::expected<const char*, fcg::Imag
 		{"TIF", IMG_isTIF}, {"XCF", IMG_isXCF}, {"XPM", IMG_isXPM}, {"XV", IMG_isXV},
 		{"WEBP", IMG_isWEBP}, {"QOI", IMG_isQOI}
 	};
+
 	for (const auto &probe : probes) {
 		if (SDL_SeekIO(stream, 0, SDL_IO_SEEK_SET) < 0)
 			return fcg::detail::imageSDLError(fcg::ImageErrorCode::SDLFailure, "Seeking image probe stream");
 		if (probe.is(stream))
 			return probe.type;
 	}
-	return static_cast<const char *>(nullptr);
+	return nullptr;
 }
 
 /// Recognized extensions permit a decode attempt, even when an optional codec cannot probe in this build.
-auto recognizedHint (std::string_view hint) -> bool
-{
+auto recognizedHint (std::string_view hint) -> bool {
 	static constexpr std::string_view extensions[] {
 		"avif", "cur", "ico", "bmp", "gif", "jpg", "jpeg", "jxl", "lbm", "iff", "pcx", "png",
 		"pnm", "pbm", "pgm", "ppm", "svg", "tga", "tif", "tiff", "xcf", "xpm", "xv", "webp", "qoi"
@@ -65,12 +66,13 @@ auto recognizedHint (std::string_view hint) -> bool
 }
 
 /// Static registration is retained in archive links by linkSDLImageHandler below.
-const fcg::ImageFormatRegistration sdlImageRegistration {
+const fcg::FormatHandlerRegistration sdlImageRegistration {
 	"sdl_image", std::make_unique<fcg::SDLImageFormatHandler>(), -100
 };
 
 // Anonymous namespace end
 }
+
 
 
 //////
@@ -80,6 +82,7 @@ const fcg::ImageFormatRegistration sdlImageRegistration {
 
 /// The library top-level namespace.
 namespace fcg {
+
 
 
 //////
@@ -133,21 +136,23 @@ auto SDLImageFormatHandler::load (std::span<const std::byte> bytes, std::string_
 }
 
 
+
 //////
 //
-// Implementation functions
+// Functions
 //
 
+// Private interface namespace
 namespace detail {
 
-void linkSDLImageHandler ()
-{
+void linkSDLImageHandler () {
 	// Referencing a TU-local object also ensures deferred dynamic initialization precedes this function.
 	(void) &sdlImageRegistration;
 }
 
 // namespace detail
 }
+
 
 
 //////

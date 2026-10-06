@@ -22,4 +22,3 @@ set_tests_properties(lifecycle-smoke PROPERTIES
 	# Validation diagnostics can be emitted even when the process exits successfully, including during teardown.
 	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-"
 )
-

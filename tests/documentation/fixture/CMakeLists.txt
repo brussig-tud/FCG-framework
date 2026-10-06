@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.31)
 project(DocumentationFixture NONE)
 include("${FCG_DOCUMENTATION_CMAKE}")
 option(FCG_BUILD_DOCUMENTATION "Build documentation" "${PROJECT_IS_TOP_LEVEL}")
+# This independent project resolves its tooling at startup, before documentation registration.
+include("${FCG_DEPENDENCIES_DIR}/Doxygen.cmake")
 add_library(First INTERFACE)
 set(first_components fixture_first)
 set(second_components fixture_second)
