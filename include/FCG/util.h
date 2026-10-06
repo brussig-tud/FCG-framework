@@ -91,6 +91,13 @@ public:
 		return std::get<S>(m_state);
 	}
 
+	template<class Old>
+	inline void onExit (Old &old) {
+		if constexpr (fsm::has_onExit<Controller, Old>) {
+			m_controller.onExit(old);
+		}
+	}
+
 	/// Transition to a new state, forwarding the given constructor arguments.
 	template<class NewState, class... Args>
 	void transition (Args&&... args)
@@ -98,12 +105,7 @@ public:
 		static_assert((std::is_same_v<NewState, States> || ...), "NewState must be one of the FSM states");
 
 		// Call exit on the current state if controller defines it.
-		std::visit([this](auto &old) {
-			using Old = std::decay_t<decltype(old)>;
-			if constexpr (fsm::has_onExit<Controller, Old>) {
-				m_controller.onExit(old);
-			}
-		}, m_state);
+		std::visit([this](auto &old) { onExit(old); }, m_state);
 
 		// Construct the new state.
 		NewState ns(std::forward<Args>(args)...);
@@ -123,7 +125,7 @@ public:
 			using Cur = std::decay_t<decltype(curState)>;
 			if constexpr (requires(Controller &c, Cur &state, const Event &event, StateMachine& fsm) {
 				{ c.on(state, event, fsm) } -> std::same_as<void>;
-			}) {
+			}){
 				m_controller.on(curState, event, *this);
 			}
 		}, m_state);

@@ -66,7 +66,7 @@ public:
 	// Interface: fcg::Applet
 
 	[[nodiscard]] auto name () const -> const std::string& override {
-		constexpr static std::string name = "Simple Shapes";
+		const static std::string name = "Simple Shapes";
 		return name;
 	}
 
