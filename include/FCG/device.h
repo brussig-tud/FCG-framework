@@ -121,16 +121,36 @@ class FCG_FRAMEWORK_EXPORT Device
 	////
 	// Friend declarations
 
+	// Buffers need access to the private RetiredFence type.
 	friend class Buffer;
+
+	// BufferReadbacks need access to the private RetiredFence type.
 	friend class BufferReadback;
+
+	// The player needs to manage this device abstraction.
 	friend class Player;
 
+
+	////
+	// Types
+
+	/// Preallocated retirement node: abandoning a pending readback must neither allocate nor block.
+	struct RetiredFence {
+		/// Fence held until its submission completes.
+		SDL_GPUFence *handle = nullptr;
+
+		/// Next deferred fence; unlinked iteratively during collection.
+		std::unique_ptr<RetiredFence> next;
+	};
 
 	/// Zero-overhead key to access our pseudo-private constructors. Pseudo-private because we don't want them used
 	/// outside our own internals, but they have to be public because otherwise they can't be used by STL functions
 	/// which we use internally (like \c std::make_optional). WHY C++??? WHYYYYYYY??????!?!?!!!11
 	class PrivateConstructorKey final {
+		/// Device needs to construct the key inside \ref Device::create.
 		friend Device;
+
+		/// Private default constructor. Statically no-op and thus zero-overhead.
 		constexpr PrivateConstructorKey() noexcept = default;
 	};
 
@@ -141,6 +161,7 @@ public:
 	// Object construction/destruction
 
 	/// Construct wrapping the given SDL GPU device handle (pseudo-private, for internal use only).
+	///
 	/// \param key Internal construction permission. \param handle Owned SDL device handle.
 	explicit Device([[maybe_unused]] PrivateConstructorKey key, SDL_GPUDevice *handle)
 		: m_handle(handle)
@@ -223,16 +244,6 @@ public:
 
 
 private:
-
-	////
-	// Types
-
-	/// Preallocated retirement node: abandoning a pending readback must neither allocate nor block.
-	struct RetiredFence {
-		SDL_GPUFence *handle = nullptr; ///< Fence held until its submission completes.
-		std::unique_ptr<RetiredFence> next; ///< Next deferred fence; unlinked iteratively during collection.
-	};
-
 
 	////
 	// Methods

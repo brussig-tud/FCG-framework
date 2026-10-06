@@ -43,6 +43,12 @@ Do not guess uninvestigated behavior. Expand the stub as contracts are investiga
 compiles these as `buffer-examples`. Register snippet directories even when their library binaries or example
 executables are disabled; examples are never API inputs.
 
+Update module guides, class/method contracts, and compiled snippets in the same change as their APIs. Validate both
+parts: build the normal targets (including `buffer-examples`), then build `fcg-docs` and review the affected rendered
+pages. Doxygen detects broken references and snippets; compilation checks example/API compatibility. Neither replaces
+review of lifetime, error, and ownership contracts. For buffer ownership, distinguish optional absence from moved-from
+objects and keep examples of delayed creation and replacement consistent with the factories.
+
 
 ## Library registrations
 

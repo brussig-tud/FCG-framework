@@ -11,6 +11,7 @@
 // C++ STL
 #include <cstdint>
 #include <span>
+#include <optional>
 
 // SDL3 library
 #include <SDL3/SDL.h>
@@ -21,7 +22,6 @@
 // Local includes
 #include <FCG/device.h>
 #include <FCG/buffer.h>
-#include <optional>
 
 
 
@@ -131,19 +131,23 @@ public:
 		return m_dirty;
 	}
 
-	/// The GPU vertex buffer, empty if \ref regenerate has not been called successfully yet.
-	[[nodiscard]] inline auto vertexBuffer () const -> const fcg::Buffer& {
-		return m_vertexBuffer;
+	/// Borrow the uploaded vertex buffer.
+	/// \returns nullptr before successful upload or after empty replacement; otherwise a borrowed pointer,
+	/// valid until the next successful geometry replacement or destruction of this shape.
+	[[nodiscard]] inline auto vertexBuffer () const -> const fcg::Buffer* {
+		return m_geometry ? &m_geometry->vertices : nullptr;
 	}
 
-	/// The GPU index buffer, empty if \ref regenerate has not been called successfully yet.
-	[[nodiscard]] inline auto indexBuffer () const -> const fcg::Buffer& {
-		return m_indexBuffer;
+	/// Borrow the uploaded index buffer.
+	/// \returns nullptr before successful upload or after empty replacement; otherwise a borrowed pointer,
+	/// valid until the next successful geometry replacement or destruction of this shape.
+	[[nodiscard]] inline auto indexBuffer () const -> const fcg::Buffer* {
+		return m_geometry ? &m_geometry->indices : nullptr;
 	}
 
-	/// Number of indices currently stored in \ref indexBuffer.
+	/// Number of uploaded indices; zero when no GPU geometry is present.
 	[[nodiscard]] inline auto numIndices () const -> std::size_t {
-		return m_numIndices;
+		return m_geometry ? m_geometry->numIndices : 0;
 	}
 
 
@@ -174,6 +178,17 @@ protected:
 private:
 
 	////
+	// Types
+
+	/// One successfully submitted geometry replacement. Both allocations are required and committed together.
+	struct Geometry {
+		fcg::Buffer vertices; ///< Owned vertex allocation.
+		fcg::Buffer indices; ///< Owned index allocation.
+		std::size_t numIndices; ///< Number of uploaded indices, nonzero for committed geometry.
+	};
+
+
+	////
 	// Fields
 
 	/// Dirty flag: parameters changed, geometry needs to be regenerated.
@@ -182,14 +197,8 @@ private:
 	/// Reusable staging, created on the first upload and bound to that device.
 	std::optional<fcg::UploadBatch> uploads;
 
-	/// Fixed-size GPU vertex allocation, empty until a successful upload.
-	fcg::Buffer m_vertexBuffer;
-
-	/// Fixed-size GPU index allocation, empty until a successful upload.
-	fcg::Buffer m_indexBuffer;
-
-	/// Number of uploaded indices.
-	std::size_t m_numIndices = 0;
+	/// Present only after a nonempty geometry upload succeeds; failed replacement preserves the previous value.
+	std::optional<Geometry> m_geometry;
 };
 
 

@@ -42,6 +42,36 @@ auto bindGeometry (SDL_GPURenderPass *pass, const Geometry &geometry) -> std::ex
 }
 // [geometry]
 
+// [optional_ownership]
+/// Delayed ownership: absence is a property of the slot, not a default-constructed buffer.
+struct MeshSlot {
+	std::optional<Geometry> geometry;
+
+	/// Allocate and upload first. Failure leaves the previous geometry unchanged.
+	auto replace (fcg::Device &device, std::span<const Vertex> vertices, std::span<const Uint16> indices)
+		-> std::expected<void, fcg::BufferError>
+	{
+		auto replacement = createGeometry(device, vertices, indices);
+		if (!replacement)
+			return std::unexpected(replacement.error());
+		geometry.emplace(std::move(*replacement));
+		return {};
+	}
+
+	/// Check for absence before using the required buffers inside the aggregate.
+	auto bind (SDL_GPURenderPass *pass) const -> std::expected<void, fcg::BufferError> {
+		if (!geometry)
+			return {}; // Nothing to draw; the caller also skips its draw command.
+		return bindGeometry(pass, *geometry);
+	}
+
+	/// Release both allocations; a later replace() can create new geometry.
+	void release () {
+		geometry.reset();
+	}
+};
+// [optional_ownership]
+
 // [instances]
 struct Instance {
 	float offsetX, offsetY;
@@ -88,7 +118,7 @@ auto updateGeometry (
 auto patch (fcg::Buffer &buffer, std::span<const float> values, std::size_t firstElement)
 	-> std::expected<void, fcg::BufferError> {
 	if (firstElement > buffer.size() / sizeof(float))
-		return std::unexpected(fcg::BufferError{fcg::BufferErrorCode::INVALID_ARGUMENT, "Element offset too large"});
+		return std::unexpected(fcg::BufferError{fcg::BufferErrorCode::InvalidArgument, "Element offset too large"});
 	return buffer.upload(values, firstElement * sizeof(float), false); // Preserve all other bytes.
 }
 
@@ -115,7 +145,7 @@ auto generateIntoStaging (fcg::TransferBuffer &staging, fcg::Buffer &destination
 {
 	constexpr auto bytes = 16 * sizeof(float);
 	if (staging.size() < bytes)
-		return std::unexpected(fcg::BufferError{fcg::BufferErrorCode::INVALID_ARGUMENT, "Staging is too small"});
+		return std::unexpected(fcg::BufferError{fcg::BufferErrorCode::InvalidArgument, "Staging is too small"});
 	{
 		auto mapping = staging.map(true); // Protect staging used by earlier uploads.
 		if (!mapping)
@@ -170,7 +200,7 @@ auto compute (
 		return std::unexpected(write.error());
 	auto *pass = SDL_BeginGPUComputePass(commands, nullptr, 0, &*write, 1);
 	if (!pass)
-		return std::unexpected(fcg::BufferError{fcg::BufferErrorCode::SDL_FAILURE, SDL_GetError()});
+		return std::unexpected(fcg::BufferError{fcg::BufferErrorCode::SDLFailure, SDL_GetError()});
 	SDL_BindGPUComputePipeline(pass, pipeline);
 	auto result = input.bindStorage(pass, 0);
 	if (result)
@@ -227,7 +257,7 @@ auto collect (
 		return std::unexpected(mapping.error());
 	std::array<Uint32, 4> values;
 	if (mapping->data().size() != sizeof(values))
-		return std::unexpected(fcg::BufferError{fcg::BufferErrorCode::INVALID_ARGUMENT, "Unexpected download size"});
+		return std::unexpected(fcg::BufferError{fcg::BufferErrorCode::InvalidArgument, "Unexpected download size"});
 	std::memcpy(values.data(), mapping->data().data(), sizeof(values));
 	return values; // Mapping ends here; values are an independent CPU copy.
 }

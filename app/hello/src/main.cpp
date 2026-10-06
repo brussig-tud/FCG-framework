@@ -204,8 +204,8 @@ public:
 		// Push the viewing uniforms so the shader can transform vertices.
 		rs.pushViewingUniforms(commandBuffer, fcg::ShaderStage::VERTEX, 0);
 
-		auto vertexBinding = shape.vertexBuffer().bindVertex(renderPass);
-		auto indexBinding = shape.indexBuffer().bindIndex(renderPass, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+		auto vertexBinding = shape.vertexBuffer()->bindVertex(renderPass);
+		auto indexBinding = shape.indexBuffer()->bindIndex(renderPass, SDL_GPU_INDEXELEMENTSIZE_32BIT);
 		if (!vertexBinding || !indexBinding) {
 			const auto &error = !vertexBinding ? vertexBinding.error() : indexBinding.error();
 			SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Binding geometry: %s", error.message.c_str());

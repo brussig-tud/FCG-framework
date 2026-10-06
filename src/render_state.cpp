@@ -39,14 +39,12 @@ RenderState::RenderState(Device& /* right now we don't need access to the device
 
 RenderState::~RenderState() = default;
 
-void RenderState::pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot)
-{
+void RenderState::pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot) {
 	if (auto result = pushUniforms(commandBuffer, stage, slot, viewingUniforms()); !result)
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Pushing viewing uniforms: %s", result.error().message.c_str());
 }
 
-void RenderState::pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot) const
-{
+void RenderState::pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot) const {
 	if (auto result = pushUniforms(commandBuffer, stage, slot, viewingUniforms()); !result)
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Pushing viewing uniforms: %s", result.error().message.c_str());
 }

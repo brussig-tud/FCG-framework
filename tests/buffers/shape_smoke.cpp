@@ -72,29 +72,34 @@ auto main () -> int {
 		auto other = fcg::Device::create();
 		require(device.has_value() && other.has_value(), "Cannot create sample test devices");
 		PolygonProbe polygon;
+		require(!polygon.vertexBuffer() && !polygon.indexBuffer() && !polygon.numIndices(),
+			"New sample already has GPU geometry");
 		PlatonicSolid solid;
 		for (unsigned i = 0; i < 4; ++i) {
 			polygon.markDirty();
 			polygon.update(*device);
-			require(!polygon.dirty(), "Sample upload did not clear dirty flag");
-			verify(polygon.vertexBuffer(), std::as_bytes(polygon.vertices()));
-			verify(polygon.indexBuffer(), std::as_bytes(polygon.indices()));
+			require(!polygon.dirty() && polygon.vertexBuffer() && polygon.indexBuffer() && polygon.numIndices(),
+				"Sample upload did not commit complete geometry");
+			verify(*polygon.vertexBuffer(), std::as_bytes(polygon.vertices()));
+			verify(*polygon.indexBuffer(), std::as_bytes(polygon.indices()));
 		}
 		solid.update(*device);
-		verify(solid.vertexBuffer(), std::as_bytes(solid.vertices()));
-		verify(solid.indexBuffer(), std::as_bytes(solid.indices()));
+		require(solid.vertexBuffer() && solid.indexBuffer(), "Solid upload did not commit geometry");
+		verify(*solid.vertexBuffer(), std::as_bytes(solid.vertices()));
+		verify(*solid.indexBuffer(), std::as_bytes(solid.indices()));
 
-		const auto *vertex = polygon.vertexBuffer().handle();
-		const auto *index = polygon.indexBuffer().handle();
+		const auto *vertex = polygon.vertexBuffer()->handle();
+		const auto *index = polygon.indexBuffer()->handle();
 		const auto count = polygon.numIndices();
 		polygon.markDirty();
 		polygon.update(*other); // Deliberate device mismatch is a recoverable replacement failure.
-		require(polygon.dirty() && polygon.vertexBuffer().handle() == vertex
-			&& polygon.indexBuffer().handle() == index && polygon.numIndices() == count,
+		require(polygon.dirty() && polygon.vertexBuffer() && polygon.indexBuffer()
+			&& polygon.vertexBuffer()->handle() == vertex
+			&& polygon.indexBuffer()->handle() == index && polygon.numIndices() == count,
 			"Failed replacement changed existing geometry");
-		verify(polygon.vertexBuffer(), std::as_bytes(polygon.vertices()));
+		verify(*polygon.vertexBuffer(), std::as_bytes(polygon.vertices()));
 		require(polygon.uploadGeometry(*device, {}, {}), "Empty geometry replacement failed");
-		require(!polygon.vertexBuffer().handle() && !polygon.indexBuffer().handle() && !polygon.numIndices(),
+		require(!polygon.vertexBuffer() && !polygon.indexBuffer() && !polygon.numIndices(),
 			"Empty sample geometry retained allocations");
 		polygon.update(*device);
 		require(!polygon.dirty() && polygon.numIndices() > 0, "Sample did not recover after failed/empty uploads");

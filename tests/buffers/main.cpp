@@ -9,6 +9,8 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <optional>
+#include <type_traits>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -20,6 +22,7 @@
 // FCG Framework and embedded test shaders
 #include <FCG/buffer.h>
 #include <FCG/res.h>
+#include <FCG/player.h>
 #include <buffer-resources.h>
 
 
@@ -31,6 +34,17 @@
 
 // Anonymous namespace begin
 namespace {
+
+// Resource ownership cannot start empty; optional slots can.
+static_assert(!std::is_default_constructible_v<fcg::Buffer>);
+static_assert(!std::is_default_constructible_v<fcg::TransferBuffer>);
+static_assert(!std::is_copy_constructible_v<fcg::Buffer> && !std::is_copy_assignable_v<fcg::Buffer>);
+static_assert(!std::is_copy_constructible_v<fcg::TransferBuffer> && !std::is_copy_assignable_v<fcg::TransferBuffer>);
+static_assert(std::is_nothrow_move_constructible_v<fcg::Buffer> && std::is_nothrow_move_assignable_v<fcg::Buffer>);
+static_assert(std::is_nothrow_move_constructible_v<fcg::TransferBuffer>
+	&& std::is_nothrow_move_assignable_v<fcg::TransferBuffer>);
+static_assert(std::is_default_constructible_v<std::optional<fcg::Buffer>>);
+static_assert(std::is_default_constructible_v<std::optional<fcg::TransferBuffer>>);
 
 /// Test assertions must also run in release builds.
 void require (bool value, const char *message) {
@@ -117,29 +131,60 @@ void transfers (fcg::Device &device)
 {
 	using Code = fcg::BufferErrorCode;
 	constexpr auto storageUsage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ;
-	fails(fcg::Buffer::create(device, 0, storageUsage), Code::INVALID_ARGUMENT);
-	fails(fcg::Buffer::create(device, std::numeric_limits<std::size_t>::max(), storageUsage), Code::INVALID_ARGUMENT);
-	fails(fcg::Buffer::create(device, 16, 0), Code::INVALID_ARGUMENT);
-	fails(fcg::Buffer::create(device, 16, SDL_GPU_BUFFERUSAGE_VERTEX | SDL_GPU_BUFFERUSAGE_INDEX), Code::INVALID_ARGUMENT);
-	fails(fcg::TransferBuffer::create(device, 0, SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD), Code::INVALID_ARGUMENT);
-	fcg::Buffer empty;
-	fails(empty.readback(), Code::INVALID_STATE);
-	fails(empty.upload(std::span<const std::byte>{}), Code::INVALID_STATE);
-	fcg::TransferBuffer emptyTransfer;
-	fails(emptyTransfer.map(), Code::INVALID_STATE);
+	fails(fcg::Buffer::create(device, 0, storageUsage), Code::InvalidArgument);
+	fails(fcg::Buffer::create(device, std::numeric_limits<std::size_t>::max(), storageUsage), Code::InvalidArgument);
+	fails(fcg::Buffer::create(device, 16, 0), Code::InvalidArgument);
+	fails(fcg::Buffer::create(device, 16, SDL_GPU_BUFFERUSAGE_VERTEX | SDL_GPU_BUFFERUSAGE_INDEX), Code::InvalidArgument);
+	fails(fcg::TransferBuffer::create(device, 0, SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD), Code::InvalidArgument);
+
+	// A player can exist before viewport/readback storage has been created.
+	{
+		fcg::Player player(device, nullptr);
+		bool rejected = false;
+		try {
+			(void)player.scheduleDepthReadback();
+		} catch (const std::runtime_error&) {
+			rejected = true;
+		}
+		require(rejected, "Player accepted readback without a frame or storage");
+	}
+
+	std::optional<fcg::Buffer> optionalBuffer;
+	std::optional<fcg::TransferBuffer> optionalTransfer;
+	require(!optionalBuffer && !optionalTransfer, "Optional resource slots started engaged");
+	for (unsigned i = 0; i < 2; ++i) {
+		optionalBuffer.emplace(take(fcg::Buffer::create(device, 16, storageUsage)));
+		optionalTransfer.emplace(take(fcg::TransferBuffer::create(device, 16, SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD)));
+		require(optionalBuffer->handle() && optionalBuffer->device() == &device
+			&& optionalBuffer->size() == 16 && optionalBuffer->usage() == storageUsage,
+			"GPU factory did not initialize resource metadata");
+		require(optionalTransfer->handle() && optionalTransfer->device() == &device
+			&& optionalTransfer->size() == 16 && optionalTransfer->usage() == SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+			"Transfer factory did not initialize resource metadata");
+		{
+			auto mapping = take(optionalTransfer->map(true));
+			std::memset(mapping.data().data(), 0, mapping.data().size());
+		} // End the borrow before resetting the owner.
+		auto transferred = std::move(*optionalBuffer);
+		require(optionalBuffer.has_value() && !optionalBuffer->handle() && transferred.handle(),
+			"Moving out of an optional changed its engagement");
+		optionalBuffer.reset();
+		optionalTransfer.reset();
+		require(!optionalBuffer && !optionalTransfer, "Reset did not disengage resource slots");
+	}
 
 	std::array<Uint32, 8> values {1, 2, 3, 4, 5, 6, 7, 8};
 	auto buffer = take(fcg::Buffer::create(device, std::span(values), storageUsage));
 	require(read<Uint32>(buffer) == std::vector<Uint32>(values.begin(), values.end()), "Initial upload differs");
 	check(buffer.upload(std::span<const std::byte>{}, buffer.size()));
-	fails(buffer.upload(std::span(values), 1), Code::INVALID_ARGUMENT);
-	fails(buffer.upload(std::span<const std::byte>{}, std::numeric_limits<std::size_t>::max()), Code::INVALID_ARGUMENT);
-	fails(buffer.readback(buffer.size()), Code::INVALID_ARGUMENT);
-	fails(buffer.readback(0, 0), Code::INVALID_ARGUMENT);
-	fails(buffer.readback(0, buffer.size() + 1), Code::INVALID_ARGUMENT);
-	fails(buffer.binding(), Code::INVALID_ARGUMENT);
-	fails(buffer.readWriteBinding(), Code::INVALID_ARGUMENT);
-	fails(buffer.bindVertex(nullptr), Code::INVALID_ARGUMENT);
+	fails(buffer.upload(std::span(values), 1), Code::InvalidArgument);
+	fails(buffer.upload(std::span<const std::byte>{}, std::numeric_limits<std::size_t>::max()), Code::InvalidArgument);
+	fails(buffer.readback(buffer.size()), Code::InvalidArgument);
+	fails(buffer.readback(0, 0), Code::InvalidArgument);
+	fails(buffer.readback(0, buffer.size() + 1), Code::InvalidArgument);
+	fails(buffer.binding(), Code::InvalidArgument);
+	fails(buffer.readWriteBinding(), Code::InvalidArgument);
+	fails(buffer.bindVertex(nullptr), Code::InvalidArgument);
 
 	const std::array<Uint32, 2> patch {21, 22};
 	check(buffer.upload(std::span(patch), 2 * sizeof(Uint32)));
@@ -148,27 +193,29 @@ void transfers (fcg::Device &device)
 
 	// Move construction and assignment retain the resource and empty the source.
 	auto moved = std::move(buffer);
-	require(!buffer.handle() && buffer.size() == 0, "Moved buffer still owns storage");
+	require(!buffer.handle() && !buffer.device() && buffer.size() == 0, "Moved buffer still owns storage");
+	fails(buffer.readback(), Code::InvalidState);
+	fails(buffer.upload(std::span<const std::byte>{}), Code::InvalidState);
 	buffer = std::move(moved);
 	require(!moved.handle(), "Move-assigned source still owns storage");
 
 	auto upload = take(fcg::TransferBuffer::create(device, sizeof(values), SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD));
 	auto download = take(fcg::TransferBuffer::create(device, sizeof(values), SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD));
-	fails(download.map(true), Code::INVALID_ARGUMENT);
+	fails(download.map(true), Code::InvalidArgument);
 	{
 		auto mapping = take(upload.map(true));
-		fails(upload.map(), Code::INVALID_STATE);
+		fails(upload.map(), Code::InvalidState);
 		std::memcpy(mapping.data().data(), values.data(), sizeof(values));
 		auto movedMapping = std::move(mapping);
 		require(mapping.data().empty(), "Moved mapping still exposes memory");
 		Commands commands(device);
-		fails(buffer.uploadFrom(commands.beginCopy(), upload, sizeof(values)), Code::INVALID_STATE);
+		fails(buffer.uploadFrom(commands.beginCopy(), upload, sizeof(values)), Code::InvalidState);
 		movedMapping.unmap();
 		movedMapping.unmap();
 		check(buffer.uploadFrom(commands.copy, upload, sizeof(values)));
-		fails(buffer.uploadFrom(commands.copy, download, sizeof(values)), Code::INVALID_ARGUMENT);
-		fails(buffer.downloadTo(commands.copy, upload, sizeof(values)), Code::INVALID_ARGUMENT);
-		fails(buffer.downloadTo(commands.copy, download, 0), Code::INVALID_ARGUMENT);
+		fails(buffer.uploadFrom(commands.copy, download, sizeof(values)), Code::InvalidArgument);
+		fails(buffer.downloadTo(commands.copy, upload, sizeof(values)), Code::InvalidArgument);
+		fails(buffer.downloadTo(commands.copy, download, 0), Code::InvalidArgument);
 		check(buffer.downloadTo(commands.copy, download, sizeof(values)));
 		auto *fence = commands.submitFence();
 		const bool waited = SDL_WaitForGPUFences(device.handle(), true, &fence, 1);
@@ -179,18 +226,20 @@ void transfers (fcg::Device &device)
 		auto mapping = take(download.map());
 		require(std::memcmp(mapping.data().data(), values.data(), sizeof(values)) == 0, "Explicit download differs");
 		Commands commands(device);
-		fails(buffer.downloadTo(commands.beginCopy(), download, sizeof(values)), Code::INVALID_STATE);
+		fails(buffer.downloadTo(commands.beginCopy(), download, sizeof(values)), Code::InvalidState);
 	}
 	auto uploadMoved = std::move(upload);
-	require(!upload.handle() && !upload.mapped(), "Moved staging retained ownership");
+	require(!upload.handle() && !upload.device() && !upload.size() && !upload.mapped(),
+		"Moved staging retained ownership");
+	fails(upload.map(), Code::InvalidState);
 	upload = std::move(uploadMoved);
 
 	auto destination = take(fcg::Buffer::create(device, sizeof(values), storageUsage));
 	{
 		Commands commands(device);
 		auto *pass = commands.beginCopy();
-		fails(buffer.copyTo(pass, buffer, 16, 0, 4), Code::INVALID_ARGUMENT);
-		fails(buffer.copyTo(pass, buffer, 4, 0, 16, true), Code::INVALID_ARGUMENT);
+		fails(buffer.copyTo(pass, buffer, 16, 0, 4), Code::InvalidArgument);
+		fails(buffer.copyTo(pass, buffer, 4, 0, 16, true), Code::InvalidArgument);
 		check(buffer.copyTo(pass, destination, sizeof(values)));
 		commands.submit();
 	}
@@ -216,19 +265,19 @@ void transfers (fcg::Device &device)
 		auto &ticket = tickets[i];
 		auto early = ticket.map();
 		if (!early)
-			fails(early, Code::NOT_READY);
+			fails(early, Code::NotReady);
 		else
 			early->unmap(); // The GPU is allowed to complete before the first poll.
 		check(ticket.wait());
 		auto mapping = take(ticket.map());
-		fails(ticket.map(), Code::INVALID_STATE);
+		fails(ticket.map(), Code::InvalidState);
 		std::array<Uint32, 8> actual;
 		std::memcpy(actual.data(), mapping.data().data(), sizeof(actual));
 		require(std::all_of(actual.begin(), actual.end(), [i](auto x) { return x == i; }), "Cycling corrupted a snapshot");
 	}
 	auto ticket = std::move(tickets.back());
-	fails(tickets.back().wait(), Code::INVALID_STATE);
-	fails(tickets.back().map(), Code::INVALID_STATE);
+	fails(tickets.back().wait(), Code::InvalidState);
+	fails(tickets.back().map(), Code::InvalidState);
 	check(ticket.wait());
 	for (unsigned i = 0; i < 4; ++i)
 		ticket = take(buffer.readback()); // Replacing a pending ticket must defer its old fence too.
@@ -243,7 +292,7 @@ void transfers (fcg::Device &device)
 	check(batch.upload(buffer, std::span(values)));
 	check(batch.upload(largeBuffer, std::span(large)));
 	auto movedBatch = std::move(batch);
-	fails(batch.submit(), Code::INVALID_STATE);
+	fails(batch.submit(), Code::InvalidState);
 	check(movedBatch.submit());
 	require(read<Uint32>(largeBuffer) == large, "Staging page growth corrupted bytes");
 	check(movedBatch.upload(buffer, std::span(patch)));
@@ -308,8 +357,8 @@ void compute (fcg::Device &device)
 	Commands commands(device);
 	const std::array<Uint32, 4> params {2, 1, 0, 0};
 	check(fcg::pushUniforms(commands.handle, fcg::ShaderStage::COMPUTE, 0, params));
-	fails(fcg::pushUniforms(commands.handle, fcg::ShaderStage::COMPUTE, 4, params), fcg::BufferErrorCode::INVALID_ARGUMENT);
-	fails(fcg::pushUniforms(commands.handle, static_cast<fcg::ShaderStage>(99), 0, params), fcg::BufferErrorCode::INVALID_ARGUMENT);
+	fails(fcg::pushUniforms(commands.handle, fcg::ShaderStage::COMPUTE, 4, params), fcg::BufferErrorCode::InvalidArgument);
+	fails(fcg::pushUniforms(commands.handle, static_cast<fcg::ShaderStage>(99), 0, params), fcg::BufferErrorCode::InvalidArgument);
 	for (unsigned step = 0; step < 2; ++step) {
 		auto binding = take((step ? second : output).readWriteBinding());
 		commands.compute = SDL_BeginGPUComputePass(commands.handle, nullptr, 0, &binding, 1);
@@ -396,7 +445,7 @@ void graphics (fcg::Device &device)
 		check(vertices.bindVertex(commands.render, 0));
 		check(offsets.bindVertex(commands.render, 1));
 		check(index.bindIndex(commands.render, SDL_GPU_INDEXELEMENTSIZE_16BIT));
-		fails(index.bindIndex(commands.render, SDL_GPU_INDEXELEMENTSIZE_16BIT, 1), fcg::BufferErrorCode::INVALID_ARGUMENT);
+		fails(index.bindIndex(commands.render, SDL_GPU_INDEXELEMENTSIZE_16BIT, 1), fcg::BufferErrorCode::InvalidArgument);
 		check(vsStorage.bindStorage(commands.render, fcg::ShaderStage::VERTEX));
 		check(fsStorage.bindStorage(commands.render, fcg::ShaderStage::FRAGMENT));
 		check(fcg::pushUniforms(commands.handle, fcg::ShaderStage::VERTEX, 0, std::as_bytes(std::span(zero))));

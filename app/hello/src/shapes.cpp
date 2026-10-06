@@ -22,14 +22,12 @@ auto SimpleShape::uploadGeometry (
 {
 	// Empty geometry is a successful replacement and must not allocate zero-byte SDL resources.
 	if (vertices.empty() || indices.empty()) {
-		m_vertexBuffer = {};
-		m_indexBuffer = {};
-		m_numIndices = 0;
+		m_geometry.reset();
 		return true;
 	}
 	if (!uploads)
 		uploads.emplace(device);
-	if (auto *previous = m_vertexBuffer.device(); previous && previous != &device) {
+	if (m_geometry && m_geometry->vertices.device() != &device) {
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Cannot migrate a shape between GPU devices");
 		return false;
 	}
@@ -52,8 +50,6 @@ auto SimpleShape::uploadGeometry (
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Uploading geometry: %s", result.error().message.c_str());
 		return false;
 	}
-	m_vertexBuffer = std::move(*vertex);
-	m_indexBuffer = std::move(*index);
-	m_numIndices = indices.size();
+	m_geometry.emplace(Geometry{std::move(*vertex), std::move(*index), indices.size()});
 	return true;
 }

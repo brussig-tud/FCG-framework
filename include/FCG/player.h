@@ -12,6 +12,7 @@
 #include <vector>
 #include <span>
 #include <atomic>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -424,8 +425,9 @@ private:
 	/// Whether closing the application was requested on this player itself.
 	std::atomic<bool> m_closeRequested{false};
 
-	/// The buffer used for depth buffer readback operations.
-	TransferBuffer depthReadbackBuffer;
+	/// Depth-download storage, absent before viewport initialization or after allocation failure.
+	/// The readback state must release its mapping before this optional is reset or replaced.
+	std::optional<TransferBuffer> depthReadbackBuffer;
 
 	/// The controller handling the depth buffer readback state machine.
 	ReadbackController<float> depthReadback{*this};

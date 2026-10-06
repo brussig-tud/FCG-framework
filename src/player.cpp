@@ -44,7 +44,7 @@ Player::PendingReadback::~PendingReadback() {
 template <class Texel>
 auto Player::ReadbackController<Texel>::dispatch () -> PendingReadback
 {
-	if (!player.frame || !player.frame->depthTexture() || !player.depthReadbackBuffer.handle())
+	if (!player.frame || !player.frame->depthTexture() || !player.depthReadbackBuffer)
 		throw std::runtime_error("Player: no depth texture or download storage is available");
 
 	player.device.collectRetiredFences();
@@ -68,7 +68,7 @@ auto Player::ReadbackController<Texel>::dispatch () -> PendingReadback
 
 	// Describe copy geometry
 	SDL_GPUTextureTransferInfo destination {
-		.transfer_buffer = player.depthReadbackBuffer.handle(), .offset = 0, .pixels_per_row = extent.x,
+		.transfer_buffer = player.depthReadbackBuffer->handle(), .offset = 0, .pixels_per_row = extent.x,
 		.rows_per_layer = extent.y
 	};
 	SDL_DownloadFromGPUTexture(copyPass, &source, &destination);
@@ -95,7 +95,7 @@ auto Player::ReadbackController<Texel>::completeReadback (PendingReadback &pendi
 	}
 
 	// Map the readback buffer for CPU access
-	auto mapping = player.depthReadbackBuffer.map();
+	auto mapping = player.depthReadbackBuffer->map();
 	if (!mapping)
 		throw std::runtime_error("Player: mapping depth readback: " + mapping.error().message);
 	return OwningTextureView<Texel, 2>(std::move(*mapping), pending.extent, pending.stride);
@@ -195,7 +195,7 @@ Player::Player (Device &device, Window *mainWindow) : device(device), m_window(m
 Player::~Player() {
 	// Abandon any in-flight readback so its mapping and fence are released before we tear down the buffer below.
 	depthReadback.fsm.transition<std::monostate>();
-	depthReadbackBuffer = {};
+	depthReadbackBuffer.reset();
 }
 
 void Player::setWindowTitle (const std::string &title)
@@ -286,7 +286,7 @@ void Player::recreateReadbackBuffers ()
 	depthReadback.fsm.transition<std::monostate>();
 
 	// Destroy old buffer if it exists
-	depthReadbackBuffer = {};
+	depthReadbackBuffer.reset();
 
 	const auto vpSize = viewportSize();
 	if (!vpSize.x || !vpSize.y)
@@ -304,7 +304,7 @@ void Player::recreateReadbackBuffers ()
 		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Player: creating depth readback buffer: %s", buffer.error().message.c_str());
 		return;
 	}
-	depthReadbackBuffer = std::move(*buffer);
+	depthReadbackBuffer.emplace(std::move(*buffer));
 }
 
 void Player::collectReadbackResults () {
