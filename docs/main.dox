@@ -31,7 +31,10 @@ Browse the <a href="annotated.html">class reference</a>, <a href="namespaces.htm
 - \ref fcg_render_state
 - \ref fcg_gui
 - \ref fcg_resources
+- \ref fcg_viewing
+- \ref fcg_camera_focus
 - \ref fcg_orbit_camera
+- \ref fcg_camera_2d
 - \ref fcg_utilities
 */
 

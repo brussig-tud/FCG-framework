@@ -96,11 +96,11 @@ Group method and static field definitions per class they belong to, using subsec
 // FooClass
 
 [[nodiscard]] auto FooClass::isFoo () -> bool {
-    return true;
+	return true;
 }
 
 [[nodiscard]] auto FooClass::isBar () -> bool {
-    return false;
+	return false;
 }
 
 
@@ -108,13 +108,18 @@ Group method and static field definitions per class they belong to, using subsec
 // BarClass
 
 [[nodiscard]] auto BarClass::isFoo () -> bool {
-    return false;
+	return false;
 }
 
 [[nodiscard]] auto BarClass::isBar () -> bool {
-    return true;
+	return true;
 }
 ```
+
+
+## C++ class definition conventions
+
+Class definitions should use intra-class section headers (leaving 2 blank lines between subsequent sections), document all members via Doxygem doc comments. Follow examples from the code base.
 
 
 

@@ -50,6 +50,32 @@ review of lifetime, error, and ownership contracts. For buffer ownership, distin
 objects and keep examples of delayed creation and replacement consistent with the factories.
 
 
+## Cameras
+
+Core provides `FCG/viewing.h`, `FCG/camera_focus.h`, `FCG/applet/orbit_camera.h`, and `FCG/applet/camera_2d.h`.
+The [viewing guide](../build/debug/docs/html/group__fcg__viewing.html) documents
+[`fcg::Camera`](../build/debug/docs/html/classfcg_1_1Camera.html) and
+[`fcg::CameraParameters`](../build/debug/docs/html/structfcg_1_1CameraParameters.html).
+Both camera applets implement the common camera interface independently of their applet callbacks.
+The hello application continues to use the orbit camera.
+
+The [focus-picking guide](../build/debug/docs/html/group__fcg__camera__focus.html) documents the reusable
+[`fcg::CameraFocus`](../build/debug/docs/html/classfcg_1_1CameraFocus.html) controller. It borrows a camera,
+retains rendered matrix snapshots, collects depth readbacks, and animates focus translation without inheriting
+from an applet. Call its cancellation method before manual camera changes and its resize method after the player
+invalidates readback storage. Both supplied camera applets perform this integration internally.
+
+This is a source-breaking change: the former `fcg::applet::OrbitCameraParams` has been renamed to
+[`fcg::CameraParameters`](../build/debug/docs/html/structfcg_1_1CameraParameters.html) without an alias;
+`fovY` is now a variant of degree-valued `PerspectiveFov` and world-height-valued `OrthoExtend`.
+Focal-point access returns a value, and the additional camera base changes the applet class layout.
+Use the setters to mutate parameters; they validate input and cancel active focus transitions.
+
+The normal build compiles `camera-examples`; `camera-smoke` checks the CPU contracts and `camera-lifecycle`
+checks controls, picking, cancellation, resizing, and redraw cleanup against real rendered depth.
+For an interactive GUI review, run `FCG_CAMERA_PROBE_INTERACTIVE=1 build/debug/bin/camera-lifecycle`.
+
+
 ## Library registrations
 
 Core lives in `core/` and exposes headers directly under `FCG/`, including its generated `FCG/export.h`.

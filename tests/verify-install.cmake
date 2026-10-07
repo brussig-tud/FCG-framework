@@ -20,6 +20,7 @@ endif()
 
 # Public headers
 foreach (header run.h window.h applet.h event.h export.h buffer.h
+    viewing.h camera_focus.h applet/orbit_camera.h applet/camera_2d.h
     Image/export.h Image/image.h Image/image_loader.h Image/sdl_image.h)
 	if (NOT EXISTS "${PREFIX}/include/FCG/${header}")
 		list(APPEND missing "include/FCG/${header}")
