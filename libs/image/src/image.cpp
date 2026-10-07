@@ -7,6 +7,9 @@
 // C++ STL
 #include <utility>
 
+// SDL3 library
+#include <SDL3/SDL_surface.h>
+
 // Local includes
 #include "FCG/Image/image.h"
 
@@ -57,11 +60,27 @@ auto Image::operator= (Image &&other) noexcept -> Image&
 	return *this;
 }
 
+[[nodiscard]] auto Image::width () const -> int {
+	return m_handle ? m_handle->w : 0;
+}
+
+[[nodiscard]] auto Image::height () const -> int {
+	return m_handle ? m_handle->h : 0;
+}
+
+[[nodiscard]] auto Image::pitch () const -> int {
+	return m_handle ? m_handle->pitch : 0;
+}
+
+[[nodiscard]] auto Image::format () const -> SDL_PixelFormat {
+	return m_handle ? m_handle->format : SDL_PIXELFORMAT_UNKNOWN;
+}
+
 
 
 //////
 //
-// Namespaces close
+// Module namespace close
 //
 
 // namespace fcg

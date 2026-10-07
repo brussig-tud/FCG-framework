@@ -188,7 +188,7 @@ FormatHandlerRegistration::FormatHandlerRegistration (
 
 //////
 //
-// Namespaces close
+// Module namespace close
 //
 
 // namespace fcg

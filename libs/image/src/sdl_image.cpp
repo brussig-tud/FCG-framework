@@ -19,6 +19,7 @@
 #include "image_internal.h"
 
 
+
 //////
 //
 // Module-private symbols
@@ -157,7 +158,7 @@ void linkSDLImageHandler () {
 
 //////
 //
-// Namespaces close
+// Module namespace close
 //
 
 // namespace fcg

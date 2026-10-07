@@ -63,10 +63,20 @@
 #include <string>
 
 // SDL3 library
-#include <SDL3/SDL_surface.h>
+#include <SDL3/SDL_pixels.h>
 
 // Local includes
 #include "FCG/Image/export.h"
+
+
+
+//////
+//
+// Forward declarations
+//
+
+// Opaque SDL3 types
+struct SDL_Surface;
 
 
 
@@ -136,7 +146,7 @@ public:
 	///
 	/// \param surface Live surface with positive dimensions/pitch and pixel storage; retained by caller on failure.
 	///
-	/// \returns A unique owner or `InvalidArgument`. Externally borrowed pixel storage is not made owning.
+	/// \return A unique owner or `InvalidArgument`. Externally borrowed pixel storage is not made owning.
 	[[nodiscard]] static auto adopt (SDL_Surface *surface) -> std::expected<Image, ImageError>;
 
 	/// Destroy the owned surface. Borrowed surface/pixel references must end first.
@@ -149,10 +159,12 @@ public:
 	auto operator= (const Image&) -> Image& = delete;
 
 	/// Transfer ownership, leaving the source empty.
+	///
 	/// \param other Source owner; may already be empty.
 	Image (Image &&other) noexcept;
 
 	/// Release the current surface and transfer ownership; self-assignment is a no-op.
+	///
 	/// \param other Source owner, left empty. \returns A reference to this owner.
 	auto operator= (Image &&other) noexcept -> Image&;
 
@@ -161,26 +173,34 @@ public:
 	// Accessors
 
 	/// Borrow the mutable SDL surface; do not destroy it. Null after move.
-	/// \returns The owned surface, with ownership retained by this `Image`.
+	///
+	/// \return The owned surface, with ownership retained by this `Image`.
 	[[nodiscard]] auto handle () -> SDL_Surface* { return m_handle; }
 
 	/// Borrow the SDL surface for inspection. Null after move.
-	/// \returns A `const` surface pointer; no lifetime extension occurs.
+	///
+	/// \return A `const` surface pointer; no lifetime extension occurs.
 	[[nodiscard]] auto handle () const -> const SDL_Surface* { return m_handle; }
 
-	/// Width in pixels, or zero after move. \returns The current surface width.
-	[[nodiscard]] auto width () const -> int { return m_handle ? m_handle->w : 0; }
+	/// Width in pixels, or zero after move.
+	///
+	/// \return The current surface width.
+	[[nodiscard]] auto width () const -> int;
 
-	/// Height in pixels, or zero after move. \returns The current surface height.
-	[[nodiscard]] auto height () const -> int { return m_handle ? m_handle->h : 0; }
+	/// Height in pixels, or zero after move.
+	///
+	/// \return The current surface height.
+	[[nodiscard]] auto height () const -> int;
 
-	/// Row stride in bytes, including any padding; zero after move. \returns The current pitch.
-	[[nodiscard]] auto pitch () const -> int { return m_handle ? m_handle->pitch : 0; }
+	/// Row stride in bytes, including any padding; zero after move.
+	///
+	/// \return The current pitch.
+	[[nodiscard]] auto pitch () const -> int;
 
-	/// Native SDL pixel format, or \c UNKNOWN after move. \returns The current surface format.
-	[[nodiscard]] auto format () const -> SDL_PixelFormat {
-		return m_handle ? m_handle->format : SDL_PIXELFORMAT_UNKNOWN;
-	}
+	/// Native SDL pixel format, or \c UNKNOWN after move.
+	///
+	/// \return The current surface format.
+	[[nodiscard]] auto format () const -> SDL_PixelFormat;
 
 
 private:
@@ -189,6 +209,7 @@ private:
 	// Object construction/destruction
 
 	/// Adopt a validated surface internally; use `adopt()` from client code.
+	///
 	/// \param surface Non-null validated surface whose ownership transfers here.
 	explicit Image (SDL_Surface *surface) noexcept : m_handle(surface) {}
 
