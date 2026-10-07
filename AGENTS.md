@@ -4,28 +4,9 @@ The rules and guidelines laid out in this document might not be reflected accura
 
 
 
-## C++ coding style conventions
-
-Always prefer C-style casts unless there is a pressing reason to use a C++ cast.
-
-### Formatting function signatures
-
-Always separate the argument list with a single space ` ` before the opening `(` from the function/method name, *unless* it is a constructor or destructor. For constructors/destructors, the opening `(` should follow the name without any space in between. 
-
-Make use of `[[nodiscard]]` where appropriate. Always use trailing return types unless the function/method returns `void`. Put trailing return types including the `->` indented on the next line if it would make the signature too long.
-
-Function signatures with too many arguments to fit on a line should open their argument list with `(` on the same line as the function name, with all arguments starting indented on the next line, then linebreak and unindent to put the closing `)`. A trailing return type may follow on the same line as the closing `)`.
-
-
-### Bodies of functions/methods, loops and `if`/`else if`/`else` clauses
-
-Avoid use of braces around single-statement bodies where it is allowed.
-
-If the body cannot be made single-statement, put the opening `{` on the same line if the body is 5 lines or less. If it is more, the opening `{` should go on its own line.
-
-
-
 ## C++ file style conventions
+
+Allways leave the first line of a file blank.
 
 All C++ sources (including headers `.h`, translation unit source files `.cpp` and inline files `.inl`) use section banners of the form
 ```C++
@@ -68,7 +49,8 @@ Group individual `#include` statements according to library, with the library be
 // GLM library
 #include <glm/glm.hpp>
 ```
-The block `// C++ STL` should always be included  if no STL headers are needed, just put `/* nothing here yet */`, e.g.:
+
+The block `// C++ STL` should always be included if no STL headers are needed, just put `/* nothing here yet */`, e.g.:
 ```C++
 // C++ STL
 /* nothing here yet */
@@ -117,15 +99,58 @@ Group method and static field definitions per class they belong to, using subsec
 ```
 
 
-## C++ class definition conventions
 
-Class definitions should use intra-class section headers (leaving 2 blank lines between subsequent sections), document all members via Doxygem doc comments. Follow examples from the code base.
+## Header files
+
+Always use `#define`-based include guards. Infer the appropriate guard macro name from the rest of the codebase, using other headers defined in the current CMake target as priority references.
 
 
 
-## Header layout
+## C++ coding style conventions
 
-Always use `#define`-based include guards. Always leave the very first line in a header blank. The second line is always the start of the include guard. Infer appropriate guard macro name from the rest of the codebase, using other headers defined in the current CMake target as priority references.
+Always prefer C-style casts unless there is a pressing reason to use a C++ cast.
+
+### Formatting function signatures
+
+Always separate the argument list with a single space ` ` before the opening `(` from the function/method name, *unless* it is a constructor or destructor. For constructors/destructors, the opening `(` should follow the name without any space in between.
+
+Make use of `[[nodiscard]]` where appropriate. Always use trailing return types unless the function/method returns `void`. Put trailing return types including the `->` indented on the next line if it would make the signature too long.
+
+Function signatures with too many arguments to fit on a line should open their argument list with `(` on the same line as the function name, with all arguments starting indented on the next line, then linebreak and unindent to put the closing `)`. A trailing return type may follow on the same line as the closing `)`.
+
+
+### Bodies of functions/methods, loops and `if`/`else if`/`else` clauses
+
+Avoid use of braces around single-statement bodies where it is allowed.
+
+If the body cannot be made single-statement, put the opening `{` on the same line if the body is 5 lines or less. If it is more, the opening `{` should go on its own line.
+
+
+### Class definitions
+
+Put the opening class brace on its own line. Align access labels (`public:`, `protected:`, `private:`) with the `class` keyword. Apply the same relative indentation to nested classes.
+
+Group all members using two-line intra-class section headers, indented with the members:
+```C++
+	////
+	// $ClassSection
+```
+
+Leave one blank line after a class-section header and between documented members, and two blank lines before each subsequent class-section. At an access change, put the two blank lines before the access label and one blank line between the label and the next class-section header.
+
+Normally put the public interface first, followed by protected and private implementation details. `Friend declarations` and internal `Types` class-sections may precede the first `public:` label, using the default private access. If there is no need for such a first private access block, the initial `public:` should immediatly follow under the first line after the opening `{`.
+Within each access block, use the following class-sections as applicable, normally in this order; omit empty ones:
+* `Types`: nested classes, structs, enums and `using` aliases.
+* `Constants`: named constants, when they warrant a separate section.
+* `Object construction/destruction`: constructors, static factories, destructor, and copy/move constructors and assignment operators, including `= default` and `= delete` declarations. `Object construction` is suitable for a section containing only constructors.
+* `Interface: BaseType`: overrides grouped by the interface they implement, one section per base interface. Use `override` on overriding methods.
+* `Accessors`: queries and simple access to object state.
+* `Methods`: other operations and implementation helpers. Descriptive groups such as `Transfers` or `Bindings` may replace this heading when useful.
+* `Fields`: data members, normally after methods. Keep related fields together, but always put a documentation comment before each individual field. Never group fields under a single doc comment. Provide in-class initializers for fixed defaults.
+
+Keep related overloads together. Short accessors and forwarding methods may be defined directly in the class; larger non-template implementations belong outside the definition, under the corresponding source file's `Class implementations` section. Header-only classes or locally defined classes inside a `.cpp` file always inline all method definitions inside the class definition.
+
+Document the class and every member with preceding triple-slash `///` Doxygen comments, following the documentation rules below. This includes non-public members, nested types and aliases, enum values, and defaulted or deleted special members. Document why each friend needs access in its `Friend declarations` section. Section headers use ordinary comments, not Doxygen comments.
 
 
 
