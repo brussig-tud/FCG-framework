@@ -128,6 +128,8 @@ If the body cannot be made single-statement, put the opening `{` on the same lin
 
 ### Class definitions
 
+Note that these instructions concern complex ("actual") classes that define at least one method (i.e., those that go into a `Classes` section). They do not apply to simple structs that go under the `Structs and enums` section).
+
 Put the opening class brace on its own line. Align access labels (`public:`, `protected:`, `private:`) with the `class` keyword. Apply the same relative indentation to nested classes.
 
 Group all members using two-line intra-class section headers, indented with the members:

@@ -47,11 +47,11 @@ auto Player::ReadbackController<Texel>::dispatch () -> PendingReadback
 	if (!player.frame || !player.frame->depthTexture() || !player.depthReadbackBuffer)
 		throw std::runtime_error("Player: no depth texture or download storage is available");
 
-	player.device.collectRetiredFences();
+	player.m_device.collectRetiredFences();
 	auto fenceOwner = std::make_unique<Device::RetiredFence>();
 
 	// Start copy pass. No invalid handle may reach SDL's validation assertions.
-	SDL_GPUCommandBuffer *cmdBuf = SDL_AcquireGPUCommandBuffer(player.device.handle());
+	SDL_GPUCommandBuffer *cmdBuf = SDL_AcquireGPUCommandBuffer(player.m_device.handle());
 	if (!cmdBuf)
 		throw std::runtime_error(std::string("Player: acquiring depth readback commands: ") + SDL_GetError());
 	SDL_GPUCopyPass *copyPass = SDL_BeginGPUCopyPass(cmdBuf);
@@ -81,7 +81,7 @@ auto Player::ReadbackController<Texel>::dispatch () -> PendingReadback
 
 	// Done – hand the resulting state (and its fence) to the readback state machine.
 	fenceOwner->handle = fence;
-	return {player.device, std::move(fenceOwner), extent, glm::uvec2(1, extent.x), player.readbackToken};
+	return {player.m_device, std::move(fenceOwner), extent, glm::uvec2(1, extent.x), player.readbackToken};
 }
 
 template <class Texel>
@@ -89,9 +89,9 @@ auto Player::ReadbackController<Texel>::completeReadback (PendingReadback &pendi
 {
 	// Wait for the GPU to finish the readback operation and release the fence
 	if (pending.fence) {
-		if (!SDL_WaitForGPUFences(player.device.handle(), true, &pending.fence->handle, 1))
+		if (!SDL_WaitForGPUFences(player.m_device.handle(), true, &pending.fence->handle, 1))
 			throw std::runtime_error(std::string("Player: waiting for depth readback: ") + SDL_GetError());
-		player.device.retireFence(std::move(pending.fence));
+		player.m_device.retireFence(std::move(pending.fence));
 	}
 
 	// Map the readback buffer for CPU access
@@ -188,7 +188,7 @@ void Player::ReadbackController<Texel>::on (
 	fsm.template transition<ReadyReadback<Texel>>(completeReadback(curState), curState.token);
 }
 
-Player::Player (Device &device, Window *mainWindow) : device(device), m_window(mainWindow) {
+Player::Player(Device &device, Window *mainWindow) : m_device(device), m_window(mainWindow) {
 	// Nothing else to do here yet.
 }
 
@@ -259,6 +259,10 @@ auto Player::swapchainFormat () const -> SDL_GPUTextureFormat {
 	return m_window ? m_window->swapchainFormat() : SDL_GPU_TEXTUREFORMAT_INVALID;
 }
 
+auto Player::mainRenderTargetInfo () const -> std::optional<RenderTargetInfo> {
+	return m_window ? m_window->renderTargetInfo() : std::nullopt;
+}
+
 auto Player::viewportSize() const -> glm::uvec2 {
 	return m_window ? m_window->viewportSize() : glm::uvec2(0);
 }
@@ -298,7 +302,7 @@ void Player::recreateReadbackBuffers ()
 		return;
 	}
 	auto buffer = TransferBuffer::create(
-		device, std::size_t(vpSize.x) * vpSize.y * sizeof(float), SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD
+		m_device, std::size_t(vpSize.x) * vpSize.y * sizeof(float), SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD
 	);
 	if (!buffer) {
 		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Player: creating depth readback buffer: %s", buffer.error().message.c_str());

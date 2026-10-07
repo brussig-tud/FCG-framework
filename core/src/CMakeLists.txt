@@ -31,6 +31,7 @@ set(HEADERS
 	${FCG_CORE_BASE_DIR}/include/FCG/gui.h
 	${FCG_CORE_BASE_DIR}/include/FCG/player.h
 	${FCG_CORE_BASE_DIR}/include/FCG/render_state.h
+	${FCG_CORE_BASE_DIR}/include/FCG/render_target.h
 	${FCG_CORE_BASE_DIR}/include/FCG/res.h
 	${FCG_CORE_BASE_DIR}/include/FCG/run.h
 	${FCG_CORE_BASE_DIR}/include/FCG/util.h

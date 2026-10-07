@@ -12,6 +12,7 @@
 # Shader resources: exercise lookup without a GPU and validate the custom-command dependency graph independently.
 add_subdirectory("${PROJECT_SOURCE_DIR}/core/tests" "${PROJECT_BINARY_DIR}/core/tests")
 add_subdirectory("${PROJECT_SOURCE_DIR}/libs/image/tests" "${PROJECT_BINARY_DIR}/libs/image/tests")
+add_subdirectory("${PROJECT_SOURCE_DIR}/libs/render/tests" "${PROJECT_BINARY_DIR}/libs/render/tests")
 include(dependencies/Tests.cmake)
 add_test(
 	NAME shader-build-smoke

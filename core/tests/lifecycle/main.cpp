@@ -1,15 +1,3 @@
-//////
-//
-// Smoke test for the framework lifecycle: runs a trivial applet through
-// fcg::run(), forcing continuous redraws and requesting shutdown after a fixed
-// number of frames. Driven by the 'lifecycle-smoke' CTest (see tests/).
-//
-// The probe additionally loads the embedded 'triangle' shader, builds a
-// graphics pipeline from it and draws a full-screen triangle each frame, so
-// the whole shader path (embed -> SPIR-V -> pipeline) is exercised headlessly.
-// All test logic lives in this test-owned applet - the framework itself
-// contains no test hooks.
-//
 
 //////
 //
@@ -17,7 +5,9 @@
 //
 
 // C++ STL
+#include <array>
 #include <cstdlib>
+#include <format>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -42,7 +32,10 @@
 // Classes
 //
 
-/// Dummy applet for the lifecycle probe.
+/// \brief Exercise rendering, depth downloads, resizing and shutdown through <tt>fcg::run</tt>.
+///
+/// Loads the embedded triangle shader and draws each frame while leaving depth at its clear value. The
+/// lifecycle-smoke test verifies depth before resizing and after both shrinking and growing the window.
 class LifecycleProbe final : public fcg::Applet
 {
 public:
@@ -51,13 +44,27 @@ public:
 	// Object construction/destruction
 
 	/// Report successful drawing through creator-owned state.
-	explicit LifecycleProbe (bool *rendered, unsigned frames)
+	explicit LifecycleProbe(bool *rendered, unsigned frames)
 		: remainingFrames(frames), rendered(*rendered)
 	{}
 
 	/// The framework destroys applets before the GPU device, so releasing our pipeline here is safe.
-	~LifecycleProbe () override {
-		rendered = rendered && depthChecks >= 2 && resized;
+	~LifecycleProbe() override
+	{
+		for (unsigned resize = 0; resize < resizeNotified.size(); ++resize)
+			if (!resizeNotified[resize]) {
+				SDL_LogError(
+					SDL_LOG_CATEGORY_ERROR, "Lifecycle resize request %u received no viewport callback", resize + 1
+				);
+				rendered = false;
+			}
+		for (unsigned phase = 0; phase < depthChecks.size(); ++phase)
+			if (depthChecks[phase] < 2) {
+				SDL_LogError(
+					SDL_LOG_CATEGORY_ERROR, "Lifecycle depth phase %u verified only %u downloads", phase, depthChecks[phase]
+				);
+				rendered = false;
+			}
 		if (pipeline)
 			SDL_ReleaseGPUGraphicsPipeline(gpuDevice, pipeline);
 	}
@@ -66,13 +73,16 @@ public:
 	////
 	// Interface: fcg::Applet
 
+	/// The name shown by the framework's lifecycle log.
 	[[nodiscard]] auto name () const -> const std::string& override {
 		const static std::string name = "Lifecycle Probe";
 		return name;
 	}
 
+	/// Create a pipeline and request continuous redraws for the automated probe.
 	void init (fcg::Device &device, fcg::Player &player) override
 	{
+		notifiedViewport = player.viewportSize();
 		// The frame loop blocks waiting for events, which never arrive in a headless test environment - force redraws
 		// so frames actually render.
 		player.pushContinuousRedraw();
@@ -125,52 +135,95 @@ public:
 		gpuDevice = device.handle();
 	}
 
-	void onViewportResize (fcg::Device&, const glm::uvec2&, fcg::Player&) override {
+	/// Verify each notification and discard tokens invalidated by the replacement download storage.
+	void onViewportResize (fcg::Device&, const glm::uvec2 &oldViewport, fcg::Player &player) override
+	{
+		if (oldViewport != notifiedViewport || player.viewportSize() == oldViewport)
+			throw std::runtime_error("Lifecycle viewport resize callback has inconsistent dimensions");
+		notifiedViewport = player.viewportSize();
+		if (resizeRequests)
+			resizeNotified[resizeRequests - 1] = true;
 		// Resize replaces the texture with uninitialized storage; render it before asking for its previous contents.
 		depthToken.reset();
 		readbackCooldown = 2;
 	}
 
+	/// This probe needs no user interface.
 	void gui (fcg::Device&, fcg::Player&) override {}
 
-	void update (fcg::Device&, fcg::Player &player, float) override {
+	/// Collect downloads, request two resizes and stop after the configured number of updates.
+	void update (fcg::Device&, fcg::Player &player, float) override
+	{
 		// Collect each token before requesting another. The frame loop has already waited for pending downloads.
-		if (depthToken) {
+		if (depthToken)
+		{
 			const auto view = player.getDepthReadbackResult(*depthToken);
 			const auto extent = view.extent();
-			const auto depth = view.texel({extent.x / 2, extent.y / 2});
-			if (depth != 1.f)
-				throw std::runtime_error("Depth readback differs at update " + std::to_string(updates)
-					+ ": " + std::to_string(depth));
-			++depthChecks;
+			if (extent != readbackExtent)
+				throw std::runtime_error(std::format(
+					"Depth readback extent differs at update {}: {}x{}, expected {}x{}",
+					updates, extent.x, extent.y, readbackExtent.x, readbackExtent.y
+				));
+			const std::array pixels {
+				glm::uvec2(extent.x / 2, extent.y / 2),
+				glm::uvec2(0, 0), glm::uvec2(extent.x - 1, 0),
+				glm::uvec2(0, extent.y - 1), glm::uvec2(extent.x - 1, extent.y - 1)
+			};
+			for (const auto &pixel : pixels)
+			{
+				const auto depth = view.texel(pixel);
+				if (depth != 1.f)
+					throw std::runtime_error(std::format(
+						"Depth readback texel ({}, {}) differs at update {} in phase {}: {}, expected 1",
+						pixel.x, pixel.y, updates, readbackPhase, depth
+					));
+			}
+			++depthChecks[readbackPhase];
 			depthToken.reset();
 		}
 		++updates;
-		if (updates == 10) {
+		if (updates == 10 || updates == 20)
+		{
+			if (resizeRequests && !resizeNotified[resizeRequests - 1])
+				throw std::runtime_error(std::format(
+					"Lifecycle resize request {} received no viewport callback", resizeRequests
+				));
+			if (depthChecks[resizeRequests] < 2)
+				throw std::runtime_error(std::format(
+					"Lifecycle depth phase {} verified fewer than two downloads before resizing", resizeRequests
+				));
 			// Resize between readbacks, so the next frame recreates both depth texture and transfer storage.
 			int count = 0;
 			auto **windows = SDL_GetWindows(&count);
-			resized = windows && count > 0 && SDL_SetWindowSize(windows[0], 480, 320);
+			const bool resized = windows && count > 0 && SDL_SetWindowSize(
+				windows[0], updates == 10 ? 480 : 800, updates == 10 ? 320 : 600
+			);
 			SDL_free(windows);
 			if (!resized)
-				throw std::runtime_error("Could not resize lifecycle test window");
-		} else if (readbackCooldown) {
-			--readbackCooldown;
-		} else if (rendered && updates > 1) {
+				throw std::runtime_error(std::format("Could not request lifecycle resize {}", resizeRequests + 1));
+			++resizeRequests;
+		}
+		else if (rendered && !readbackCooldown && (!resizeRequests || resizeNotified[resizeRequests - 1])) {
+			readbackExtent = player.viewportSize();
+			readbackPhase = resizeRequests;
 			depthToken = player.scheduleDepthReadback();
 		}
 		if (remainingFrames && --remainingFrames == 0)
 			player.requestClose();
 	}
 
+	/// Draw the triangle and count rendered frames before downloading newly created depth storage.
 	void render (
 		fcg::Device&, fcg::RenderState&, SDL_GPURenderPass *renderPass, SDL_GPUCommandBuffer*, fcg::Player&
-	) override {
+	) override
+	{
 		if (!pipeline)
 			return;
 		SDL_BindGPUGraphicsPipeline(renderPass, pipeline);
 		SDL_DrawGPUPrimitives(renderPass, 3, 1, 0, 0);
 		rendered = true;
+		if (readbackCooldown)
+			--readbackCooldown;
 	}
 
 
@@ -183,14 +236,29 @@ public:
 	/// The previous frame's depth-download token, consumed before requesting another.
 	std::optional<uint64_t> depthToken;
 
-	/// Number of verified depth downloads and update iterations.
-	unsigned depthChecks = 0, updates = 0;
+	/// Drawable viewport dimensions recorded when scheduling the current download.
+	glm::uvec2 readbackExtent = {0, 0};
 
-	/// Newly allocated depth textures need a rendered frame before readback.
+	/// The phase that owns the current download: initial, shrunk, or grown viewport.
+	unsigned readbackPhase = 0;
+
+	/// Verified downloads in the initial viewport and after each requested resize.
+	std::array<unsigned, 3> depthChecks = {};
+
+	/// Number of applet update iterations.
+	unsigned updates = 0;
+
+	/// Number of rendered frames to wait before downloading newly allocated depth storage.
 	unsigned readbackCooldown = 2;
 
-	/// Whether the resize operation succeeded during the lifecycle run.
-	bool resized = false;
+	/// Number of successful window resize requests.
+	unsigned resizeRequests = 0;
+
+	/// Whether each requested resize produced a viewport callback.
+	std::array<bool, 2> resizeNotified = {};
+
+	/// The dimensions published by initialization or the most recent resize callback.
+	glm::uvec2 notifiedViewport = {0, 0};
 
 	/// Our test pipeline
 	SDL_GPUGraphicsPipeline *pipeline = nullptr;
@@ -210,11 +278,11 @@ public:
 //
 
 /// The test program entry point.
-int main ()
+[[nodiscard]] auto main () -> int
 {
 	// Frames to render before automatic shutdown; 0 runs until the window is closed. The CTest run leaves this unset
 	// (30 frames) - set it manually for a visual check, e.g.
-	//   FCG_PROBE_FRAMES=0 ./build/local-debug/bin/lifecycle-smoke
+	//   FCG_PROBE_FRAMES=0 ./build/debug/bin/lifecycle-smoke
 	const char *env = std::getenv("FCG_PROBE_FRAMES");
 	const unsigned frames = env ? std::strtoul(env, nullptr, 10) : 30;
 

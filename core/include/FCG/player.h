@@ -21,6 +21,7 @@
 
 // Local includes
 #include "FCG/export.h"
+#include "FCG/render_target.h"
 #include "FCG/run.h"
 #include "FCG/applet.h"
 #include "FCG/util.h"
@@ -155,12 +156,16 @@ public:
 
 	/// Exactly one owner unmaps the storage; views cannot be copied.
 	OwningTextureView (const OwningTextureView&) = delete;
+
 	/// Owning views cannot be copy-assigned.
 	auto operator= (const OwningTextureView&) -> OwningTextureView& = delete;
+
 	/// Transfer the mapping; previously borrowed views remain valid until the new owner releases it.
 	OwningTextureView (OwningTextureView&&) noexcept = default;
+
 	/// Unmap the previous storage and take another mapping. Invalidates views into the previous storage.
 	auto operator= (OwningTextureView&&) noexcept -> OwningTextureView& = default;
+
 	/// Unmap the transfer storage, invalidating all derived `TextureView` objects, without waiting on the GPU.
 	~OwningTextureView () = default;
 
@@ -184,9 +189,14 @@ private:
 	////
 	// Fields
 
-	TransferBuffer::Mapping mapping; ///< Scoped CPU access; the transfer allocation is owned by Player.
-	glm::vec<Dims, unsigned> extent; ///< Logical texture dimensions in texels.
-	glm::vec<Dims, unsigned> stride; ///< Memory strides in texels.
+	/// Scoped CPU access; the transfer allocation is owned by Player.
+	TransferBuffer::Mapping mapping;
+
+	/// Logical texture dimensions in texels.
+	glm::vec<Dims, unsigned> extent;
+
+	/// Memory strides in texels.
+	glm::vec<Dims, unsigned> stride;
 };
 
 /// The central state of the <code>\ref fcg::run</code> main loop.
@@ -370,23 +380,42 @@ public:
 	/// future though in case of multithreading, where we might want to wrap the reference in a scoped lock.
 	[[nodiscard]] auto clearColor () const -> const glm::fvec4& { return m_clearColor; }
 
+	/// Borrow the original device, including through a \c const player; it must outlive the player.
+	[[nodiscard]] auto device () const -> Device& { return m_device; }
+
+	/// Main-pass attachments; absent without a main window or valid window claim.
+	[[nodiscard]] auto mainRenderTargetInfo () const -> std::optional<RenderTargetInfo>;
+
 	/// The texture format of the main window's swapchain images, as needed for pipeline render targets.
 	[[nodiscard]] auto swapchainFormat () const -> SDL_GPUTextureFormat;
 
 	/// Reference the current dimensions of the main window viewport.
 	[[nodiscard]] auto viewportSize () const -> glm::uvec2;
 
-	/// Ask for a readback of the main viewport depth buffer.
+	/// \brief Ask for a readback of the main viewport depth buffer.
+	///
+	/// Downloads the most recently submitted contents of the current depth texture. Commands recorded in an
+	/// unsubmitted frame are not included.
+	///
+	/// \pre An active frame is available and its depth texture has been rendered and submitted since creation.
 	///
 	/// \note
 	/// 	The readback result \em must be queried after being scheduled. Clients have exactly one frame to do so,
 	/// 	failure to retrieve the result before it is overwritten is a logic error and can cause a crash.
+	/// 	A viewport resize invalidates outstanding tokens and borrowed views before the \c Applet::onViewportResize
+	/// 	callback; invalidated tokens must be discarded instead of queried.
 	///
 	/// \return A token that can be used to check for completion of the readback operation and to retrieve the results.
 	[[nodiscard]] auto scheduleDepthReadback () -> uint64_t;
 
-	/// Ask for the result of a previously scheduled depth readback operation. Will block if the transfer is still
-	/// pending (it is guaranteed to be available at the beginning of the next frame after the one it was requested).
+	/// \brief Ask for the result of a previously scheduled depth readback operation.
+	///
+	/// Blocks if the transfer is still pending. Unless invalidated by a viewport resize, the result is available at
+	/// the beginning of the next frame after the one it was requested.
+	///
+	/// \pre The token has not been invalidated by a viewport resize or replaced by a newer readback.
+	///
+	/// \note The borrowed view remains valid until another download is scheduled or the viewport is resized.
 	///
 	/// \return A <code>\ref TextureView</code> on the read-back depth buffer.
 	[[nodiscard]] auto getDepthReadbackResult (uint64_t token) -> TextureView<float>;
@@ -405,10 +434,10 @@ private:
 
 
 	////
-	// Member variables
+	// Fields
 
 	/// The main rendering device.
-	Device &device;
+	Device &m_device;
 
 	/// The main window that applets can interact with through the player. Non-owning – the window is owned by whoever
 	/// created the \c fcg::Player, (e.g., <code>\ref fcg::run</code>) and must outlive the player.

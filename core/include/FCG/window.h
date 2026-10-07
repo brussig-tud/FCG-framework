@@ -43,6 +43,7 @@
 
 // Local includes
 #include "FCG/export.h"
+#include "FCG/render_target.h"
 #include "FCG/frame.h"
 
 // SDL3 library (SDL_GPUTextureFormat in the public API)
@@ -157,6 +158,10 @@ public:
 	/// The texture format of this window's swapchain images, as required for creating render target
 	/// descriptions of graphics pipelines. The window must be claimed by a device.
 	[[nodiscard]] auto swapchainFormat () const -> SDL_GPUTextureFormat;
+
+	/// Attachment description available before rendering and while minimized; absent without a valid claim.
+	[[nodiscard]] auto renderTargetInfo () const -> std::optional<RenderTargetInfo>;
+
 	/// Update the stored viewport dimensions from the current window drawable size. In a blocking main loop,
 	/// rendering does not necessarily happen right after a resize event, so this should be polled once per
 	/// iteration to keep the viewport dimensions fresh for users that query them outside of rendering (e.g.
@@ -225,6 +230,12 @@ private:
 
 	////
 	// Fields
+
+	/// Depth format used by both target queries and depth-texture allocation.
+	static constexpr SDL_GPUTextureFormat depthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+
+	/// Sample count used by both target queries and depth-texture allocation.
+	static constexpr SDL_GPUSampleCount samples = SDL_GPU_SAMPLECOUNT_1;
 
 	/// The SDL window handle.
 	SDL_Window *m_handle = nullptr;

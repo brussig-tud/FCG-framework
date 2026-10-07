@@ -1,14 +1,13 @@
 
-# The "Hello FCG!" demo app.
-set(APP_NAME hello) # variable APP_NAME required by subdirectories
+# The "Image Viewer" demo app.
+set(APP_NAME imgview) # variable APP_NAME required by subdirectories
 add_executable(${APP_NAME})
 
 # Depend on the FCG framework
-target_link_libraries(${APP_NAME} PRIVATE Core)
+target_link_libraries(${APP_NAME} PRIVATE Core Image Render)
 
 # Collect sources
 add_subdirectory(src)
-add_subdirectory(shader)
 
 # Setup compiler
 target_include_directories(${APP_NAME} PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src)

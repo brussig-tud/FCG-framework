@@ -18,3 +18,13 @@ fcg_register_documentation(
     EXAMPLE_DIRS "${CMAKE_CURRENT_LIST_DIR}/../libs/image/tests"
     PREDEFINED FCG_IMAGE_EXPORT=
 )
+
+fcg_register_documentation(
+    LIBRARY Render
+    LINK_TARGET FCG-Framework::Render
+    GUIDE fcg_render_guide
+    COMPONENTS fcg_primitives
+    INPUTS "${CMAKE_CURRENT_LIST_DIR}/../libs/render/include/FCG/Render"
+    EXAMPLE_DIRS "${CMAKE_CURRENT_LIST_DIR}/../libs/render/tests"
+    PREDEFINED FCG_RENDER_EXPORT=
+)

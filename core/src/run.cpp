@@ -113,7 +113,8 @@ void handleEvent (const SDL_Event &event, Window &window, Gui &gui, Player &play
 /// Run the given application(s).
 FCG_FRAMEWORK_EXPORT auto run (
 	std::vector<std::unique_ptr<Applet>> _applets, PlayerSettings &&settings
-) -> int {
+) -> int
+{
 	// Info trace
 	SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: starting up...");
 
@@ -196,12 +197,25 @@ FCG_FRAMEWORK_EXPORT auto run (
 			auto lastFrameTime = std::chrono::high_resolution_clock::now();
 			while (!player.shouldClose())
 			{
+				const auto oldViewportSize = window->viewportSize();
 				// Begin the new rendering frame. We need it now because the applets might need to interact with the
-				// player in ways that require the current target textures during their update() or gui() hools (like
+				// player in ways that require the current target textures during their update() or gui() hooks (like
 				// scheduling readbacks upon user interaction).
 				player.frame = window->beginFrame(device);
 				// - any readbacks should be done now
 				player.collectReadbackResults();
+
+				// Frame acquisition updates the viewport and may replace the depth texture. Detect that change before
+				// applets handle input, and keep an acquired frame's dimensions authoritative for this iteration.
+				if (!player.frame) {
+					std::optional<glm::uvec2> ignoredOldSize;
+					window->pollViewportSize(ignoredOldSize);
+				}
+				if (window->viewportSize() != oldViewportSize) {
+					player.recreateReadbackBuffers();
+					for (auto &applet : applets)
+						applet->onViewportResize(device, oldViewportSize, player);
+				}
 
 				// Event handling
 				if (player.continuousRedrawRequested() || pendingRedraws > 0)
@@ -248,15 +262,6 @@ FCG_FRAMEWORK_EXPORT auto run (
 				// Stop early if the window was requested to close while handling events
 				if (player.shouldClose())
 					break;
-
-				// The window may have been resized since the last frame – in blocking mode rendering does not
-				// necessarily happen right after a resize event, so keep the viewport dimensions fresh
-				std::optional<glm::uvec2> oldViewportSize;
-				if (window->pollViewportSize(oldViewportSize)) {
-					player.recreateReadbackBuffers();
-					for (auto &applet : applets)
-						applet->onViewportResize(device, oldViewportSize.value(), player);
-				}
 
 				// Update frame stats
 				auto now = std::chrono::high_resolution_clock::now();

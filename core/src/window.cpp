@@ -84,6 +84,13 @@ auto Window::swapchainFormat () const -> SDL_GPUTextureFormat
 	return SDL_GetGPUSwapchainTextureFormat(m_device->handle(), m_handle);
 }
 
+auto Window::renderTargetInfo () const -> std::optional<RenderTargetInfo> {
+	const auto color = swapchainFormat();
+	if (color == SDL_GPU_TEXTUREFORMAT_INVALID)
+		return std::nullopt;
+	return RenderTargetInfo{color, depthFormat, samples};
+}
+
 auto Window::claim (Device &device) -> bool
 {
 	auto curClaim = m_device ? std::make_optional(m_device->handle()) : std::nullopt;
@@ -189,13 +196,13 @@ auto Window::beginFrame (Device &device) -> Frame*
 		// Create the new depth buffer with the most common defaults: 32-bit float depth, no stencil, no MSAA
 		SDL_GPUTextureCreateInfo depthTextureInfo = { };
 		depthTextureInfo.type = SDL_GPU_TEXTURETYPE_2D;
-		depthTextureInfo.format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+		depthTextureInfo.format = depthFormat;
 		depthTextureInfo.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
 		depthTextureInfo.width = swapchainSize.x;
 		depthTextureInfo.height = swapchainSize.y;
 		depthTextureInfo.layer_count_or_depth = 1;
 		depthTextureInfo.num_levels = 1;
-		depthTextureInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
+		depthTextureInfo.sample_count = samples;
 		depthTexture = SDL_CreateGPUTexture(device.handle(), &depthTextureInfo);
 		if (!depthTexture) {
 			const auto msg = std::format("Creating the depth buffer failed: {}", SDL_GetError());
