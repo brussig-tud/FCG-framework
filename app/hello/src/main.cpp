@@ -54,7 +54,7 @@ public:
 		}
 	{}
 
-	/// The destructor. Releases the graphics pipeline created during \ref init.
+	/// The destructor. Releases the graphics pipeline created during <code>\ref init</code>.
 	~SimpleShapesApplet() override {
 		if (m_device != nullptr && m_pipeline != nullptr) {
 			SDL_ReleaseGPUGraphicsPipeline(m_device->handle(), m_pipeline);
@@ -227,10 +227,10 @@ protected:
 	/// All available simple shapes, instantiated once.
 	std::unique_ptr<SimpleShape> shapes[(size_t)SS::NUM];
 
-	/// Index of the currently selected shape in \ref shapes.
+	/// Index of the currently selected shape in <code>\ref shapes</code>.
 	int selectedShape = 1;
 
-	/// Cached GPU device handle, captured during \ref init so the destructor can release the pipeline.
+	/// Cached GPU device handle, captured during <code>\ref init</code> so the destructor can release the pipeline.
 	fcg::Device *m_device = nullptr;
 
 	/// The graphics pipeline used to render the simple shapes.

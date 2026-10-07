@@ -2,7 +2,8 @@
  * \defgroup fcg_applets Applets
  * \ingroup fcg_components
  *
- * \ref fcg::Applet defines the application callbacks used by the player. Its declarations describe event handling, updates, rendering, and GUI integration.
+ * <code>\ref fcg::Applet</code> defines the application callbacks used by the player. Its declarations describe event
+ * handling, updates, rendering, and GUI integration.
  *
  * \par Guide incomplete
  * This guide is a stub. Consult the API declarations below for currently documented behavior.
@@ -110,9 +111,9 @@ public:
 	/// \param player Reference to the central applet player.
 	virtual void init (Device &device, Player &player) = 0;
 
-	/// Called whenever the main viewport of the player (i.e., the one that the render passes provided to \ref render
-	/// are targeting) changes dimensions. To get the new dimensions, applets should query
-	/// \ref fcg::Player::viewportSize
+	/// Called whenever the main viewport of the player (i.e., the one that the render passes provided to
+	/// <code>\ref render</code> are targeting) changes dimensions. To get the new dimensions, applets should query
+	/// <code>\ref fcg::Player::viewportSize</code>
 	///
 	/// \param device The active SDL GPU device that is used for rendering.
 	/// \param oldViewportSize The dimensions of the main viewport before the most recent resizing
@@ -155,14 +156,14 @@ public:
 	) = 0;
 };
 
-/// The concept of behaving like an \ref fcg::Applet.
+/// The concept of behaving like an <code>\ref fcg::Applet</code>.
 template <class A>
 concept AppletConcept =
 	   std::derived_from<A, Applet>/*
 	&& requires (A applet, SDL_GPUDevice *gpuDevice, SDL_GPURenderPass *renderPass, Player &player)
 {
-	/// Construct an instance of the Applet using defaults for all initial state, ready for consumption by
-	/// \ref fcg::run.
+	/// Construct an instance of the `Applet` using defaults for all initial state, ready for consumption by
+	/// <code>\ref fcg::run</code>.
 	{ A::create() } -> std::same_as<std::unique_ptr<A>>;
 }*/;
 

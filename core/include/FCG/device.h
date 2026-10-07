@@ -2,7 +2,9 @@
  * \defgroup fcg_devices Devices and shaders
  * \ingroup fcg_components
  *
- * \ref fcg::Device provides access to the GPU device and shader creation. \ref fcg::ShaderStage identifies shader stages, and \ref fcg::ShaderResources describes graphics shader resource counts.
+ * <code>\ref fcg::Device</code> provides access to the GPU device and shader creation.
+ * <code>\ref fcg::ShaderStage</code> identifies shader stages, and <code>\ref fcg::ShaderResources</code> describes
+ * graphics shader resource counts.
  *
  * \par Guide incomplete
  * This guide is a stub. Consult the API declarations below for currently documented behavior.
@@ -90,8 +92,8 @@ enum class ShaderStage {
 
 /// Resource counts declared by one graphics shader stage.
 ///
-/// Counts must match the shader's binding layout on every backend. Storage buffers use std430; uniform blocks
-/// use std140. SDL orders samplers before storage textures before storage buffers in each stage's resource set.
+/// Counts must match the shader's binding layout on every backend. Storage buffers use `std430`; uniform blocks
+/// use `std140`. SDL orders samplers before storage textures before storage buffers in each stage's resource set.
 /// See \ref fcg_buffers for a storage-shader example. All counts default to zero.
 struct ShaderResources {
 	unsigned uniformBuffers = 0; ///< Number of uniform blocks (at most four per stage).
@@ -147,7 +149,7 @@ class FCG_FRAMEWORK_EXPORT Device
 	/// outside our own internals, but they have to be public because otherwise they can't be used by STL functions
 	/// which we use internally (like \c std::make_optional). WHY C++??? WHYYYYYYY??????!?!?!!!11
 	class PrivateConstructorKey final {
-		/// Device needs to construct the key inside \ref Device::create.
+		/// `Device` needs to construct the key inside <code>\ref Device::create</code>.
 		friend Device;
 
 		/// Private default constructor. Statically no-op and thus zero-overhead.
@@ -221,7 +223,7 @@ public:
 	///                   compilation produces.
 	///
 	/// \returns The shader, or \c nullptr on failure (details are written to the SDL error log). The caller
-	///          owns the returned handle and must release it with SDL_ReleaseGPUShader.
+	///          owns the returned handle and must release it with \c SDL_ReleaseGPUShader.
 	[[nodiscard]] auto createShader (
 		ShaderStage stage, std::span<const std::byte> spirv, unsigned numUniformBlocks,
 		std::string_view entrypoint="main"
@@ -232,11 +234,11 @@ public:
 	///
 	/// Uses the same resource declaration for native SPIR-V and runtime shadercross translation. Existing pipelines
 	/// retain their own shader references; release the returned shader when pipeline construction is complete.
-	/// \param stage VERTEX or FRAGMENT; compute pipelines are created through SDL directly.
+	/// \param stage `VERTEX` or `FRAGMENT`; compute pipelines are created through SDL directly.
 	/// \param spirv Nonempty embedded SPIR-V bytecode, borrowed during the call.
 	/// \param resources Counts matching the shader's resource declarations and SDL binding conventions.
 	/// \param entrypoint Shader entry point; defaults to \c main.
-	/// \returns A caller-owned shader or nullptr on failure, with details logged through SDL. Does not submit or wait.
+	/// \returns A caller-owned shader or `nullptr` on failure, with details logged through SDL. Does not submit or wait.
 	[[nodiscard]] auto createShader (
 		ShaderStage stage, std::span<const std::byte> spirv, const ShaderResources &resources,
 		std::string_view entrypoint="main"
@@ -253,7 +255,7 @@ private:
 	void retireFence (std::unique_ptr<RetiredFence> fence);
 
 	/// Poll and release abandoned fences. Called during new readbacks, explicit idle waits, and device teardown.
-	/// \param idle True only after a successful device idle wait; otherwise individually query each fence.
+	/// \param idle `true` only after a successful device idle wait; otherwise individually query each fence.
 	void collectRetiredFences (bool idle=false) const;
 
 

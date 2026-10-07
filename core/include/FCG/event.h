@@ -2,7 +2,8 @@
  * \defgroup fcg_events Events
  * \ingroup fcg_components
  *
- * \ref fcg::Event carries a normalized framework event and its payload. \ref fcg::EventType identifies event kinds; \ref fcg::EventContext carries shared dispatch context.
+ * <code>\ref fcg::Event</code> carries a normalized framework event and its payload. <code>\ref fcg::EventType</code>
+ * identifies event kinds; <code>\ref fcg::EventContext</code> carries shared dispatch context.
  *
  * \par Guide incomplete
  * This guide is a stub. Consult the API declarations below for currently documented behavior.
@@ -73,7 +74,7 @@ namespace fcg {
 // Enums
 //
 
-/// The type of an \ref fcg::Event.
+/// The type of an <code>\ref fcg::Event</code>.
 enum class EventType
 {
 	/// An unrecognized or unhandled SDL event.
@@ -234,7 +235,7 @@ struct DropEvent
 // Type aliases
 //
 
-/// The discriminated payload carried by an \ref Event.
+/// The discriminated payload carried by an <code>\ref Event</code>.
 using EventPayload = std::variant<
 	std::monostate, KeyEvent, TextEvent, MouseMotionEvent, MouseButtonEvent, MouseWheelEvent, DropEvent
 >;
@@ -246,7 +247,7 @@ using EventPayload = std::variant<
 // Classes
 //
 
-/// Per-event context shared between every active \ref fcg::Applet.
+/// Per-event context shared between every active <code>\ref fcg::Applet</code>.
 ///
 /// Applets can use this object to report that they have consumed an event, so that subsequent applets can decide
 /// whether they still want to process it.
@@ -288,7 +289,7 @@ private:
 	bool handled = false;
 };
 
-/// An event that an \ref fcg::Applet can react to.
+/// An event that an <code>\ref fcg::Applet</code> can react to.
 class FCG_FRAMEWORK_EXPORT Event
 {
 public:
@@ -317,7 +318,7 @@ public:
 
 	/// Access the typed payload of this event.
 	///
-	/// \tparam T The payload type to retrieve, e.g. \ref KeyEvent.
+	/// \tparam T The payload type to retrieve, e.g. <code>\ref KeyEvent</code>.
 	///
 	/// \returns A pointer to the payload if this event carries a payload of type \c T, or `nullptr` otherwise.
 	template<class T>
@@ -348,11 +349,11 @@ private:
 // Functions
 //
 
-/// Convert a raw SDL event into a normalized framework \ref Event.
+/// Convert a raw SDL event into a normalized framework <code>\ref Event</code>.
 ///
 /// \param event The SDL event to convert.
 ///
-/// \returns The normalized \ref Event carrying the appropriate \ref EventType and payload.
+/// \returns The normalized <code>\ref Event</code> carrying the appropriate <code>\ref EventType</code> and payload.
 FCG_FRAMEWORK_EXPORT auto makeEvent (const SDL_Event &event) -> Event;
 
 

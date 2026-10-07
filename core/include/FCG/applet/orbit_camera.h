@@ -2,7 +2,8 @@
  * \defgroup fcg_orbit_camera Orbit camera
  * \ingroup fcg_components
  *
- * \ref fcg::applet::OrbitCamera is a camera applet. \ref fcg::applet::OrbitCameraParams describes its camera parameters.
+ * <code>\ref fcg::applet::OrbitCamera</code> is a camera applet. <code>\ref fcg::applet::OrbitCameraParams</code>
+ * describes its camera parameters.
  *
  * \par Guide incomplete
  * This guide is a stub. Consult the API declarations below for currently documented behavior.
@@ -83,18 +84,19 @@ struct OrbitCameraParams
 		/// The far clipping plane distance.
 		float zFar;
 
-		/// Set \ref fovY such that the frustum has the given diameter at the focal point.
+		/// Set <code>\ref fovY</code> such that the frustum has the given diameter at the focal point.
 		void setFovYForFrustumDiameterAtFocus (float diameter) {
 			const auto theta = glm::atan(.5f*diameter / f);
 			fovY = theta+theta;
 		}
 
-		/// Set \ref f to the distance where the frustum has the given diameter under the current \ref fovY.
+		/// Set <code>\ref f</code> to the distance where the frustum has the given diameter under the current
+		/// <code>\ref fovY</code>.
 		void setFocusDistForFrustumDiameter (float diameter) {
 			f = .5f*diameter/glm::tan(.5f*fovY);
 		}
 
-		/// Compute the frustum diameter at the current \ref f.
+		/// Compute the frustum diameter at the current <code>\ref f</code>.
 		[[nodiscard]] auto frustumDiameterAtFocus () const -> float {
 			const auto h05 = f*glm::tan(.5f*fovY);
 			return h05+h05;
@@ -265,7 +267,7 @@ private:
 	/// Multiplier applied to all translation/zoom speeds.
 	float speedFactor = 1.0f;
 
-	/// The mouse button currently dragging the camera, or Unknown.
+	/// The mouse button currently dragging the camera, or `Unknown`.
 	MouseButton activeDragButton = MouseButton::Unknown;
 
 	/// The time of the last left mouse click, if any, for double-click detection.
@@ -280,7 +282,7 @@ private:
 	/// For signaling if we wait for a depth buffer readback (contains the token identifying the readback).
 	std::optional<uint64_t> pendingDepthReadback;
 
-	/// For handling double-click-to-focus actions. The controller for \ref focusChange.
+	/// For handling double-click-to-focus actions. The controller for <code>\ref focusChange</code>.
 	DoubleClickToFocusController focusChange{*this};
 };
 

@@ -130,8 +130,8 @@ public:
 
 /// Texture interpretation of a scoped transfer mapping.
 ///
-/// Owns only the mapping, not its TransferBuffer. The transfer buffer must remain alive and unmoved until this
-/// view is destroyed. Moving the view transfers mapping ownership; borrowed TextureViews expire on unmapping.
+/// Owns only the mapping, not its `TransferBuffer`. The transfer buffer must remain alive and unmoved until this
+/// view is destroyed. Moving the view transfers mapping ownership; borrowed `TextureView` objects expire on unmapping.
 /// \todo Once we have proper texture facilities, move this there.
 template <class Texel, unsigned Dims=2>
 	requires (sizeof(Texel) > 0 && Dims >= 1 && Dims <= 3)
@@ -145,7 +145,7 @@ public:
 	/// Interpret an already successful mapping using caller-supplied texel geometry.
 	/// \param mapping Completed GPU download mapping, moved into this object.
 	/// \param extent Dimensions in texels. \param stride Per-axis strides in texels, not bytes.
-	/// \pre The mapped allocation covers this geometry and is suitably aligned for Texel.
+	/// \pre The mapped allocation covers this geometry and is suitably aligned for `Texel`.
 	OwningTextureView (
 		TransferBuffer::Mapping &&mapping, const glm::vec<Dims, unsigned> &extent,
 		const glm::vec<Dims, unsigned> &stride
@@ -161,7 +161,7 @@ public:
 	OwningTextureView (OwningTextureView&&) noexcept = default;
 	/// Unmap the previous storage and take another mapping. Invalidates views into the previous storage.
 	auto operator= (OwningTextureView&&) noexcept -> OwningTextureView& = default;
-	/// Unmap the transfer storage, invalidating all derived TextureViews, without waiting on the GPU.
+	/// Unmap the transfer storage, invalidating all derived `TextureView` objects, without waiting on the GPU.
 	~OwningTextureView () = default;
 
 
@@ -189,10 +189,11 @@ private:
 	glm::vec<Dims, unsigned> stride; ///< Memory strides in texels.
 };
 
-/// The central state of the \ref fcg::run main loop.
+/// The central state of the <code>\ref fcg::run</code> main loop.
 ///
-/// An instance of this class is owned by \ref fcg::run and passed to the endpoints of every running \ref Applet,
-/// providing them with a way to interact with the main loop and other global application state.
+/// An instance of this class is owned by <code>\ref fcg::run</code> and passed to the endpoints of every running
+/// <code>\ref Applet</code>, providing them with a way to interact with the main loop and other global application
+/// state.
 class FCG_FRAMEWORK_EXPORT Player
 {
 	////
@@ -229,7 +230,7 @@ class FCG_FRAMEWORK_EXPORT Player
 			: device(device), fence(std::move(fence)), extent(extent), stride(stride), token(token)
 		{}
 
-		/// The device the readback operation was dispatched on. Needed to release \ref fence.
+		/// The device the readback operation was dispatched on. Needed to release <code>\ref fence</code>.
 		Device &device;
 
 		/// The fence guarding the readback copy, or \c nullptr once it has been waited on and released.
@@ -241,7 +242,7 @@ class FCG_FRAMEWORK_EXPORT Player
 		/// The per-dimension strides of the targeted texture.
 		glm::uvec2 stride;
 
-		/// The token of the readback operation, as returned by \ref scheduleDepthReadback.
+		/// The token of the readback operation, as returned by <code>\ref scheduleDepthReadback</code>.
 		uint64_t token = -1;
 	};
 
@@ -251,17 +252,17 @@ class FCG_FRAMEWORK_EXPORT Player
 		/// The mapped readback view.
 		OwningTextureView<Texel, 2> view;
 
-		/// The token of the readback operation, as returned by \ref scheduleDepthReadback.
+		/// The token of the readback operation, as returned by <code>\ref scheduleDepthReadback</code>.
 		uint64_t token = -1;
 	};
 
 	/// Event: a new frame has begun, i.e. any in-flight readback results should be collected.
 	struct FrameBegin {};
 
-	/// Event: \ref scheduleDepthReadback was invoked and a new readback should be dispatched.
+	/// Event: <code>\ref scheduleDepthReadback</code> was invoked and a new readback should be dispatched.
 	struct ScheduleReadback {};
 
-	/// Event: a readback result was queried via \ref getDepthReadbackResult.
+	/// Event: a readback result was queried via <code>\ref getDepthReadbackResult</code>.
 	struct QueryReadback {
 		/// The token of the readback operation whose result is being queried.
 		uint64_t token;
@@ -336,10 +337,10 @@ public:
 	/// Push a continuous redraw request. As long as at least one such request exists, the main loop runs continuously,
 	/// i.e. another iteration is started as soon as possible after the current one, instead of blocking while waiting
 	/// for events. This is useful e.g. for applets that are animating something. Every push must be balanced by a call
-	/// to \ref popContinuousRedraw once continuous redrawing is no longer needed.
+	/// to <code>\ref popContinuousRedraw</code> once continuous redrawing is no longer needed.
 	void pushContinuousRedraw ();
 
-	/// Pop a continuous redraw request previously registered via \ref pushContinuousRedraw.
+	/// Pop a continuous redraw request previously registered via <code>\ref pushContinuousRedraw</code>.
 	void popContinuousRedraw ();
 
 	/// Whether at least one continuous redraw request currently exists.
@@ -349,8 +350,8 @@ public:
 	/// to that window; for a default-constructed player with no window the request is still recorded.
 	void requestClose ();
 
-	/// Check whether closing the application was requested, e.g. by a call to \ref requestClose or by the user
-	/// closing the main window.
+	/// Check whether closing the application was requested, e.g. by a call to <code>\ref requestClose</code> or by the
+	/// user closing the main window.
 	[[nodiscard]] auto shouldClose () const -> bool;
 
 
@@ -387,7 +388,7 @@ public:
 	/// Ask for the result of a previously scheduled depth readback operation. Will block if the transfer is still
 	/// pending (it is guaranteed to be available at the beginning of the next frame after the one it was requested).
 	///
-	/// \return A \ref TextureView on the read-back depth buffer.
+	/// \return A <code>\ref TextureView</code> on the read-back depth buffer.
 	[[nodiscard]] auto getDepthReadbackResult (uint64_t token) -> TextureView<float>;
 
 
@@ -410,7 +411,7 @@ private:
 	Device &device;
 
 	/// The main window that applets can interact with through the player. Non-owning – the window is owned by whoever
-	/// created the \c fcg::Player, (e.g., \ref fcg::run) and must outlive the player.
+	/// created the \c fcg::Player, (e.g., <code>\ref fcg::run</code>) and must outlive the player.
 	Window *m_window = nullptr;
 
 	/// The currently ongoing frame. Non-owning reference, managed externally.

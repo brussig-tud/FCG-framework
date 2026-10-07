@@ -46,7 +46,7 @@ public:
 	/// The five platonic solids.
 	enum class Solid { Tetrahedron, Cube, Octahedron, Dodecahedron, Icosahedron, NUM };
 
-	/// The way the \ref size parameter is to be interpreted.
+	/// The way the <code>\ref size</code> parameter is to be interpreted.
 	enum class SizeSemantics { Circumradius, Inradius, EdgeLength, NUM };
 
 
@@ -326,13 +326,13 @@ private:
 	////
 	// Fields
 
-	/// The currently selected solid, as an `int` for ImGui interop (see \ref Solid).
+	/// The currently selected solid, as an `int` for ImGui interop (see <code>\ref Solid</code>).
 	int solid = (int)Solid::Dodecahedron;
 
-	/// The currently selected size semantics, as an `int` for ImGui interop (see \ref SizeSemantics).
+	/// The currently selected size semantics, as an `int` for ImGui interop (see <code>\ref SizeSemantics</code>).
 	int sizeSemantics = (int)SizeSemantics::Circumradius;
 
-	/// The configured size, interpreted according to \ref sizeSemantics.
+	/// The configured size, interpreted according to <code>\ref sizeSemantics</code>.
 	float size = 1;
 
 	/// CPU-side vertex buffer.

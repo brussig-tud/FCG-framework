@@ -2,7 +2,8 @@
  * \defgroup fcg_utilities Utilities
  * \ingroup fcg_components
  *
- * \ref fcg::StateMachine is a generic finite state machine utility. The declarations in \ref fcg::fsm describe optional controller hooks.
+ * <code>\ref fcg::StateMachine</code> is a generic finite state machine utility. The declarations in
+ * <code>\ref fcg::fsm</code> describe optional controller hooks.
  *
  * \par Guide incomplete
  * This guide is a stub. Consult the API declarations below for currently documented behavior.
@@ -59,13 +60,13 @@ namespace fcg {
 // Classes
 //
 
-/// Auxiliaries of the \ref fcg::StateMachine facility.
+/// Auxiliaries of the <code>\ref fcg::StateMachine</code> facility.
 namespace fsm {
-	/// The concept of providing an \c onEnter state transition hook in a \ref fcg::StateMachine controller.
+	/// The concept of providing an \c onEnter state transition hook in a <code>\ref fcg::StateMachine</code> controller.
 	template<class C, class S>
 	concept has_onEnter = requires(C c, S& s) { c.onEnter(s); };
 
-	/// The concept of providing an \c onExit state transition hook in a \ref fcg::StateMachine controller.
+	/// The concept of providing an \c onExit state transition hook in a <code>\ref fcg::StateMachine</code> controller.
 	template<class C, class S>
 	concept has_onExit = requires(C c, S& s) { c.onExit(s); };
 }

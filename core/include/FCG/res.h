@@ -2,7 +2,8 @@
  * \defgroup fcg_resources Resources
  * \ingroup fcg_components
  *
- * \ref fcg::res::Shader represents embedded shader resources. \ref fcg::res::ShaderStageData describes the artifacts for one shader stage.
+ * <code>\ref fcg::res::Shader</code> represents embedded shader resources. <code>\ref fcg::res::ShaderStageData</code>
+ * describes the artifacts for one shader stage.
  *
  * \par Guide incomplete
  * This guide is a stub. Consult the API declarations below for currently documented behavior.

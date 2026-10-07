@@ -39,7 +39,7 @@ auto sdlError (const char *operation) -> std::unexpected<BufferError> {
 	return std::unexpected(BufferError{BufferErrorCode::SDLFailure, std::string(operation) + ": " + SDL_GetError()});
 }
 
-/// Check a range without overflowing offset + size; an empty range may start at the end.
+/// Check a range without overflowing `offset + size`; an empty range may start at the end.
 auto fits (std::size_t capacity, std::size_t offset, std::size_t size) -> bool {
 	return offset <= capacity && size <= capacity - offset;
 }

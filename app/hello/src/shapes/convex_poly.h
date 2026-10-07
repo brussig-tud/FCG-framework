@@ -30,7 +30,9 @@
 /// Vertices are equally distributed on a circle of configurable radius. The vertex layout is
 /// interleaved position + normal, both as `glm::vec4`:
 ///
-///   struct Vertex { glm::vec4 position; glm::vec4 normal; };
+/// \code{.cpp}
+/// struct Vertex { glm::vec4 position; glm::vec4 normal; };
+/// \endcode
 ///
 /// This will be the vertex format used by the future pipeline/shader.
 class ConvexPolygon : public SimpleShape

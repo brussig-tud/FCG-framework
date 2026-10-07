@@ -51,7 +51,8 @@ namespace fcg {
 //
 
 /// State representing one frame of rendering. Basically scopes all render commands to this frame's lifetime. Everything
-/// that has been recorded by the time the \c Frame is destroyed will get submitted to the \ref fcg::Device this
+/// that has been recorded by the time the \c Frame is destroyed will get submitted to the <code>\ref fcg::Device</code>
+/// this
 /// \c Frame was created with.
 class FCG_FRAMEWORK_EXPORT Frame
 {
@@ -83,8 +84,8 @@ public:
 	{}
 
 	/// The destructor. Causes the associated command buffer to be cancelled. If the rendering commands are to be
-	/// submitted, then this has to happen explicitly by calling the creating window's \ref fcg::Window::endFrame
-	/// method.
+	/// submitted, then this has to happen explicitly by calling the creating window's
+	/// <code>\ref fcg::Window::endFrame</code> method.
 	~Frame();
 
 	/// A \c Frame is not copyable.
@@ -121,7 +122,7 @@ public:
 	/// be recorded into a pass obtained this way. The pass includes a depth buffer that gets cleared to the far
 	/// plane (depth value 1), ready for standard depth testing.
 	///
-	/// Needs to be paired with a call to \ref endRenderPass before another pass can be begun.
+	/// Needs to be paired with a call to <code>\ref endRenderPass</code> before another pass can be begun.
 	///
 	/// \param clearColor The color to clear the color target of the render pass with.
 	///
@@ -130,9 +131,9 @@ public:
 
 	/// Obtain a render pass targeting this frame's target texture without a depth buffer. The existing color
 	/// contents are preserved (load op `LOAD`), so this pass can be used to overlay the GUI on top of rendering
-	/// performed in the primary \ref beginRenderPass pass.
+	/// performed in the primary <code>\ref beginRenderPass</code> pass.
 	///
-	/// Needs to be paired with a call to \ref endRenderPass before this frame is finished.
+	/// Needs to be paired with a call to <code>\ref endRenderPass</code> before this frame is finished.
 	///
 	/// \returns The render pass, or `nullptr` if pass creation failed.
 	auto beginOverlayRenderPass () -> SDL_GPURenderPass*;

@@ -2,7 +2,8 @@
  * \defgroup fcg_render_state Render state
  * \ingroup fcg_components
  *
- * \ref fcg::RenderState collects rendering state. \ref fcg::ViewingUniforms describes the viewing matrices passed to shaders.
+ * <code>\ref fcg::RenderState</code> collects rendering state. <code>\ref fcg::ViewingUniforms</code> describes the
+ * viewing matrices passed to shaders.
  *
  * \par Guide incomplete
  * This guide is a stub. Consult the API declarations below for currently documented behavior.
@@ -80,13 +81,13 @@ namespace fcg {
 // Structs & enums
 //
 
-/// Convenience wrapper for a std140-compatible 3x3 matrix.
+/// Convenience wrapper for a `std140`-compatible 3x3 matrix.
 struct alignas(16) Std140Mat3
 {
-	/// The three std140-aligned columns of the matrix.
+	/// The three `std140`-aligned columns of the matrix.
 	glm::vec4 columns[3];
 
-	/// Construct an std140-compatible matrix from a GLM matrix.
+	/// Construct an `std140`-compatible matrix from a GLM matrix.
 	Std140Mat3 (const glm::mat3 &matrix)
 		: columns{
 			{matrix[0], 0.f},
@@ -149,10 +150,10 @@ public:
 	/// The destructor. Releases all GPU resources.
 	~RenderState();
 
-	/// RenderStates are not copyable.
+	/// `RenderState` objects are not copyable.
 	RenderState(const RenderState&) = delete;
 
-	/// RenderStates are not copy-assignable.
+	/// `RenderState` objects are not copy-assignable.
 	auto operator= (const RenderState&) -> RenderState& = delete;
 
 
@@ -344,14 +345,14 @@ public:
 		invalidateDependentData();
 	}
 
-	/// Add pushing the \ref viewingUniforms data block to the command stream of the given command buffer.
+	/// Add pushing the <code>\ref viewingUniforms</code> data block to the command stream of the given command buffer.
 	///
 	/// \param commandBuffer The command buffer to which the push command will be added.
 	/// \param stage The shader stage for which the data block will be pushed.
 	/// \param slot The shader uniform slot to which the data block will be pushed.
 	void pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot);
 
-	/// Add pushing the \ref viewingUniforms data block to the command stream of the given command buffer.
+	/// Add pushing the <code>\ref viewingUniforms</code> data block to the command stream of the given command buffer.
 	///
 	/// Just like for the corresponding \link viewingUniforms accessor \endlink, it is a logic error to call this method
 	/// when the \em current viewing uniforms data block has never been queried before, since the \c const context does
@@ -393,28 +394,28 @@ private:
 	////
 	// Fields
 
-	/// The \ref ViewingUniforms::modelview matrix stack.
+	/// The <code>\ref ViewingUniforms::modelview</code> matrix stack.
 	std::stack<glm::mat4> modelview{{glm::mat4(1.f)}};
 
-	/// The \ref ViewingUniforms::projection matrix stack.
+	/// The <code>\ref ViewingUniforms::projection</code> matrix stack.
 	std::stack<glm::mat4> projection{{glm::mat4(1.f)}};
 
-	/// Lazy matrix stack for the \ref ViewingUniforms::invModelview matrix.
+	/// Lazy matrix stack for the <code>\ref ViewingUniforms::invModelview</code> matrix.
 	std::stack<std::optional<glm::mat4>> invModelview{{glm::mat4(1.f)}};
 
-	/// Lazy matrix stack for the \ref ViewingUniforms::invProjection matrix.
+	/// Lazy matrix stack for the <code>\ref ViewingUniforms::invProjection</code> matrix.
 	std::stack<std::optional<glm::mat4>> invProjection{{glm::mat4(1.f)}};
 
-	/// Lazy \ref ViewingUniforms::modelviewProjection matrix.
+	/// Lazy <code>\ref ViewingUniforms::modelviewProjection</code> matrix.
 	std::optional<glm::mat4> modelviewProjection;
 
-	///Lazy \ref ViewingUniforms::invModelviewProjection matrix.
+	///Lazy <code>\ref ViewingUniforms::invModelviewProjection</code> matrix.
 	std::optional<glm::mat4> invModelviewProjection;
 
-	/// Lazy matrix stack for the \ref ViewingUniforms::normal matrix.
+	/// Lazy matrix stack for the <code>\ref ViewingUniforms::normal</code> matrix.
 	std::stack<std::optional<glm::mat3>> normal{{glm::mat3(1.f)}};
 
-	/// Lazy matrix stack for the \ref ViewingUniforms::invNormal matrix.
+	/// Lazy matrix stack for the <code>\ref ViewingUniforms::invNormal</code> matrix.
 	std::stack<std::optional<glm::mat3>> invNormal{{glm::mat3(1.f)}};
 
 	/// The current viewing uniforms data block read for shader upload.

@@ -65,7 +65,7 @@ auto recognizedHint (std::string_view hint) -> bool {
 	return std::ranges::find(extensions, hint) != std::end(extensions);
 }
 
-/// Static registration is retained in archive links by linkSDLImageHandler below.
+/// Static registration is retained in archive links by `linkSDLImageHandler` below.
 const fcg::FormatHandlerRegistration sdlImageRegistration {
 	"sdl_image", std::make_unique<fcg::SDLImageFormatHandler>(), -100
 };

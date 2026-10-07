@@ -65,7 +65,7 @@ struct MeshSlot {
 		return bindGeometry(pass, *geometry);
 	}
 
-	/// Release both allocations; a later replace() can create new geometry.
+	/// Release both allocations; a later `replace()` can create new geometry.
 	void release () {
 		geometry.reset();
 	}

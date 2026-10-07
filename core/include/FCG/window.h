@@ -2,7 +2,8 @@
  * \defgroup fcg_windows Windows and frames
  * \ingroup fcg_components
  *
- * \ref fcg::Window and \ref fcg::WindowSettings describe windows and their creation settings. \ref fcg::Frame exposes frame recording and render passes.
+ * <code>\ref fcg::Window</code> and <code>\ref fcg::WindowSettings</code> describe windows and their creation settings.
+ * <code>\ref fcg::Frame</code> exposes frame recording and render passes.
  *
  * \par Guide incomplete
  * This guide is a stub. Consult the API declarations below for currently documented behavior.
@@ -85,7 +86,7 @@ namespace fcg {
 // Structs
 //
 
-/// Creation parameters for a \ref Window.
+/// Creation parameters for a <code>\ref Window</code>.
 struct WindowSettings
 {
 	/// The text shown in the window title bar.
@@ -191,7 +192,7 @@ public:
 	/// \param title The new window title.
 	void setTitle (const std::string &title);
 
-	/// Request the window to be closed. In case of the main window, \ref fcg::run will destroy it at the next
+	/// Request the window to be closed. In case of the main window, <code>\ref fcg::run</code> will destroy it at the next
 	/// opportunity.
 	void requestClose () {
 		closeRequested = true;
@@ -208,14 +209,14 @@ private:
 	////
 	// Object construction
 
-	/// Private default constructor. Windows are created via \ref create.
+	/// Private default constructor. Windows are created via <code>\ref create</code>.
 	Window() = default;
 
 
 	////
 	// Methods
 
-	/// Claim the window for the given \ref fcg::Device.
+	/// Claim the window for the given <code>\ref fcg::Device</code>.
 	auto claim (Device &device) -> bool;
 
 	/// Remove the claim of the given device to this window.
@@ -234,8 +235,9 @@ private:
 	/// A depth buffer suitable for rendering to the swapchain images of this \c Window.
 	SDL_GPUTexture *depthTexture = nullptr;
 
-	/// The size of the current \ref depthTexture, if any. Tracked separately from \ref m_viewportSize because the depth
-	/// buffer only needs to be recreated when the actual swapchain texture size changes.
+	/// The size of the current <code>\ref depthTexture</code>, if any. Tracked separately from
+	/// <code>\ref m_viewportSize</code> because the depth buffer only needs to be recreated when the actual swapchain
+	/// texture size changes.
 	glm::uvec2 m_depthTextureSize = { 0, 0 };
 
 	/// The current frame in flight, if any
