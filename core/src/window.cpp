@@ -84,6 +84,13 @@ auto Window::swapchainFormat () const -> SDL_GPUTextureFormat
 	return SDL_GetGPUSwapchainTextureFormat(m_device->handle(), m_handle);
 }
 
+auto Window::renderTargetInfo () const -> std::optional<RenderTargetInfo> {
+	const auto color = swapchainFormat();
+	if (color == SDL_GPU_TEXTUREFORMAT_INVALID)
+		return std::nullopt;
+	return RenderTargetInfo{SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB, depthFormat, samples};
+}
+
 auto Window::claim (Device &device) -> bool
 {
 	auto curClaim = m_device ? std::make_optional(m_device->handle()) : std::nullopt;
@@ -106,6 +113,22 @@ auto Window::claim (Device &device) -> bool
 		);
 		return false;
 	}
+	auto presentPass = FullscreenPass::linearToSRGB(
+		device, SDL_GetGPUSwapchainTextureFormat(device.handle(), m_handle)
+	);
+	SDL_GPUSamplerCreateInfo samplerInfo{};
+	samplerInfo.min_filter = SDL_GPU_FILTER_NEAREST;
+	samplerInfo.mag_filter = SDL_GPU_FILTER_NEAREST;
+	samplerInfo.address_mode_u = samplerInfo.address_mode_v = samplerInfo.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+	auto sampler = Sampler::create(device, samplerInfo);
+	if (!presentPass || !sampler) {
+		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Creating presentation resources failed: %s",
+			!presentPass ? presentPass.error().message.c_str() : sampler.error().message.c_str());
+		SDL_ReleaseWindowFromGPUDevice(device.handle(), m_handle);
+		return false;
+	}
+	presentation = std::move(*presentPass);
+	presentationSampler = std::move(*sampler);
 	m_device = &device;
 	return true;
 }
@@ -128,6 +151,9 @@ void Window::unclaim (Device &device)
 		depthTexture = nullptr;
 		m_depthTextureSize = glm::uvec2(0);
 	}
+	sceneTexture.reset();
+	presentation.reset();
+	presentationSampler.reset();
 	SDL_ReleaseWindowFromGPUDevice(device.handle(), m_handle);
 	m_device = nullptr;
 }
@@ -159,6 +185,8 @@ auto Window::beginFrame (Device &device) -> Frame*
 		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 		throw std::runtime_error(msg);
 	}
+	// Finish even an exceptional acquisition/allocation path; acquired swapchain images cannot be cancelled.
+	std::unique_ptr<SDL_GPUCommandBuffer, decltype(&SDL_SubmitGPUCommandBuffer)> submission(cmdBuffer, SDL_SubmitGPUCommandBuffer);
 	SDL_GPUTexture *swapchainTexture = nullptr;
 	auto swapchainSize = glm::uvec2(0);
 	if (!SDL_WaitAndAcquireGPUSwapchainTexture(
@@ -173,13 +201,13 @@ auto Window::beginFrame (Device &device) -> Frame*
 	// A missing swapchain texture (e.g. because the window is minimized) is not an error, but the command buffer must
 	// still be submitted. Nothing can be rendered this frame though.
 	if (!swapchainTexture) {
-		SDL_SubmitGPUCommandBuffer(cmdBuffer);
+		SDL_SubmitGPUCommandBuffer(submission.release());
 		return nullptr;
 	}
 
 	// Make sure we have a depth buffer matching the swapchain texture in size. It only gets recreated when the size
 	// actually changed (e.g. after a window resize).
-	if (!depthTexture || swapchainSize != m_depthTextureSize)
+	if (!depthTexture || !sceneTexture || swapchainSize != m_depthTextureSize)
 	{
 		// Releasing the old depth buffer is safe even if previously submitted frames are still using it, SDL defers
 		// destruction until the GPU is done with it
@@ -189,19 +217,31 @@ auto Window::beginFrame (Device &device) -> Frame*
 		// Create the new depth buffer with the most common defaults: 32-bit float depth, no stencil, no MSAA
 		SDL_GPUTextureCreateInfo depthTextureInfo = { };
 		depthTextureInfo.type = SDL_GPU_TEXTURETYPE_2D;
-		depthTextureInfo.format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+		depthTextureInfo.format = depthFormat;
 		depthTextureInfo.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
 		depthTextureInfo.width = swapchainSize.x;
 		depthTextureInfo.height = swapchainSize.y;
 		depthTextureInfo.layer_count_or_depth = 1;
 		depthTextureInfo.num_levels = 1;
-		depthTextureInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
+		depthTextureInfo.sample_count = samples;
 		depthTexture = SDL_CreateGPUTexture(device.handle(), &depthTextureInfo);
 		if (!depthTexture) {
 			const auto msg = std::format("Creating the depth buffer failed: {}", SDL_GetError());
 			SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 			throw std::runtime_error(msg);
 		}
+		SDL_GPUTextureCreateInfo sceneInfo{};
+		sceneInfo.type = SDL_GPU_TEXTURETYPE_2D;
+		sceneInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
+		sceneInfo.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+		sceneInfo.width = swapchainSize.x;
+		sceneInfo.height = swapchainSize.y;
+		sceneInfo.layer_count_or_depth = sceneInfo.num_levels = 1;
+		sceneInfo.sample_count = samples;
+		auto scene = Texture::create(device, sceneInfo);
+		if (!scene)
+			throw std::runtime_error("Creating scene attachment: " + scene.error().message);
+		sceneTexture.emplace(std::move(*scene));
 		m_depthTextureSize = swapchainSize;
 	}
 
@@ -209,7 +249,11 @@ auto Window::beginFrame (Device &device) -> Frame*
 	m_viewportSize = swapchainSize;
 
 	// Begin frame and return
-	m_frame.emplace(Frame::PrivateConstructorKey{}, cmdBuffer, swapchainTexture, depthTexture, swapchainSize);
+	m_frame.emplace(
+		Frame::PrivateConstructorKey{}, cmdBuffer, swapchainTexture, depthTexture, *sceneTexture,
+		*presentation, *presentationSampler, swapchainSize
+	);
+	auto _notOwnedAnyLonger = submission.release();
 	return &m_frame.value();
 }
 

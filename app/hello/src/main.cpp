@@ -46,12 +46,9 @@ public:
 	////
 	// Object construction/destruction
 
-	/// Default constructor.
+	/// The default constructor.
 	SimpleShapesApplet()
-		: shapes{
-			std::make_unique<ConvexPolygon>(),
-			std::make_unique<PlatonicSolid>()
-		}
+		: shapes{std::make_unique<ConvexPolygon>(), std::make_unique<PlatonicSolid>()}
 	{}
 
 	/// The destructor. Releases the graphics pipeline created during <code>\ref init</code>.
@@ -124,7 +121,7 @@ public:
 
 		// Color target matching the swapchain format.
 		SDL_GPUColorTargetDescription colorTarget {};
-		colorTarget.format = player.swapchainFormat();
+		colorTarget.format = player.mainRenderTargetInfo()->colorFormat;
 
 		SDL_GPUGraphicsPipelineTargetInfo targetInfo {};
 		targetInfo.color_target_descriptions = &colorTarget;

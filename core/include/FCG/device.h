@@ -1,3 +1,4 @@
+
 /**
  * \defgroup fcg_devices Devices and shaders
  * \ingroup fcg_components
@@ -128,6 +129,9 @@ class FCG_FRAMEWORK_EXPORT Device
 
 	// BufferReadbacks need access to the private RetiredFence type.
 	friend class BufferReadback;
+
+	/// Texture downloads share nonblocking fence retirement.
+	friend class TextureReadback;
 
 	// The player needs to manage this device abstraction.
 	friend class Player;

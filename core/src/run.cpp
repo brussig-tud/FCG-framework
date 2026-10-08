@@ -113,7 +113,8 @@ void handleEvent (const SDL_Event &event, Window &window, Gui &gui, Player &play
 /// Run the given application(s).
 FCG_FRAMEWORK_EXPORT auto run (
 	std::vector<std::unique_ptr<Applet>> _applets, PlayerSettings &&settings
-) -> int {
+) -> int
+{
 	// Info trace
 	SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: starting up...");
 
@@ -147,8 +148,11 @@ FCG_FRAMEWORK_EXPORT auto run (
 			// We now have a working device
 			auto &device = maybeDevice.value();
 
+			// Take ownership of the applet pointers
+			std::vector<std::unique_ptr<Applet>> applets = std::move(_applets);
+
 			// Create the player that the applets will interact with
-			Player player(device, window.get());
+			Player player(device, window.get(), std::span(applets));
 
 			// Claim the window for the GPU device, then create the framework GUI on top of it. The GUI instance is
 			// destroyed at scope exit, before the window is unclaimed below.
@@ -168,9 +172,8 @@ FCG_FRAMEWORK_EXPORT auto run (
 			/* First-time window-related state initialization */ {
 				std::optional<glm::uvec2> dummy;
 				window->pollViewportSize(dummy);
-				player.recreateReadbackBuffers();
+				player.invalidateReadbacks();
 			}
-			std::vector<std::unique_ptr<Applet>> applets = std::move(_applets);
 			if (gui)
 			{
 				// Initialize all applets
@@ -196,12 +199,25 @@ FCG_FRAMEWORK_EXPORT auto run (
 			auto lastFrameTime = std::chrono::high_resolution_clock::now();
 			while (!player.shouldClose())
 			{
+				const auto oldViewportSize = window->viewportSize();
 				// Begin the new rendering frame. We need it now because the applets might need to interact with the
-				// player in ways that require the current target textures during their update() or gui() hools (like
+				// player in ways that require the current target textures during their update() or gui() hooks (like
 				// scheduling readbacks upon user interaction).
 				player.frame = window->beginFrame(device);
 				// - any readbacks should be done now
 				player.collectReadbackResults();
+
+				// Frame acquisition updates the viewport and may replace the depth texture. Detect that change before
+				// applets handle input, and keep an acquired frame's dimensions authoritative for this iteration.
+				if (!player.frame) {
+					std::optional<glm::uvec2> ignoredOldSize;
+					window->pollViewportSize(ignoredOldSize);
+				}
+				if (window->viewportSize() != oldViewportSize) {
+					player.invalidateReadbacks();
+					for (auto &applet : applets)
+						applet->onViewportResize(device, oldViewportSize, player);
+				}
 
 				// Event handling
 				if (player.continuousRedrawRequested() || pendingRedraws > 0)
@@ -249,15 +265,6 @@ FCG_FRAMEWORK_EXPORT auto run (
 				if (player.shouldClose())
 					break;
 
-				// The window may have been resized since the last frame – in blocking mode rendering does not
-				// necessarily happen right after a resize event, so keep the viewport dimensions fresh
-				std::optional<glm::uvec2> oldViewportSize;
-				if (window->pollViewportSize(oldViewportSize)) {
-					player.recreateReadbackBuffers();
-					for (auto &applet : applets)
-						applet->onViewportResize(device, oldViewportSize.value(), player);
-				}
-
 				// Update frame stats
 				auto now = std::chrono::high_resolution_clock::now();
 				const auto frameDur = std::chrono::duration_cast<std::chrono::nanoseconds>(now - lastFrameTime);
@@ -285,6 +292,8 @@ FCG_FRAMEWORK_EXPORT auto run (
 							);
 						player.frame->endRenderPass();
 					}
+					if (auto result = player.frame->present(); !result)
+						throw std::runtime_error(result.error().message);
 					if (auto *overlayPass = player.frame->beginOverlayRenderPass()) {
 						gui->renderDrawData(player.frame->commandBuffer(), overlayPass);
 						player.frame->endRenderPass();

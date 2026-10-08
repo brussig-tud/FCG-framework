@@ -1,6 +1,7 @@
 # Core component tests. Configured after applications so optional app probes are available.
 add_subdirectory(resources)
 add_subdirectory(buffers)
+add_subdirectory(textures)
 add_subdirectory(cameras)
 
 # ---------------------------------------------------------------------------

@@ -95,7 +95,7 @@ public:
 		auto *vs = device.createShader(fcg::ShaderStage::VERTEX, vertex->spirv, 0);
 		auto *fs = device.createShader(fcg::ShaderStage::FRAGMENT, fragment->spirv, 0);
 		require(vs && fs, "Could not create shaders");
-		SDL_GPUColorTargetDescription color{.format=player.swapchainFormat()};
+		SDL_GPUColorTargetDescription color{.format=player.mainRenderTargetInfo()->colorFormat};
 		SDL_GPUGraphicsPipelineCreateInfo info{};
 		info.vertex_shader = vs;
 		info.fragment_shader = fs;
@@ -426,7 +426,7 @@ public:
 			redraw(false);
 			publicFocus(player);
 			// Zero-viewports must skip projection and picking without scheduling a download.
-			fcg::Player empty(device, nullptr);
+			fcg::Player empty(device, nullptr, {});
 			fcg::applet::Camera2D unrendered;
 			unrendered.update(device, empty, .1f);
 			fcg::RenderState state(device);

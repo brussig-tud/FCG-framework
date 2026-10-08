@@ -1,0 +1,23 @@
+# SDL 3.4.14's per-subresource barrier already uses VK_REMAINING_ARRAY_LAYERS for 3D images, but its whole-texture
+# barrier still passes layerCount=1. Recent Vulkan validation flags that as maintenance9-incompatible. Transition
+# all slices explicitly for both paths. Apply only to this pinned source fallback; installed SDL packages are untouched.
+set(volume_barrier_source "${SDL3_SOURCE_DIR}/src/gpu/vulkan/SDL_gpu_vulkan.c")
+if(EXISTS "${volume_barrier_source}")
+    file(READ "${SDL3_SOURCE_DIR}/include/SDL3/SDL_version.h" volume_barrier_version)
+    if(volume_barrier_version MATCHES "#define SDL_MINOR_VERSION[ \t]+4[\r\n]" AND volume_barrier_version MATCHES "#define SDL_MICRO_VERSION[ \t]+14[\r\n]")
+        file(READ "${volume_barrier_source}" volume_barrier_contents)
+        set(volume_barrier_before "        texture->levelCount,\n        0,\n        texture->layerCount,\n        texture);")
+        set(volume_barrier_after "        texture->levelCount,\n        0,\n        texture->type == SDL_GPU_TEXTURETYPE_3D ? VK_REMAINING_ARRAY_LAYERS : texture->layerCount,\n        texture);")
+        string(FIND "${volume_barrier_contents}" "${volume_barrier_before}" volume_barrier_position)
+        if(NOT volume_barrier_position EQUAL -1)
+            string(REPLACE "${volume_barrier_before}" "${volume_barrier_after}" volume_barrier_contents "${volume_barrier_contents}")
+            file(WRITE "${volume_barrier_source}" "${volume_barrier_contents}")
+            message(STATUS "Applied SDL 3.4.14 whole-volume Vulkan barrier correction")
+        else()
+            string(FIND "${volume_barrier_contents}" "${volume_barrier_after}" volume_barrier_position)
+            if(volume_barrier_position EQUAL -1)
+                message(FATAL_ERROR "Pinned SDL 3.4.14 Vulkan barrier no longer matches its correction")
+            endif()
+        endif()
+    endif()
+endif()

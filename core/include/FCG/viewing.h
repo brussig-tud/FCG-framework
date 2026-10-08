@@ -77,7 +77,7 @@ namespace fcg {
 // Structs and enums
 //
 
-/// Camera optics and world-space pose, suitable for calculations without a player.
+/// \brief Camera optics and world-space pose, suitable for calculations without a player.
 struct CameraParameters
 {
 	////
@@ -154,7 +154,7 @@ struct CameraParameters
 		/// \return The full vertical world height; orthographic height is independent of <tt>f</tt>.
 		[[nodiscard]] inline auto frustumDiameterAtFocus () const -> float {
 			if (const auto *perspective = std::get_if<PerspectiveFov>(&fovY))
-				return 2.f * f * glm::tan(.5f * glm::radians(perspective->angle));
+				return 2 * f * glm::tan(.5f * glm::radians(perspective->angle));
 			return std::get<OrthoExtend>(fovY).size;
 		}
 
@@ -238,11 +238,11 @@ struct CameraParameters
 // Classes
 //
 
-/// Abstract camera mutations and pure queries, independent of applet lifecycle.
+/// \breif Abstract camera mutations and pure queries, independent of applet lifecycle.
 ///
-/// Concrete cameras expose read-only parameters and validate all mutations through the virtual setters.
-/// Queries and setters work before applet initialization. Successful manual mutations cancel active focus
-/// animations and pending focus application; rejected mutations leave camera state unchanged.
+/// Concrete cameras expose read-only parameters and validate all mutations through the virtual setters. Queries and
+/// setters work before applet initialization. Successful manual mutations cancel active focus animations and pending
+/// focus application; rejected mutations leave camera state unchanged.
 class FCG_FRAMEWORK_EXPORT Camera
 {
 public:

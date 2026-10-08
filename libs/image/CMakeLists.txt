@@ -13,7 +13,7 @@ target_compile_definitions(Image PUBLIC "$<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:F
 
 # Third-party target export follows Core's existing build-interface-only packaging contract.
 target_link_libraries(Image
-	PUBLIC "$<BUILD_INTERFACE:SDL3::SDL3>"
+	PUBLIC Core "$<BUILD_INTERFACE:SDL3::SDL3>"
 	PRIVATE "$<BUILD_INTERFACE:fcg-sdl-image>"
 )
 

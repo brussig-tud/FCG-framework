@@ -23,6 +23,10 @@ install(
 	ARCHIVE COMPONENT FCG_Development
 	INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
 )
+# Static Render consumers also need the private embedded shader archive.
+if(NOT BUILD_SHARED_LIBS)
+	install(TARGETS fcg-shaders fcg-render-shaders EXPORT FCG_Targets ARCHIVE COMPONENT FCG_Development)
+endif()
 # Install fetched ImGui binaries alongside the framework so that shared-framework executables can find
 # the library at runtime. Exporting the ImGui CMake target is left for future packaging work, mirroring
 # how SDL3 and GLM are currently handled.

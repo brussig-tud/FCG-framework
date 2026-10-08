@@ -5,7 +5,7 @@ The FCG Framework is a lightweight C++ graphics framework used as the basis for 
 <em>Foundations Computer Graphics</em> exercise. It is built around the <em>SDL 3 GPU</em> API, a modern rendering
 middleware with backends for Vulkan, Direct3D 12 and Metal.
 
-The components it provides are grouped according to function and organized into the Core and Image libraries.
+The components it provides are grouped according to function and organized into the Core, Image, and Render libraries.
 
 - \ref fcg_components "Component guides" organize facilities by responsibility.
 - \ref fcg_libraries lists CMake link targets and the components each library provides.
@@ -18,10 +18,14 @@ Browse the <a href="annotated.html">class reference</a>, <a href="namespaces.htm
 
 \section fcg_guides Component guides
 
+- \ref fcg_render_guide "Render library guide"
+- \ref fcg_primitives
 - \ref fcg_image_guide "Image library guide"
 - \ref fcg_images
 - \ref fcg_image_loading
 - \ref fcg_sdl_image
+- \ref fcg_textures
+- \ref fcg_fullscreen
 - \ref fcg_buffers
 - \ref fcg_runtime
 - \ref fcg_applets

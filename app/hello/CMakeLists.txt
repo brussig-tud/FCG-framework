@@ -1,5 +1,5 @@
 
-# The "Hello FCG" demo app.
+# The "Hello FCG!" demo app.
 set(APP_NAME hello) # variable APP_NAME required by subdirectories
 add_executable(${APP_NAME})
 

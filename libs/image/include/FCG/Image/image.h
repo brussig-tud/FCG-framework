@@ -1,3 +1,4 @@
+
 #ifndef __FCG_IMAGE_H__
 #define __FCG_IMAGE_H__
 
@@ -25,7 +26,8 @@
 /// palette. Consult SDL surface/pixel APIs and lock surfaces when \c SDL_MUSTLOCK requires it before direct pixel
 /// access. Convert explicitly with \c SDL_ConvertSurface when a particular layout is required.
 /// <code>\ref fcg::Image "Image"</code> makes no promise of RGBA8, color-space conversion, premultiplied alpha, or a
-/// particular image orientation beyond SDL's output.
+/// particular image orientation beyond SDL's output. <tt>\ref fcg::Image::upload</tt> preserves row order and decoded
+/// precision, creating a sampled texture with linear color samples without changing the source.
 /// \snippet image_examples.cpp surface
 ///
 /// \section images_lifetime Ownership, moves, and absence
@@ -67,6 +69,7 @@
 
 // Local includes
 #include "FCG/Image/export.h"
+#include <FCG/texture.h>
 
 
 
@@ -114,7 +117,13 @@ enum class ImageErrorCode
 	SDLFailure,
 
 	/// The registry already contains the requested ID.
-	DuplicateHandler
+	DuplicateHandler,
+
+	/// An image has been moved from.
+	InvalidState,
+
+	/// Texture allocation or upload failed.
+	GPUFailure
 };
 
 /// An owned error, independent of the lifetime of input bytes and SDL diagnostics. \ingroup fcg_images
@@ -201,6 +210,19 @@ public:
 	///
 	/// \return The current surface format.
 	[[nodiscard]] auto format () const -> SDL_PixelFormat;
+
+
+	////
+	// Methods
+
+	/// Upload a sampled, single-mip 2D texture preserving decoded precision, top-first rows, and straight alpha.
+	///
+	/// sRGB8 uses hardware sRGB sampling. Native linear layouts retain precision; other encodings are converted
+	/// to linear sRGB RGBA32 float without tone mapping. The CPU image and its metadata remain unchanged.
+	///
+	/// \param device Borrowed device that must outlive the returned texture.
+	/// \return A submitted texture, or an owned conversion or GPU diagnostic. Does not wait for completion.
+	[[nodiscard]] auto upload (Device &device) const -> std::expected<Texture, ImageError>;
 
 
 private:

@@ -102,12 +102,12 @@ void CameraFocus::update (Player &player, float dt)
 	if (pending)
 	{
 		const auto request = *pending;
-		const auto depth = player.getDepthReadbackResult(request.token);
+		const auto &depth = player.getDepthReadbackResult(request.token);
 		pending.reset();
-		if (request.apply && depth.extent() == request.snapshot.viewport
-			&& TextureView<float>::coordsInBounds(request.pixel, depth.extent()))
+		if (request.apply && glm::uvec2(depth.extent()) == request.snapshot.viewport
+			&& glm::all(glm::lessThan(request.pixel, glm::uvec2(depth.extent()))))
 		{
-			const float z = depth.texel(request.pixel);
+			const float z = depth.readTexel<float>(glm::uvec3(request.pixel, 0)).value();
 			if (std::isfinite(z) && z >= 0.f && z < 1.f)
 			{
 				const auto xy = (glm::vec2(request.pixel) + .5f) / glm::vec2(request.snapshot.viewport);
