@@ -76,11 +76,11 @@ public:
 	////
 	// Object construction/destruction
 
-	/// Construct with the provided command buffer and target/depth textures (pseudo-private, for internal use
-	/// only).
+	/// Construct with the provided command buffer, target/depth textures and target extent (pseudo-private, for
+	/// internal use only).
 	explicit Frame (PrivateConstructorKey, SDL_GPUCommandBuffer *commandBuffer, SDL_GPUTexture *targetTexture,
-	                SDL_GPUTexture *depthTexture)
-		: m_commandBuffer(commandBuffer), m_targetTexture(targetTexture), m_depthTexture(depthTexture)
+	                SDL_GPUTexture *depthTexture, const glm::uvec2 &extent)
+		: m_commandBuffer(commandBuffer), m_targetTexture(targetTexture), m_depthTexture(depthTexture), m_extent(extent)
 	{}
 
 	/// The destructor. Causes the associated command buffer to be cancelled. If the rendering commands are to be
@@ -112,6 +112,11 @@ public:
 	/// The frame's depth texture, if any.
 	[[nodiscard]] auto depthTexture () const -> SDL_GPUTexture* {
 		return m_depthTexture;
+	}
+
+	/// The extent, in pixels, of this frame's target texture.
+	[[nodiscard]] auto extent () const -> glm::uvec2 {
+		return m_extent;
 	}
 
 
@@ -168,6 +173,9 @@ private:
 
 	/// The ongoing render pass, if any.
 	SDL_GPURenderPass *m_renderPass = nullptr;
+
+	/// The extent, in pixels, of this frame's target texture.
+	glm::uvec2 m_extent{0};
 };
 
 

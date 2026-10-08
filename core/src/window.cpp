@@ -209,7 +209,7 @@ auto Window::beginFrame (Device &device) -> Frame*
 	m_viewportSize = swapchainSize;
 
 	// Begin frame and return
-	m_frame.emplace(Frame::PrivateConstructorKey{}, cmdBuffer, swapchainTexture, depthTexture);
+	m_frame.emplace(Frame::PrivateConstructorKey{}, cmdBuffer, swapchainTexture, depthTexture, swapchainSize);
 	return &m_frame.value();
 }
 

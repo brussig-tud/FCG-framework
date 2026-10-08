@@ -127,7 +127,22 @@ void Gui::prepareRender (Frame *frame)
 	// Upload vertex/index buffers and process texture updates on the frame's command buffer. The SDL GPU backend
 	// requires this to be called before the render pass that RenderDrawData will be recorded into.
 	if (frame)
-		ImGui_ImplSDLGPU3_PrepareDrawData(ImGui::GetDrawData(), frame->commandBuffer());
+	{
+		// The window can be resized between acquiring the swapchain texture and finalizing this frame, so the extent
+		// ImGui derives from the window may exceed the render pass dimensions. ImGui projects its clip/scissor
+		// rectangles through the draw data's framebuffer scale, so pin that scale to the actual target extent to keep
+		// every scissor rectangle within the render pass (out-of-bounds scissors abort under graphics API validation).
+		ImDrawData *drawData = ImGui::GetDrawData();
+		const glm::uvec2 extent = frame->extent();
+		if (drawData && drawData->DisplaySize.x > 0.f && drawData->DisplaySize.y > 0.f && extent.x > 0 && extent.y > 0)
+		{
+			drawData->FramebufferScale = ImVec2(
+				(float)extent.x / drawData->DisplaySize.x,
+				(float)extent.y / drawData->DisplaySize.y
+			);
+		}
+		ImGui_ImplSDLGPU3_PrepareDrawData(drawData, frame->commandBuffer());
+	}
 }
 
 void Gui::renderDrawData (SDL_GPUCommandBuffer *commandBuffer, SDL_GPURenderPass *renderPass) {
