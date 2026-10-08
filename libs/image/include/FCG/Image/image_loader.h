@@ -13,10 +13,9 @@
 /// Link the Image CMake target for the ability to load image files:
 /// \verbatim FCG-framework::Image \endverbatim
 /// Include `<FCG/Image/image_loader.h>` for the generic loader and
-/// `<FCG/Image/sdl_image.h>` for direct backend use. This library uses SDL3 surfaces but does not require Core, an applet,
-/// SDL video initialization, or a GPU device. The \ref fcg_images, \ref fcg_image_loading, and \ref fcg_sdl_image
-/// guides describe its components. Core remains responsible for rendering and GPU buffers; texture upload and
-/// format conversion are explicit client operations. Core lives in `core/` and exposes headers under `FCG/`;
+/// `<FCG/Image/sdl_image.h>` for direct backend use. This library publicly links Core. CPU loading requires no applet,
+/// SDL video initialization, or GPU device. The \ref fcg_images, \ref fcg_image_loading, and \ref fcg_sdl_image
+/// guides describe its components. Core provides textures and rendering; <tt>\ref fcg::Image::upload</tt> explicitly converts and uploads decoded images. Core lives in `core/` and exposes headers under `FCG/`;
 /// Image lives in `libs/image/` and exposes headers under `FCG/Image/`.
 ///
 /// \section image_library_build Build and dependencies

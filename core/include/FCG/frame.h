@@ -8,12 +8,16 @@
 // Includes
 //
 
+// C++ STL
+/* nothing here yet */
+
 // GLM library
 #include <glm/glm.hpp>
 
 // Local includes
 #include "FCG/export.h"
 #include "FCG/device.h"
+#include "FCG/fullscreen.h"
 
 
 
@@ -50,16 +54,14 @@ namespace fcg {
 // Classes
 //
 
-/// State representing one frame of rendering. Basically scopes all render commands to this frame's lifetime. Everything
-/// that has been recorded by the time the \c Frame is destroyed will get submitted to the <code>\ref fcg::Device</code>
-/// this
-/// \c Frame was created with.
+/// One window frame with distinct linear scene recording, SDR presentation, and GUI overlays.
+/// Finish through \c Window::endFrame before destruction; all borrowed window resources outlive this frame.
 class FCG_FRAMEWORK_EXPORT Frame
 {
 	////
 	// Friend declarations
 
-	// For creating a frame rendering to a window's swapchain texture
+	/// The window supplies scene and swapchain resources and controls submission.
 	friend class Window;
 
 	/// Zero-overhead key to access our pseudo-private constructors. Pseudo-private because we don't want them used
@@ -78,14 +80,16 @@ public:
 
 	/// Construct with the provided command buffer and target/depth textures (pseudo-private, for internal use
 	/// only).
-	explicit Frame (PrivateConstructorKey, SDL_GPUCommandBuffer *commandBuffer, SDL_GPUTexture *targetTexture,
-	                SDL_GPUTexture *depthTexture)
-		: m_commandBuffer(commandBuffer), m_targetTexture(targetTexture), m_depthTexture(depthTexture)
+	explicit Frame(
+		PrivateConstructorKey, SDL_GPUCommandBuffer *commandBuffer, SDL_GPUTexture *targetTexture,
+		SDL_GPUTexture *depthTexture, const Texture &scene, const FullscreenPass &encoder, const Sampler &sampler,
+		glm::uvec2 extent
+	)
+		: m_commandBuffer(commandBuffer), m_targetTexture(targetTexture), m_depthTexture(depthTexture),
+		  m_scene(scene), m_encoder(encoder), m_sampler(sampler), m_extent(extent)
 	{}
 
-	/// The destructor. Causes the associated command buffer to be cancelled. If the rendering commands are to be
-	/// submitted, then this has to happen explicitly by calling the creating window's
-	/// <code>\ref fcg::Window::endFrame</code> method.
+	/// Destroy a completed frame. An unfinished frame is a fatal lifetime error; finish via \c Window::endFrame.
 	~Frame();
 
 	/// A \c Frame is not copyable.
@@ -104,10 +108,16 @@ public:
 		return m_commandBuffer;
 	}
 
-	/// The frame's color target, if any.
+	/// Borrow the scene color target; scene shader outputs and clear colors are linear.
 	[[nodiscard]] auto colorTarget () const -> SDL_GPUTexture* {
-		return m_targetTexture;
+		return m_scene.handle();
 	}
+
+	/// Borrow the canonical sRGB scene texture, sampled as linear SDR.
+	[[nodiscard]] auto sceneTarget () const -> const Texture& { return m_scene; }
+
+	/// Borrow the UNORM swapchain image used for encoded presentation and GUI.
+	[[nodiscard]] auto presentationTarget () const -> SDL_GPUTexture* { return m_targetTexture; }
 
 	/// The frame's depth texture, if any.
 	[[nodiscard]] auto depthTexture () const -> SDL_GPUTexture* {
@@ -118,7 +128,14 @@ public:
 	////
 	// Methods
 
-	/// Obtain a render pass targeting this frame's target texture. Render calls that should appear in this frame must
+	/// Encode the scene onto the swapchain. Call after scene completion and before overlays.
+	/// Duplicate presentation, active passes, and presentation after overlays return errors.
+	[[nodiscard]] auto present () -> std::expected<void, FullscreenError>;
+
+	/// Present a sampled 2D texture representing linear SDR; dimensions may differ from the window.
+	[[nodiscard]] auto present (const Texture &source) -> std::expected<void, FullscreenError>;
+
+	/// Obtain a render pass targeting this frame's scene texture. Render calls that should appear in this frame must
 	/// be recorded into a pass obtained this way. The pass includes a depth buffer that gets cleared to the far
 	/// plane (depth value 1), ready for standard depth testing.
 	///
@@ -129,9 +146,8 @@ public:
 	/// \returns The render pass, or `nullptr` if pass creation failed.
 	auto beginRenderPass (const glm::fvec4 &clearColor) -> SDL_GPURenderPass*;
 
-	/// Obtain a render pass targeting this frame's target texture without a depth buffer. The existing color
-	/// contents are preserved (load op `LOAD`), so this pass can be used to overlay the GUI on top of rendering
-	/// performed in the primary <code>\ref beginRenderPass</code> pass.
+	/// Present automatically if needed, then begin a depth-free overlay pass on the UNORM swapchain.
+	/// Encoded scene contents are preserved with \c SDL_GPU_LOADOP_LOAD for GUI rendering.
 	///
 	/// Needs to be paired with a call to <code>\ref endRenderPass</code> before this frame is finished.
 	///
@@ -165,6 +181,24 @@ private:
 
 	/// The depth buffer to use for this frame's render passes.
 	SDL_GPUTexture *m_depthTexture = nullptr;
+
+	/// Borrowed scene allocation, owned by the creating window.
+	const Texture &m_scene;
+
+	/// Reusable window-owned SDR encoder.
+	const FullscreenPass &m_encoder;
+
+	/// Reusable window-owned presentation sampler.
+	const Sampler &m_sampler;
+
+	/// Acquired swapchain dimensions.
+	glm::uvec2 m_extent;
+
+	/// Whether explicit or automatic presentation has completed.
+	bool m_presented = false;
+
+	/// Whether overlay rendering has begun.
+	bool m_overlay = false;
 
 	/// The ongoing render pass, if any.
 	SDL_GPURenderPass *m_renderPass = nullptr;

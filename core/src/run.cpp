@@ -148,8 +148,11 @@ FCG_FRAMEWORK_EXPORT auto run (
 			// We now have a working device
 			auto &device = maybeDevice.value();
 
+			// Take ownership of the applet pointers
+			std::vector<std::unique_ptr<Applet>> applets = std::move(_applets);
+
 			// Create the player that the applets will interact with
-			Player player(device, window.get());
+			Player player(device, window.get(), std::span(applets));
 
 			// Claim the window for the GPU device, then create the framework GUI on top of it. The GUI instance is
 			// destroyed at scope exit, before the window is unclaimed below.
@@ -169,9 +172,8 @@ FCG_FRAMEWORK_EXPORT auto run (
 			/* First-time window-related state initialization */ {
 				std::optional<glm::uvec2> dummy;
 				window->pollViewportSize(dummy);
-				player.recreateReadbackBuffers();
+				player.invalidateReadbacks();
 			}
-			std::vector<std::unique_ptr<Applet>> applets = std::move(_applets);
 			if (gui)
 			{
 				// Initialize all applets
@@ -212,7 +214,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 					window->pollViewportSize(ignoredOldSize);
 				}
 				if (window->viewportSize() != oldViewportSize) {
-					player.recreateReadbackBuffers();
+					player.invalidateReadbacks();
 					for (auto &applet : applets)
 						applet->onViewportResize(device, oldViewportSize, player);
 				}
@@ -290,6 +292,8 @@ FCG_FRAMEWORK_EXPORT auto run (
 							);
 						player.frame->endRenderPass();
 					}
+					if (auto result = player.frame->present(); !result)
+						throw std::runtime_error(result.error().message);
 					if (auto *overlayPass = player.frame->beginOverlayRenderPass()) {
 						gui->renderDrawData(player.frame->commandBuffer(), overlayPass);
 						player.frame->endRenderPass();

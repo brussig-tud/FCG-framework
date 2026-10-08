@@ -1,12 +1,11 @@
 #version 450
 
-layout (location=0) in vec4 position;
-layout (location=1) in vec4 normal;
+//////
+//
+// Uniforms
+//
 
-layout (location=0) out vec3 position_fs;
-layout (location=1) out vec3 normal_fs;
-
-struct Viewing {
+struct ViewingMatrices {
 	mat4 modelview;
 	mat4 invModelview;
 	mat4 projection;
@@ -16,10 +15,22 @@ struct Viewing {
 	mat3 normal;
 	mat3 invNormal;
 };
-
 layout (std140, set=1, binding=0) uniform ViewingUniform {
-	Viewing mat;
+	ViewingMatrices mat;
 };
+
+
+
+//////
+//
+// Streams
+//
+
+layout (location=0) in vec4 position;
+layout (location=1) in vec4 normal;
+
+layout (location=0) out vec3 position_fs;
+layout (location=1) out vec3 normal_fs;
 
 void main() {
 	vec4 position_eyeSpace = mat.modelview * position;

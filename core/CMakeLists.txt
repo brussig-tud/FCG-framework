@@ -25,4 +25,4 @@ add_subdirectory(src)
 
 # Embedded shaders (cmake/Shaders.cmake).
 add_subdirectory(shaders)
-target_link_libraries(Core PRIVATE "$<BUILD_INTERFACE:fcg-shaders>")
+target_link_libraries(Core PRIVATE fcg-shaders)

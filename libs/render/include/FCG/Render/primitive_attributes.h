@@ -261,8 +261,6 @@ using AttributeSource = std::variant<std::monostate, typename AttributeTraits<A>
 /// After automatic submission failure changed arrays are unusable until replaced successfully.
 class FCG_RENDER_EXPORT PrimitiveAttributes
 {
-private:
-
 	////
 	// Types
 
@@ -271,12 +269,16 @@ private:
 	{
 		/// Retain the previously committed source.
 		Unchanged,
+
 		/// Remove the source.
 		Absent,
+
 		/// Use the descriptor's constant components.
 		Constant,
+
 		/// Stage the borrowed host bytes.
 		Array,
+
 		/// Borrow a typed GPU view.
 		View
 	};
@@ -284,9 +286,6 @@ private:
 	/// Erased source description; only pending arrays borrow host bytes.
 	struct Descriptor
 	{
-		////
-		// Fields
-
 		/// Source or pending operation kind.
 		Kind kind = Kind::Unchanged;
 

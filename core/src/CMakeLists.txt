@@ -3,6 +3,8 @@
 set(SOURCES
 	applet/orbit_camera.cpp
 	applet/camera_2d.cpp
+	texture.cpp
+	fullscreen.cpp
 	buffer.cpp
 	camera_focus.cpp
 	device.cpp
@@ -23,6 +25,8 @@ set(HEADERS
 	${FCG_CORE_BASE_DIR}/include/FCG/applet/orbit_camera.h
 	${FCG_CORE_BASE_DIR}/include/FCG/applet/camera_2d.h
 	${FCG_CORE_BASE_DIR}/include/FCG/applet.h
+	${FCG_CORE_BASE_DIR}/include/FCG/texture.h
+	${FCG_CORE_BASE_DIR}/include/FCG/fullscreen.h
 	${FCG_CORE_BASE_DIR}/include/FCG/buffer.h
 	${FCG_CORE_BASE_DIR}/include/FCG/camera_focus.h
 	${FCG_CORE_BASE_DIR}/include/FCG/device.h

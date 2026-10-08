@@ -23,4 +23,5 @@ if(NOT TARGET SDL3::SDL3)
 			# We don't need any screensaver functionality - off avoids this niche dependency
 			"SDL_X11_XSCRNSAVER OFF"
 	)
+	include("${CMAKE_CURRENT_LIST_DIR}/../Patches/SDL3-vulkan-volume-barrier.cmake")
 endif()

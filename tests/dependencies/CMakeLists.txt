@@ -14,16 +14,22 @@ set(CPM_USE_LOCAL_PACKAGES OFF)
 set(CPM_SDL3_image_SOURCE "${IMAGE_DEPENDENCY_SOURCE}")
 find_package(SDL3 3.4 CONFIG REQUIRED)
 
-# Provide unused runtime dependencies so resolution must reuse them without lookup or fetching.
+# Provide resolved runtime dependencies so resolution must reuse them without lookup or fetching.
 add_library(provided_glm INTERFACE)
 add_library(glm::glm ALIAS provided_glm)
+target_include_directories(provided_glm INTERFACE "${GLM_SOURCE}")
 if(MODE STREQUAL "provided-namespaced")
-    add_library(provided_imgui INTERFACE)
+    add_library(provided_imgui UNKNOWN IMPORTED)
+    set(imgui_fixture_target provided_imgui)
     add_library(imgui::imgui ALIAS provided_imgui)
 else()
     # Also cover normalization of an unnamespaced target into imgui::imgui.
-    add_library(imgui INTERFACE)
+    add_library(imgui UNKNOWN IMPORTED)
+    set(imgui_fixture_target imgui)
 endif()
+set_target_properties(${imgui_fixture_target} PROPERTIES
+    IMPORTED_LOCATION "${IMGUI_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${IMGUI_SOURCE};${IMGUI_SOURCE}/backends")
 if(MODE MATCHES "^provided")
     add_library(provided_image INTERFACE)
     add_library(SDL3_image::SDL3_image ALIAS provided_image)
@@ -86,7 +92,10 @@ if(NOT "Image" IN_LIST FCG_ADDITIONAL_LIBS)
 endif()
 
 # Configure-time export validation covers provided targets as well as source-built backends.
-install(TARGETS Image EXPORT FixtureTargets)
+install(TARGETS Core Image EXPORT FixtureTargets)
+if(NOT BUILD_SHARED_LIBS)
+    install(TARGETS fcg-shaders EXPORT FixtureTargets)
+endif()
 install(EXPORT FixtureTargets NAMESPACE FCG-framework:: DESTINATION lib/cmake/Fixture)
 if(MODE MATCHES "^provided")
     return()

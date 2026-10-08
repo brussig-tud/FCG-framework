@@ -19,7 +19,7 @@ if(IMAGE_RUNTIME AND NOT EXISTS "${PREFIX}/lib/${IMAGE_RUNTIME}" AND NOT EXISTS 
 endif()
 
 # Public headers
-foreach (header run.h window.h applet.h event.h export.h buffer.h
+foreach (header run.h window.h applet.h event.h export.h buffer.h texture.h fullscreen.h
     viewing.h camera_focus.h applet/orbit_camera.h applet/camera_2d.h
     Image/export.h Image/image.h Image/image_loader.h Image/sdl_image.h
     render_target.h Render/export.h Render/error.h Render/primitive_attributes.h
@@ -70,6 +70,16 @@ if(EXISTS "${PREFIX}/lib/cmake/FCG/FCG-static-targets.cmake")
     if(NOT EXISTS "${PREFIX}/lib/libfcg-render-shadersd.a" AND NOT EXISTS "${PREFIX}/lib/libfcg-render-shaders.a")
         message(FATAL_ERROR "Static Render shader archive is not installed")
     endif()
+endif()
+
+if(EXISTS "${PREFIX}/lib/cmake/FCG/FCG-static-targets.cmake")
+    if(NOT static_targets MATCHES "add_library\\(FCG-Framework::fcg-shaders"
+        OR (NOT EXISTS "${PREFIX}/lib/libfcg-shadersd.a" AND NOT EXISTS "${PREFIX}/lib/libfcg-shaders.a"))
+        message(FATAL_ERROR "Static Core shader archive is not installed and exported")
+    endif()
+endif()
+if(EXISTS "${PREFIX}/bin/imgview" AND NOT EXISTS "${PREFIX}/bin/assets/cgvlogo.png")
+    message(FATAL_ERROR "Image viewer executable-relative logo is not installed")
 endif()
 
 message(STATUS "install-smoke-verify: all expected deliverables present in ${PREFIX}")

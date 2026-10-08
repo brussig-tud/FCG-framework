@@ -115,7 +115,7 @@ public:
 			return;  // createShader already logged the error
 
 		SDL_GPUColorTargetDescription colorTarget {};
-		colorTarget.format = player.swapchainFormat();
+		colorTarget.format = player.mainRenderTargetInfo()->colorFormat;
 		SDL_GPUGraphicsPipelineTargetInfo targetInfo {};
 		targetInfo.color_target_descriptions = &colorTarget;
 		targetInfo.num_color_targets = 1;
@@ -135,7 +135,7 @@ public:
 		gpuDevice = device.handle();
 	}
 
-	/// Verify each notification and discard tokens invalidated by the replacement download storage.
+	/// Verify each notification and discard tokens invalidated by the resize invalidation.
 	void onViewportResize (fcg::Device&, const glm::uvec2 &oldViewport, fcg::Player &player) override
 	{
 		if (oldViewport != notifiedViewport || player.viewportSize() == oldViewport)
@@ -157,9 +157,11 @@ public:
 		// Collect each token before requesting another. The frame loop has already waited for pending downloads.
 		if (depthToken)
 		{
-			const auto view = player.getDepthReadbackResult(*depthToken);
+			const auto &view = player.getDepthReadbackResult(*depthToken);
+			if (&view != &player.getDepthReadbackResult(*depthToken))
+				throw std::runtime_error("Repeated depth queries did not preserve the borrowed mapping");
 			const auto extent = view.extent();
-			if (extent != readbackExtent)
+			if (glm::uvec2(extent) != readbackExtent)
 				throw std::runtime_error(std::format(
 					"Depth readback extent differs at update {}: {}x{}, expected {}x{}",
 					updates, extent.x, extent.y, readbackExtent.x, readbackExtent.y
@@ -171,7 +173,7 @@ public:
 			};
 			for (const auto &pixel : pixels)
 			{
-				const auto depth = view.texel(pixel);
+				const auto depth = view.readTexel<float>(glm::uvec3(pixel, 0)).value();
 				if (depth != 1.f)
 					throw std::runtime_error(std::format(
 						"Depth readback texel ({}, {}) differs at update {} in phase {}: {}, expected 1",

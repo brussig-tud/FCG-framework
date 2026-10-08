@@ -139,7 +139,7 @@ void transfers (fcg::Device &device)
 
 	// A player can exist before viewport/readback storage has been created.
 	{
-		fcg::Player player(device, nullptr);
+		fcg::Player player(device, nullptr, {});
 		bool rejected = false;
 		try {
 			(void)player.scheduleDepthReadback();

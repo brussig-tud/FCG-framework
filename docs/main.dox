@@ -24,6 +24,8 @@ Browse the <a href="annotated.html">class reference</a>, <a href="namespaces.htm
 - \ref fcg_images
 - \ref fcg_image_loading
 - \ref fcg_sdl_image
+- \ref fcg_textures
+- \ref fcg_fullscreen
 - \ref fcg_buffers
 - \ref fcg_runtime
 - \ref fcg_applets

@@ -767,7 +767,7 @@ void targets (fcg::Device &device)
 	fails(fcg::BoxRenderer::create(device,
 		{SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM}),
 		fcg::RenderErrorCode::InvalidArgument);
-	fcg::Player absent(device, nullptr);
+	fcg::Player absent(device, nullptr, {});
 	const auto &constantPlayer = absent;
 	require(&absent.device() == &device && &constantPlayer.device() == &device, "Player changed its borrowed device");
 	require(!absent.mainRenderTargetInfo(), "Windowless player has a target");
@@ -775,12 +775,12 @@ void targets (fcg::Device &device)
 	fails(fcg::BoxRenderer::create(absent), fcg::RenderErrorCode::InvalidState);
 	auto window = fcg::Window::create({.width = 128, .height = 128});
 	require(window != nullptr, SDL_GetError());
-	fcg::Player player(device, window.get());
+	fcg::Player player(device, window.get(), {});
 	require(!window->renderTargetInfo() && !player.mainRenderTargetInfo(), "Unclaimed window has a target");
 	fails(fcg::QuadRenderer::create(player), fcg::RenderErrorCode::InvalidState);
 	require(device.claimWindow(window), SDL_GetError());
 	const auto target = player.mainRenderTargetInfo();
-	require(target && target->colorFormat == window->swapchainFormat()
+	require(target && target->colorFormat == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB
 		&& target->depthStencilFormat == SDL_GPU_TEXTUREFORMAT_D32_FLOAT
 		&& target->sampleCount == SDL_GPU_SAMPLECOUNT_1, "Incorrect pre-frame target");
 	{

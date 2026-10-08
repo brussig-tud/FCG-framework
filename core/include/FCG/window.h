@@ -1,3 +1,4 @@
+
 /**
  * \defgroup fcg_windows Windows and frames
  * \ingroup fcg_components
@@ -155,8 +156,7 @@ public:
 		return m_viewportSize;
 	}
 
-	/// The texture format of this window's swapchain images, as required for creating render target
-	/// descriptions of graphics pipelines. The window must be claimed by a device.
+	/// The texture format of this window's swapchain images, for presentation; scene pipelines use the main render-target metadata. The window must be claimed by a device.
 	[[nodiscard]] auto swapchainFormat () const -> SDL_GPUTextureFormat;
 
 	/// Attachment description available before rendering and while minimized; absent without a valid claim.
@@ -242,6 +242,15 @@ private:
 
 	/// The device currently claiming this window, if any.
 	Device *m_device = nullptr;
+
+	/// Canonical sRGB8 scene storage; sampling decodes to linear space.
+	std::optional<Texture> sceneTexture;
+
+	/// Reusable encoder targeting the UNORM swapchain format.
+	std::optional<FullscreenPass> presentation;
+
+	/// Reusable filtered, clamped presentation sampler.
+	std::optional<Sampler> presentationSampler;
 
 	/// A depth buffer suitable for rendering to the swapchain images of this \c Window.
 	SDL_GPUTexture *depthTexture = nullptr;
