@@ -18,6 +18,12 @@ permissions:
 env:
   # CPM clones every third-party dependency into this directory; caching it keeps later runs off the network.
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
+  # Compiler cache. CMake picks the launcher up from these environment variables, so nothing needs to change in
+  # the repository. The size cap keeps each cached entry small, so entries do not churn against the repo quota.
+  SCCACHE_DIR: ${{ github.workspace }}/.sccache
+  SCCACHE_CACHE_SIZE: 1G
+  CMAKE_C_COMPILER_LAUNCHER: sccache
+  CMAKE_CXX_COMPILER_LAUNCHER: sccache
 
 jobs:
   buildability:
@@ -48,20 +54,43 @@ jobs:
         if: runner.os == 'Windows'
 
       # The pinned SDL3 is newer than any distribution package, so it is always built from source and its
-      # configure step requires the X11 development libraries on Linux.
-      - name: Install SDL3 build dependencies
+      # configure step needs the X11 development libraries on Linux.
+      - name: Install build dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libdecor-0-dev libdrm-dev libgbm-dev libpulse-dev \
-            libudev-dev libwayland-dev libx11-dev libxcursor-dev libxext-dev libxfixes-dev libxi-dev \
-            libxinerama-dev libxkbcommon-dev libxrandr-dev
+          sudo apt-get install -y sccache libasound2-dev libdecor-0-dev libdrm-dev libgbm-dev \
+            libpulse-dev libudev-dev libwayland-dev libx11-dev libxcursor-dev libxext-dev libxfixes-dev \
+            libxi-dev libxinerama-dev libxkbcommon-dev libxrandr-dev
+
+      # sccache is taken from the native package manager, never from a third-party action, so nothing here
+      # depends on the Actions cache backend.
+      - name: Install sccache (macOS)
+        if: runner.os == 'macOS'
+        run: brew install sccache
+
+      # Chocolatey only packages sccache 0.9 (2023), which predates current MSVC, so pin the official release.
+      - name: Install sccache (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/mozilla/sccache/releases/download/v0.18.0/sccache-v0.18.0-x86_64-pc-windows-msvc.zip" -OutFile sccache.zip
+          Expand-Archive sccache.zip -DestinationPath "$env:RUNNER_TEMP/sccache-dist"
+          $bin = Get-ChildItem "$env:RUNNER_TEMP/sccache-dist" -Recurse -Filter sccache.exe | Select-Object -First 1
+          Add-Content -Path $env:GITHUB_PATH -Value $bin.DirectoryName
 
       - uses: actions/cache@v6
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
           key: cpm-${{ runner.os }}-${{ hashFiles('cmake/CPM.cmake', 'cmake/Dependencies/*.cmake') }}
           restore-keys: cpm-${{ runner.os }}-
+
+      # Deliberately a second cache: dependency sources are immutable per pin (content key, written once), while
+      # the compiler cache accumulates (rolling key, newest restored first, bounded by SCCACHE_CACHE_SIZE).
+      - uses: actions/cache@v6
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: sccache-${{ runner.os }}-
 
       - name: Configure
         run: cmake --preset debug -G Ninja
@@ -71,3 +100,10 @@ jobs:
 
       - name: Test
         run: ctest --preset debug -E "${{ matrix.exclude_tests }}"
+
+      # Stop the server so the post-job cache upload never sees open files, and report the hit rate.
+      - name: sccache stats
+        if: always()
+        run: |
+          sccache --show-stats
+          sccache --stop-server || true
