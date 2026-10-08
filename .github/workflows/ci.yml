@@ -92,8 +92,10 @@ jobs:
           key: sccache-${{ runner.os }}-${{ github.sha }}
           restore-keys: sccache-${{ runner.os }}-
 
+      # sccache cannot share MSVC's per-target PDB under parallel compiles (error C1041), so ask for embedded
+      # debug information (/Z7) instead; the setting is ignored by the non-MSVC compilers.
       - name: Configure
-        run: cmake --preset debug -G Ninja
+        run: cmake --preset debug -G Ninja -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
 
       - name: Build
         run: cmake --build --preset debug
