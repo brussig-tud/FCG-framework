@@ -18,12 +18,10 @@ permissions:
 env:
   # CPM clones every third-party dependency into this directory; caching it keeps later runs off the network.
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
-  # Compiler cache. CMake picks the launcher up from these environment variables, so nothing needs to change in
-  # the repository. The size cap keeps each cached entry small, so entries do not churn against the repo quota.
+  # Compiler cache directory. The size cap keeps each cached entry small, so entries do not churn against the
+  # repository's cache quota.
   SCCACHE_DIR: ${{ github.workspace }}/.sccache
   SCCACHE_CACHE_SIZE: 1G
-  CMAKE_C_COMPILER_LAUNCHER: sccache
-  CMAKE_CXX_COMPILER_LAUNCHER: sccache
 
 jobs:
   buildability:
@@ -92,10 +90,15 @@ jobs:
           key: sccache-${{ runner.os }}-${{ github.sha }}
           restore-keys: sccache-${{ runner.os }}-
 
-      # sccache cannot share MSVC's per-target PDB under parallel compiles (error C1041), so ask for embedded
-      # debug information (/Z7) instead; the setting is ignored by the non-MSVC compilers.
+      # The launcher is passed on the command line rather than through the environment so that it applies to this
+      # build tree only: the fixture tests configure their own projects and would otherwise hit MSVC's shared-PDB
+      # race (C1041) under sccache. For the same reason MSVC is asked for embedded debug information (/Z7);
+      # the setting is ignored by the non-MSVC compilers.
       - name: Configure
-        run: cmake --preset debug -G Ninja -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+        run: >
+          cmake --preset debug -G Ninja
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
 
       - name: Build
         run: cmake --build --preset debug
