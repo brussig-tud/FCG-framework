@@ -1,6 +1,6 @@
-# CMake build folders
-build*
-cmake-build*
+# CMake build folders (directories named build*/cmake-build*, at any depth)
+build*/
+cmake-build*/
 
 # User-local CMake presets (machine-specific overrides)
 CMakeUserPresets.json
