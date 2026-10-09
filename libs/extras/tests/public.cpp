@@ -31,12 +31,12 @@ auto main () -> int
 		if (!result && result.error().code == fcg::extra::FileDialogErrorCode::InvalidArgument)
 			++calls;
 	};
-	check(fcg::extra::showOpenFileDialog(invalid).get());
-	check(fcg::extra::showSaveFileDialog(invalid).get());
-	check(fcg::extra::showOpenFolderDialog(invalid).get());
-	fcg::extra::showOpenFileDialog(invalid, check);
-	fcg::extra::showSaveFileDialog(invalid, check, fcg::extra::FileDialogCallbackThread::SDLThread);
-	fcg::extra::showOpenFolderDialog(invalid, check);
+	check(fcg::extra::showOpenFileDialogAsync(invalid).get());
+	check(fcg::extra::showSaveFileDialogAsync(invalid).get());
+	check(fcg::extra::showOpenFolderDialogAsync(invalid).get());
+	fcg::extra::showOpenFileDialogCallback(invalid, check);
+	fcg::extra::showSaveFileDialogCallback(invalid, check, fcg::extra::FileDialogCallbackThread::SDLThread);
+	fcg::extra::showOpenFolderDialogCallback(invalid, check);
 	SDL_Quit();
 	std::cout << "Public dialog overloads completed " << calls << " validations\n";
 	return calls == 6 ? 0 : 1;

@@ -141,7 +141,7 @@ enum class FileDialogCallbackThread
 /// \param options Owned launch settings; platform support for individual settings varies.
 ///
 /// \return A future fulfilled directly on SDL completion, including launch errors and cancellation.
-[[nodiscard]] FCG_EXTRAS_EXPORT auto showOpenFileDialog (FileDialogOptions options={})
+[[nodiscard]] FCG_EXTRAS_EXPORT auto showOpenFileDialogAsync (FileDialogOptions options={})
 	-> std::future<FileDialogResult>;
 
 /// \brief Show a native open-file dialog with callback completion. \ingroup fcg_file_dialogs
@@ -156,48 +156,69 @@ enum class FileDialogCallbackThread
 /// \param options Owned launch settings.
 /// \param callback Move-only completion function, retained until invoked exactly once.
 /// \param thread Callback dispatch policy, including for validation errors.
-FCG_EXTRAS_EXPORT void showOpenFileDialog (
+FCG_EXTRAS_EXPORT void showOpenFileDialogCallback (
 	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback,
 	FileDialogCallbackThread thread=FileDialogCallbackThread::MainThread
 );
 
-/// \brief Show a native save-file dialog; uses the same lifetime contract as \ref showOpenFileDialog.
+/// \brief Blocking convenience wrapper for \ref showOpenFileDialogAsync. \ingroup fcg_file_dialogs
+///
+/// \param options Owned launch settings; platform support for individual settings varies.
+///
+/// \return The user selection (including cancellation), or a \ref FileDialogError if there was a problem.
+[[nodiscard]] FCG_EXTRAS_EXPORT auto showOpenFileDialog (FileDialogOptions options={}) -> FileDialogResult;
+
+/// \brief Show a native save-file dialog; uses the same lifetime contract as \ref showOpenFileDialogAsync.
 /// \ingroup fcg_file_dialogs
 ///
 /// \param options Owned launch settings; multiple selection is ignored.
 ///
 /// \return A nonblocking-destructor future fulfilled directly on SDL completion.
-[[nodiscard]] FCG_EXTRAS_EXPORT auto showSaveFileDialog (FileDialogOptions options={})
+[[nodiscard]] FCG_EXTRAS_EXPORT auto showSaveFileDialogAsync (FileDialogOptions options={})
 	-> std::future<FileDialogResult>;
 
-/// \brief Show a save-file dialog with the callback contract of \ref showOpenFileDialog. \ingroup fcg_file_dialogs
+/// \brief Show a save-file dialog with the callback contract of \ref showOpenFileDialogCallback. \ingroup fcg_file_dialogs
 ///
 /// \param options Owned launch settings; multiple selection is ignored.
 /// \param callback Nonempty completion function; must not throw.
 /// \param thread Callback dispatch policy.
-FCG_EXTRAS_EXPORT void showSaveFileDialog (
+FCG_EXTRAS_EXPORT void showSaveFileDialogCallback (
 	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback,
 	FileDialogCallbackThread thread=FileDialogCallbackThread::MainThread
 );
 
-/// \brief Show a native folder dialog; uses the lifetime contract of \ref showOpenFileDialog.
+/// \brief Blocking convenience wrapper for \ref showSaveFileDialogAsync. \ingroup fcg_file_dialogs
+///
+/// \param options Owned launch settings; platform support for individual settings varies.
+///
+/// \return The user selection (including cancellation), or a \ref FileDialogError if there was a problem.
+[[nodiscard]] FCG_EXTRAS_EXPORT auto showSaveFileDialog (FileDialogOptions options={}) -> FileDialogResult;
+
+/// \brief Show a native folder dialog; uses the lifetime contract of \ref showOpenFileDialogAsync.
 /// \ingroup fcg_file_dialogs
 ///
 /// \param options Owned launch settings; filters are ignored and multiple selection is supported.
 ///
 /// \return A nonblocking-destructor future fulfilled directly on SDL completion.
-[[nodiscard]] FCG_EXTRAS_EXPORT auto showOpenFolderDialog (FileDialogOptions options={})
+[[nodiscard]] FCG_EXTRAS_EXPORT auto showOpenFolderDialogAsync (FileDialogOptions options={})
 	-> std::future<FileDialogResult>;
 
-/// \brief Show a folder dialog with the callback contract of \ref showOpenFileDialog. \ingroup fcg_file_dialogs
+/// \brief Show a folder dialog with the callback contract of \ref showOpenFileDialogCallback. \ingroup fcg_file_dialogs
 ///
 /// \param options Owned launch settings; filters are ignored.
 /// \param callback Nonempty completion function; must not throw.
 /// \param thread Callback dispatch policy.
-FCG_EXTRAS_EXPORT void showOpenFolderDialog (
+FCG_EXTRAS_EXPORT void showOpenFolderDialogCallback (
 	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback,
 	FileDialogCallbackThread thread=FileDialogCallbackThread::MainThread
 );
+
+/// \brief Blocking convenience wrapper for \ref showOpenFolderDialogAsync. \ingroup fcg_file_dialogs
+///
+/// \param options Owned launch settings; platform support for individual settings varies.
+///
+/// \return The user selection (including cancellation), or a \ref FileDialogError if there was a problem.
+[[nodiscard]] FCG_EXTRAS_EXPORT auto showOpenFolderDialog (FileDialogOptions options={}) -> FileDialogResult;
 
 
 

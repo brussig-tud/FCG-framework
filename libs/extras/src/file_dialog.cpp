@@ -144,7 +144,9 @@ auto prepare (DialogState &state, SDL_FileDialogType type) -> std::expected<void
 {
 	using enum FileDialogErrorCode;
 	if (!SDL_IsMainThread() || !(SDL_WasInit(SDL_INIT_EVENTS) & SDL_INIT_EVENTS))
-		return std::unexpected(FileDialogError{InvalidState, "Dialogs require the main thread and SDL events"});
+		return std::unexpected(FileDialogError{
+			InvalidState, "Dialogs require the main thread and SDL events"
+		});
 	if (state.options.title.find('\0') != std::string::npos)
 		return std::unexpected(FileDialogError{InvalidArgument, "Dialog title contains a NUL"});
 	try {
@@ -163,12 +165,16 @@ auto prepare (DialogState &state, SDL_FileDialogType type) -> std::expected<void
 	for (const auto &filter : state.options.filters)
 	{
 		if (filter.name.empty() || filter.name.find('\0') != std::string::npos || filter.extensions.empty())
-			return std::unexpected(FileDialogError{InvalidArgument, "Filters require a label and extensions"});
+			return std::unexpected(FileDialogError{
+				InvalidArgument, "Filters require a label and extensions"
+			});
 		std::string pattern;
 		for (const auto &extension : filter.extensions)
 		{
 			if (!(extension == "*" && filter.extensions.size() == 1) && !validExtension(extension))
-				return std::unexpected(FileDialogError{InvalidArgument, "Invalid filter extension: " + extension});
+				return std::unexpected(FileDialogError{
+					InvalidArgument, "Invalid filter extension: " + extension
+				});
 			if (!pattern.empty())
 				pattern += ';';
 			pattern += extension;
@@ -277,7 +283,7 @@ void launch (SDL_FileDialogType type, const StateToken &state)
 	state->backend.show(type, nativeCompletion, new StateToken(state), props);
 }
 
-auto showFileDialog (SDL_FileDialogType type, FileDialogOptions options, FileDialogBackend backend={})
+auto showFileDialog (SDL_FileDialogType type, FileDialogOptions &&options, FileDialogBackend backend={})
 	-> std::future<FileDialogResult>
 {
 	auto state = std::make_shared<DialogState>();
@@ -290,7 +296,7 @@ auto showFileDialog (SDL_FileDialogType type, FileDialogOptions options, FileDia
 }
 
 void showFileDialog (
-	SDL_FileDialogType type, FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback,
+	SDL_FileDialogType type, FileDialogOptions &&options, std::move_only_function<void(FileDialogResult)> callback,
 	FileDialogCallbackThread thread, FileDialogBackend backend={}
 ){
 	if (!callback)
@@ -323,34 +329,52 @@ namespace fcg::extra {
 // Function implementations
 //
 
-auto showOpenFileDialog (FileDialogOptions options) -> std::future<FileDialogResult> {
+auto showOpenFileDialogAsync (FileDialogOptions options) -> std::future<FileDialogResult> {
 	return showFileDialog(SDL_FILEDIALOG_OPENFILE, std::move(options));
 }
 
-void showOpenFileDialog (
+void showOpenFileDialogCallback (
 	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback, FileDialogCallbackThread thread
 ){
 	showFileDialog(SDL_FILEDIALOG_OPENFILE, std::move(options), std::move(callback), thread);
 }
 
-auto showSaveFileDialog (FileDialogOptions options) -> std::future<FileDialogResult> {
+auto showOpenFileDialog (FileDialogOptions options) -> FileDialogResult {
+	auto future = showOpenFileDialogAsync(std::move(options));
+	future.wait();
+	return std::move(*future.get());
+}
+
+auto showSaveFileDialogAsync (FileDialogOptions options) -> std::future<FileDialogResult> {
 	return showFileDialog(SDL_FILEDIALOG_SAVEFILE, std::move(options));
 }
 
-void showSaveFileDialog (
+void showSaveFileDialogCallback (
 	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback, FileDialogCallbackThread thread
 ){
 	showFileDialog(SDL_FILEDIALOG_SAVEFILE, std::move(options), std::move(callback), thread);
 }
 
-auto showOpenFolderDialog (FileDialogOptions options) -> std::future<FileDialogResult> {
+auto showSaveFileDialog (FileDialogOptions options) -> FileDialogResult {
+	auto future = showSaveFileDialogAsync(std::move(options));
+	future.wait();
+	return std::move(*future.get());
+}
+
+auto showOpenFolderDialogAsync (FileDialogOptions options) -> std::future<FileDialogResult> {
 	return showFileDialog(SDL_FILEDIALOG_OPENFOLDER, std::move(options));
 }
 
-void showOpenFolderDialog (
+void showOpenFolderDialogCallback (
 	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback, FileDialogCallbackThread thread
 ){
 	showFileDialog(SDL_FILEDIALOG_OPENFOLDER, std::move(options), std::move(callback), thread);
+}
+
+auto showOpenFolderDialog (FileDialogOptions options) -> FileDialogResult {
+	auto future = showOpenFolderDialogAsync(std::move(options));
+	future.wait();
+	return std::move(*future.get());
 }
 
 

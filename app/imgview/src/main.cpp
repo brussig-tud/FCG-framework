@@ -10,7 +10,6 @@
 #include <stdexcept>
 #include <filesystem>
 #include <optional>
-#include <chrono>
 #include <memory>
 #include <utility>
 
@@ -22,6 +21,7 @@
 
 // Dear ImGui
 #include <imgui.h>
+#include <misc/cpp/imgui_stdlib.h>
 
 // FCG Framework
 #include <FCG/run.h>
@@ -44,65 +44,28 @@
 /// Displays a textured image with planar camera navigation.
 class ImageViewerApplet : public fcg::Applet
 {
-	////
-	// Types
-
-	/// Complete image state, replaced as one owner only after all preparation succeeds.
-	struct LoadedImage
-	{
-		/// Decoded CPU image and dimensions.
-		fcg::Image image;
-
-		/// Uploaded GPU texture.
-		fcg::Texture texture;
-
-		/// Separate ownership for nonmovable quad attributes.
-		std::unique_ptr<fcg::PrimitiveAttributes> attributes;
-
-		/// Actual native path of this image.
-		std::filesystem::path path;
-
-		/// UTF-8 path for ImGui display.
-		std::string displayPath;
-	};
-
-
 public:
 
 	////
 	// Object construction/destruction
 
 	/// The default constructor.
-	ImageViewerApplet() {}
+	ImageViewerApplet() = default;
 
-	/// Drain a pending native dialog before its parent and SDL are destroyed, then balance redraw requests.
-	~ImageViewerApplet() override
-	{
-		if (pending.valid()) {
-			while (pending.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-				SDL_PumpEvents();
-				pending.wait_for(std::chrono::milliseconds(10));
-			}
-			(void)pending.get();
-			owner->popContinuousRedraw();
-		}
-	}
+	/// The destructor. Releases the graphics pipeline created during <code>\ref init</code>.
+	~ImageViewerApplet() override = default;
 
 
 	////
 	// Interface: fcg::Applet
 
-	/// Human-readable applet name.
 	[[nodiscard]] auto name () const -> const std::string& override {
 		const static std::string name = "Image Viewer";
 		return name;
 	}
 
-	/// Create the renderer and sampler, then load the initial logo.
 	void init (fcg::Device &device, fcg::Player &player) override
 	{
-		owner = &player;
-
 		// Init our quad renderer
 		if (auto maybeQr
 		    = fcg::QuadRenderer::create(player, {.alphaBlending=true}); maybeQr)
@@ -111,6 +74,9 @@ public:
 			throw std::runtime_error(std::format(
 				"Image Viewer: failed to create quad renderer: {}", maybeQr.error().message
 			));
+
+		// Init attribute storage for use with quad renderer
+		attributes.emplace(/* fcg::PrimitiveAttributes::<ctor>: */device);
 
 		// Create our texture sampler
 		if (auto maybeSampler =fcg::Sampler::create(device, SDL_GPUSamplerCreateInfo {
@@ -123,50 +89,48 @@ public:
 		else
 			throw std::runtime_error(maybeSampler.error().message);
 
-		// Load image initial image
-		const auto base = std::filesystem::path((const char8_t*)SDL_GetBasePath());
-		if (auto loaded = loadImage(device, base/"assets/cgvlogo.png"); !loaded)
-			throw std::runtime_error(loaded.error());
+		// Load initial placeholder image
+		loadImage(device, "assets/cgvlogo.png");
 	}
 
-	/// Image geometry stays independent of the viewport size.
 	void onViewportResize (fcg::Device &device, const glm::uvec2 &oldViewportSize, fcg::Player &player) override {
 		// Nothing to do yet.
 	}
 
-	/// Show the actual image path, dimensions, loading status, and recoverable failures.
 	void gui (fcg::Device &device, fcg::Player &player) override
 	{
-		pollImage(device, player);
-		ImGui::SetNextWindowSize({ 0, 0 }, ImGuiCond_FirstUseEver);
-		ImGui::Begin("Image Viewer");
+		// Start our widget
+		ImGui::SetNextWindowSize({ 400, 0 }, ImGuiCond_FirstUseEver);
+		ImGui::Begin("Image Loader");
 
-		ImGui::BeginDisabled(pending.valid());
-		if (ImGui::Button("Open image…"))
+		// File selection
+		ImGui::BeginDisabled(); {
+			auto filename = imageFilepath.filename().string();
+			ImGui::InputText("##imageFilepath", &filename);
+		} ImGui::EndDisabled();
+		ImGui::SameLine();
+		if (ImGui::Button("..."))
 			openImage(player);
-		ImGui::EndDisabled();
-		if (pending.valid())
-			ImGui::TextUnformatted("Waiting for file selection…");
-		ImGui::TextUnformatted(current->displayPath.c_str());
-		ImGui::Text("%d × %d pixels", current->image.width(), current->image.height());
-		if (!error.empty())
-			ImGui::TextWrapped("%s", error.c_str());
 
+		// Image metadata
+		ImGui::Text("%d × %d pixels", image->width(), image->height());
+
+		// Finalize our widget
 		ImGui::End();
 	}
 
-	/// Native completion is polled before GUI generation, so status and dimensions update before the loop idles.
-	void update (fcg::Device &device, fcg::Player &player, float dt) override {}
+	void update (fcg::Device &device, fcg::Player &player, float dt) override {
+		// Nothing to do yet.
+	}
 
-	/// Draw the committed image state.
 	void render (
 		fcg::Device &device, fcg::RenderState &rs, SDL_GPURenderPass *renderPass, SDL_GPUCommandBuffer *commandBuffer,
 		fcg::Player &player
 	) override
 	{
 		fcg::DrawOptions options;
-		options.texture = fcg::PrimitiveTexture{current->texture.handle(), sampler->handle()};
-		if (auto drawn = qr->draw(*current->attributes, rs, commandBuffer, renderPass, options); !drawn)
+		options.texture = fcg::PrimitiveTexture{texture->handle(), sampler->handle()};
+		if (auto drawn = qr->draw(*attributes, rs, commandBuffer, renderPass, options); !drawn)
 			throw std::runtime_error(drawn.error().message);
 	}
 
@@ -176,97 +140,86 @@ protected:
 	////
 	// Methods
 
-	/// Poll native completion on the applet thread before displaying status, then commit a prepared replacement.
-	void pollImage (fcg::Device &device, fcg::Player &player)
+	/// \brief Upload the currently loaded image to the GPU.
+	void uploadImage (fcg::Device &device)
 	{
-		if (!pending.valid() || pending.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
-			return;
-		auto selected = pending.get();
-		player.popContinuousRedraw();
-		if (!selected) {
-			error = selected.error().message;
-			return;
+		// Upload to texture
+		if (auto maybeTex = image->upload(device); maybeTex)
+			texture = std::move(*maybeTex);
+		else
+			throw std::runtime_error(maybeTex.error().message);
+
+		// Configure the quad for displaying our image
+		const std::array position{glm::vec4(0.f, 0.f, 0.f, 1.f)};
+		auto updated = attributes->setAttributes(
+			[&] (fcg::PrimitiveAttributes::Update &update)
+			{
+				update.set<fcg::Attribute::Position>(std::span(position));
+				update.set<fcg::Attribute::Extent>(
+					glm::vec3((float)image->width()/image->height(), 1, 1)
+				);
+				update.set<fcg::Attribute::Orientation>(
+					glm::angleAxis(glm::radians(180.f), glm::vec3(1, 0, 0))
+				);
+			}
+		);
+		if (!updated)
+			throw std::runtime_error(updated.error().message);
+	}
+
+	/// \brief Load image from given file.
+	void loadImage (fcg::Device &device, const std::filesystem::path &filepath)
+	{
+		// Load from file
+		if (auto maybeImage = fcg::ImageLoader::global().load(filepath); maybeImage) {
+			image = std::move(*maybeImage);
+			imageFilepath = filepath;
 		}
-		if (selected->paths.empty())
-			return;
-		try {
-			if (auto loaded = loadImage(device, selected->paths.front()); !loaded)
-				error = std::move(loaded.error());
-		} catch (const std::exception &failure) {
-			error = failure.what();
-		}
+		else
+			SDL_LogError(
+				SDL_LOG_CATEGORY_APPLICATION, "ImageViewerApplet: failed to load image '%s'\n%s",
+				filepath.string().c_str(), maybeImage.error().message.c_str()
+			);
+
+		// Upload
+		uploadImage(device);
 	}
 
 	/// Open one file with a fresh snapshot of the singleton registry's format metadata.
 	void openImage (fcg::Player &player)
 	{
-		if (pending.valid())
-			return;
-		try
-		{
-			fcg::extra::FileDialogOptions options;
-			options.parent = player.mainWindow();
-			options.defaultLocation = current->path;
-			options.filters = fcg::extra::imageFileFilters(fcg::ImageLoader::global().fileFormats());
-			options.title = "Open image";
-			pending = fcg::extra::showOpenFileDialog(std::move(options));
-			player.pushContinuousRedraw();
-			error.clear();
-		} catch (const std::exception &failure) {
-			error = failure.what();
-		}
-	}
+		// Open the file dialog
+		auto selected = *fcg::extra::showOpenFileDialog(fcg::extra::FileDialogOptions {
+			.parent=player.mainWindow(), .title="Open image",
+			.filters=fcg::extra::imageFileFilters(fcg::ImageLoader::global().fileFormats())
+		});
 
-	/// Decode, upload, and prepare new quad storage before replacing any displayed state.
-	[[nodiscard]] auto loadImage (fcg::Device &device, const std::filesystem::path &filepath)
-		-> std::expected<void, std::string>
-	{
-		auto newPath = filepath;
-		const auto utf8 = newPath.u8string();
-		std::string displayPath((const char*)utf8.data(), utf8.size());
-		auto image = fcg::ImageLoader::global().load(filepath);
-		if (!image)
-			return std::unexpected(std::move(image.error().message));
-		auto texture = image->upload(device);
-		if (!texture)
-			return std::unexpected(std::move(texture.error().message));
-		auto attributes = std::make_unique<fcg::PrimitiveAttributes>(device);
-		const std::array position{glm::vec4(0.f, 0.f, 0.f, 1.f)};
-		auto updated = attributes->setAttributes([&] (fcg::PrimitiveAttributes::Update &update) {
-			update.set<fcg::Attribute::Position>(std::span(position));
-			update.set<fcg::Attribute::Extent>(glm::vec3((float)image->width()/image->height(), 1, 1));
-			update.set<fcg::Attribute::Orientation>(glm::angleAxis(glm::radians(180.f), glm::vec3(1, 0, 0)));
-		});
-		if (!updated)
-			return std::unexpected(std::move(updated.error().message));
-		auto replacement = std::make_unique<LoadedImage>(LoadedImage{
-			std::move(*image), std::move(*texture), std::move(attributes), std::move(newPath), std::move(displayPath)
-		});
-		current = std::move(replacement);
-		return {};
+		// Try to load the selected image if any
+		if (!selected.paths.empty() && !selected.paths.front().empty())
+			loadImage(player.device(), selected.paths.front());
 	}
 
 
 	////
 	// Fields
 
-	/// Current image, texture, geometry, and path, committed as a single owner.
-	std::unique_ptr<LoadedImage> current;
+	/// The filepath of the currently loaded image
+	std::filesystem::path imageFilepath;
 
-	/// Dialog result polled on the applet thread; destruction alone would not wait for native completion.
-	std::future<fcg::extra::FileDialogResult> pending;
+	/// The CPU-side image which we can manipulate pixels on.
+	std::optional<fcg::Image> image;
 
-	/// Borrowed player, alive during applet destruction, for balancing pending redraw requests.
-	fcg::Player *owner = nullptr;
-
-	/// Inline recoverable error for the most recent opening attempt.
-	std::string error;
+	/// Texture created from \ref image for displaying.
+	std::optional<fcg::Texture> texture;
 
 	/// The renderer for the image quad.
 	std::optional<fcg::QuadRenderer> qr;
 
 	/// Linear filtered, clamped image sampling.
 	std::optional<fcg::Sampler> sampler;
+
+	/// One image quad's transform.
+	std::optional<fcg::PrimitiveAttributes> attributes;
 };
 
 
