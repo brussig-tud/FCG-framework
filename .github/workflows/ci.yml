@@ -39,15 +39,12 @@ jobs:
         # macOS and Linux skip them - leaving those assertions unexercised).
         include:
           - os: ubuntu-26.04
-            fixture_launcher: sccache
             test_prefix: "xvfb-run -a"
             exclude_tests: "lifecycle-smoke|camera-lifecycle|buffer-smoke|shape-buffer-smoke"
           - os: macos-latest
-            fixture_launcher: sccache
             test_prefix: ""
             exclude_tests: "lifecycle-smoke|camera-lifecycle|buffer-smoke|shape-buffer-smoke"
           - os: windows-latest
-            fixture_launcher: ""
             test_prefix: ""
             exclude_tests: "lifecycle-smoke|camera-lifecycle|buffer-smoke|shape-buffer-smoke|install-smoke-verify|dependencies-smoke|documentation-smoke"
 
@@ -122,14 +119,7 @@ jobs:
           SDL_LOGGING: "*=info"
         run: xvfb-run -a build/debug/bin/render-lifecycle 2>&1 | grep "Validation layers enabled"
 
-      # The fixture tests configure their own projects, and an environment launcher is the only channel that
-      # reaches those nested builds - they recompile the same dependency sources over and over, which dominates
-      # this test's runtime. Windows is left empty on purpose: a launcher there reintroduces the MSVC
-      # shared-PDB race, because the fixtures do not inherit the embedded-debug-info setting (C1041).
       - name: Test
-        env:
-          CMAKE_C_COMPILER_LAUNCHER: ${{ matrix.fixture_launcher }}
-          CMAKE_CXX_COMPILER_LAUNCHER: ${{ matrix.fixture_launcher }}
         run: ${{ matrix.test_prefix }} ctest --preset debug -E "${{ matrix.exclude_tests }}"
 
       # Stop the server so the post-job cache upload never sees open files, and report the hit rate.
