@@ -107,8 +107,10 @@ class FCG_FRAMEWORK_EXPORT Shader
 	////
 	// Friend declarations
 
-	/// Only resource lookup function, which is the only place where shaders may be constructed.
-	friend auto shader (const cpp_embedlib::EmbeddedFS &resources, std::string_view name) -> std::optional<Shader>;
+	/// Only resource lookup function, which is the only place where shaders may be constructed. The friend
+	/// declaration repeats the export macro: \c dllexport is a linkage attribute, and MSVC rejects a friend
+	/// declaration that disagrees with the namespace-scope declaration about it (C2375).
+	friend FCG_FRAMEWORK_EXPORT auto shader (const cpp_embedlib::EmbeddedFS &resources, std::string_view name) -> std::optional<Shader>;
 
 
 public:
