@@ -1,16 +1,30 @@
+cmake_minimum_required(VERSION 3.31)
+
 # Post-install deliverable verification for the install-smoke test.
 # Expects PREFIX - the installation prefix used.
 
 set(missing "")
 
+# Installed artifacts carry platform-specific names: lib<name>.a/.so/.dylib on unix, <name>.lib and <name>.dll on
+# Windows. Require whichever of those the platform can produce, so the check is about deliverables rather than naming.
+function(expect_artifact description)
+    foreach(candidate IN LISTS ARGN)
+        if(EXISTS "${PREFIX}/${candidate}")
+            return()
+        endif()
+    endforeach()
+    list(APPEND missing "${description}")
+    set(missing "${missing}" PARENT_SCOPE)
+endfunction()
+
 # Libraries (static with debug postfix, static release, or shared).
 foreach(library Core Image Render)
-    if(NOT EXISTS "${PREFIX}/lib/lib${library}d.a"
-        AND NOT EXISTS "${PREFIX}/lib/lib${library}.a"
-        AND NOT EXISTS "${PREFIX}/lib/lib${library}d.so"
-        AND NOT EXISTS "${PREFIX}/lib/lib${library}.so")
-        list(APPEND missing "lib${library} (static or shared) in lib/")
-    endif()
+    expect_artifact("${library} (static or shared) in lib/ or bin/"
+        lib/lib${library}.a lib/lib${library}d.a
+        lib/lib${library}.so lib/lib${library}d.so
+        lib/lib${library}.dylib lib/lib${library}d.dylib
+        lib/${library}.lib lib/${library}d.lib
+        bin/${library}.dll bin/${library}d.dll)
 endforeach()
 
 # The source-built shared backend must accompany the installed framework runtime.
@@ -67,18 +81,25 @@ if(EXISTS "${PREFIX}/lib/cmake/FCG/FCG-static-targets.cmake")
     if(NOT static_targets MATCHES "add_library\\(FCG-Framework::fcg-render-shaders")
         message(FATAL_ERROR "Static Render shader archive is not exported")
     endif()
-    if(NOT EXISTS "${PREFIX}/lib/libfcg-render-shadersd.a" AND NOT EXISTS "${PREFIX}/lib/libfcg-render-shaders.a")
+    expect_artifact("Static Render shader archive is not installed"
+        lib/libfcg-render-shaders.a lib/libfcg-render-shadersd.a
+        lib/fcg-render-shaders.lib lib/fcg-render-shadersd.lib)
+    if("Static Render shader archive is not installed" IN_LIST missing)
         message(FATAL_ERROR "Static Render shader archive is not installed")
     endif()
 endif()
 
 if(EXISTS "${PREFIX}/lib/cmake/FCG/FCG-static-targets.cmake")
+    expect_artifact("Static Core shader archive is not installed and exported"
+        lib/libfcg-shaders.a lib/libfcg-shadersd.a
+        lib/fcg-shaders.lib lib/fcg-shadersd.lib)
     if(NOT static_targets MATCHES "add_library\\(FCG-Framework::fcg-shaders"
-        OR (NOT EXISTS "${PREFIX}/lib/libfcg-shadersd.a" AND NOT EXISTS "${PREFIX}/lib/libfcg-shaders.a"))
+        OR "Static Core shader archive is not installed and exported" IN_LIST missing)
         message(FATAL_ERROR "Static Core shader archive is not installed and exported")
     endif()
 endif()
-if(EXISTS "${PREFIX}/bin/imgview" AND NOT EXISTS "${PREFIX}/bin/assets/cgvlogo.png")
+if((EXISTS "${PREFIX}/bin/imgview" OR EXISTS "${PREFIX}/bin/imgview.exe")
+    AND NOT EXISTS "${PREFIX}/bin/assets/cgvlogo.png")
     message(FATAL_ERROR "Image viewer executable-relative logo is not installed")
 endif()
 
