@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.31)
 function(run)
     execute_process(COMMAND ${ARGV} RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
     if(NOT result EQUAL 0)
-        message(FATAL_ERROR "Command failed: ${ARGV}\n${out}\n${err}")
+        message(FATAL_ERROR "Command failed (exit ${result}): ${ARGV}\n${out}\n${err}")
     endif()
 endfunction()
 
