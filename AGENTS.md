@@ -1,6 +1,6 @@
 ## Preamble
 
-The rules and guidelines laid out in this document might not be reflected accurately in the existing code base, as some of it was and still is being crafted by hand. Such instances should be considered outliers, the rules in this document are binding.
+The rules and guidelines laid out in this document might not be reflected accurately in the existing code base, as some of it was and still is being crafted by hand or by agents who only knew an older version of this document. Such instances should be considered outliers, the rules in this document are binding.
 
 
 
@@ -31,11 +31,13 @@ where `$Section` can be one of the following, typically in this order:
 * `Namespaces close` (`.h` files only)
 * `Module namespace close` (`.cpp` and `.inl` files only)
 
-Avoid sections other than these unless there is a very good reason.
+Avoid sections other than these unless there is a good reason.
 
 The very first section is always separated by 2 blank lines after the include guard in case of `.h` headers, and just a single blank first line in case of `.cpp` and `.inl` files. All following sections are always separated by 3 blank lines after the last content of the preceding section. The closing `#endif` of the include guard at the end of a header is only separated by 2 blank lines after the last content of the final section.
 
-The following sections have special rules and/or mandatory content:
+Look to the rest of the code base for guidance on how to lay out and format these sections.
+
+The following sections have explicit special rules and/or mandatory content:
 
 
 ### *Includes*:
@@ -50,7 +52,7 @@ Group individual `#include` statements according to library, with the library be
 #include <glm/glm.hpp>
 ```
 
-The block `// C++ STL` should always be included if no STL headers are needed, just put `/* nothing here yet */`, e.g.:
+The block `// C++ STL` should always be included. If no STL headers are needed, just put `/* nothing here yet */`, e.g.:
 ```C++
 // C++ STL
 /* nothing here yet */
@@ -67,6 +69,34 @@ followed, after all module-private symbols, by
 ```C++
 // Anonymous namespace end
 }
+```
+
+
+### *Namespaces open*:
+
+Put a consistent doc-comment briefly characterizing each namespace you are opening, for example:
+```C++
+/// The library top-level namespace.
+namespace fcg {
+```
+
+Prefer to open nested namespaces individually in order to make sure each level get a proper doc comment. Never use
+indentation from namespaces. For example:
+```C++
+/// The library top-level namespace.
+namespace fcg {
+
+/// The library's namespace for assorted utilities.
+namespace util {
+```
+
+
+### *Module namespace open*:
+
+Put a short (non-doc) comment characterizing where the namespace you are opening is coming from, for example: 
+```C++
+// The library top-level namespace.
+namespace fcg {
 ```
 
 
@@ -108,8 +138,6 @@ Always use `#define`-based include guards. Infer the appropriate guard macro nam
 
 ## C++ coding style conventions
 
-Always prefer C-style casts unless there is a pressing reason to use a C++ cast.
-
 ### Formatting function signatures
 
 Always separate the argument list with a single space ` ` before the opening `(` from the function/method name, *unless* it is a constructor or destructor. For constructors/destructors, the opening `(` should follow the name without any space in between.
@@ -128,11 +156,11 @@ If the body cannot be made single-statement, put the opening `{` on the same lin
 
 ### Class definitions
 
-Note that these instructions concern complex ("actual") classes that define at least one method (i.e., those that go into a `Classes` section). They do not apply to simple structs that go under the `Structs and enums` section).
+Note that these instructions concern complex ("actual") classes that define at least one method (i.e., those that go into a `Classes` section). They do not apply to simple structs that go under the `Structs and enums` section, or similarly, simple nested structs defined in a class. Such "simple" structs should just observe the general documentation/commenting rules.
 
 Put the opening class brace on its own line. Align access labels (`public:`, `protected:`, `private:`) with the `class` keyword. Apply the same relative indentation to nested classes.
 
-Group all members using two-line intra-class section headers, indented with the members:
+Group all members using two-line intra-class section headers, indented with the members. For a example in a top-level/not-nested class:
 ```C++
 	////
 	// $ClassSection
@@ -155,12 +183,17 @@ Keep related overloads together. Short accessors and forwarding methods may be d
 Document the class and every member with preceding triple-slash `///` Doxygen comments, following the documentation rules below. This includes non-public members, nested types and aliases, enum values, and defaulted or deleted special members. Document why each friend needs access in its `Friend declarations` section. Section headers use ordinary comments, not Doxygen comments.
 
 
+### Enum and (simple) struct definitions
+
+Whether the opening brace is on the same line as the struct name depends on how long the struct or enum is going to be. If it is at least 6 lines including doc comments, the opening `{` should be on its own line. Definitions 5 lines or shorter should have the `{` behind the struct or enum name separated by a single whitespace ` `.
+
+
 
 ## Documenting the code
 
 ### Doc comments
 
-Always use triple-slash `///` doc comments.
+Always use triple-slash `///` doc comments. Documented items (such as classes, structs, enums, functions, members, etc.) must always be separated by at least one blank line.
 
 Always typeset mentions of types, enum values, functions/methods, globals and inline snippets as code. Use `\c` when possible, fall back to `<tt>`/`</tt>` instead when using `\c` is impractical, e.g. for whitespace-containing snippets or when `\c` would consume punctuation (full stops, commas, colons, semicolons). In free-text documentation such as library and module overviews or inside guides, when such a mention (*except* code snippets, no matter if block or inline) concerns an item from this project, directly link to the corresponding API documentation in addition to typesetting as code. When referring to individual functions or methods, do not add paranthesis `()`. When using an individual function or method in an inline snipped, do add `()` (plus required arguments if any) when the snipped constitutes a function call.
 
