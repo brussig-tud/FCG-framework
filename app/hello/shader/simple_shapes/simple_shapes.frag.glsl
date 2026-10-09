@@ -19,9 +19,9 @@ void main() {
 	float diffuse = max(dot(N, L), 0);
 	float specular = (diffuse > 0) ? pow(max(dot(N, H), 0), shininess) : 0;
 
-	vec3 ambient = .03125 * baseColor;
-	vec3 diffuseTerm = .75 * diffuse * baseColor;
-	vec3 specularTerm = .125 * specular * specularColor;
+	vec3 ambient = .1 * baseColor;
+	vec3 diffuseTerm = .8 * diffuse * baseColor;
+	vec3 specularTerm = .25 * specular * specularColor;
 
-	color = /*vec4(baseColor, 1);// <- debug sRGB  */vec4(ambient + diffuseTerm + specularTerm, 1);
+	color = vec4(ambient + diffuseTerm + specularTerm, 1);
 }
