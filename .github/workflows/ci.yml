@@ -32,13 +32,18 @@ jobs:
       fail-fast: false
       matrix:
         # test_prefix wraps the test command on platforms that need a headless display.
+        # documentation-smoke runs on Linux only: it checks the documentation tool chain rather than the
+        # framework, and only there do we control the Doxygen version - see the install below.
         include:
           - os: ubuntu-26.04
             test_prefix: "xvfb-run -a"
+            exclude_tests: "lifecycle-smoke|camera-lifecycle|buffer-smoke|shape-buffer-smoke"
           - os: macos-latest
             test_prefix: ""
+            exclude_tests: "lifecycle-smoke|camera-lifecycle|buffer-smoke|shape-buffer-smoke|documentation-smoke"
           - os: windows-latest
             test_prefix: ""
+            exclude_tests: "lifecycle-smoke|camera-lifecycle|buffer-smoke|shape-buffer-smoke|documentation-smoke"
 
     steps:
       - uses: actions/checkout@v7
@@ -74,6 +79,16 @@ jobs:
           Expand-Archive sccache.zip -DestinationPath "$env:RUNNER_TEMP/sccache-dist"
           $bin = Get-ChildItem "$env:RUNNER_TEMP/sccache-dist" -Recurse -Filter sccache.exe | Select-Object -First 1
           Add-Content -Path $env:GITHUB_PATH -Value $bin.DirectoryName
+
+      # The Windows image ships Doxygen 1.10.0, which renders every \snippet as nothing at all (fixed in
+      # 1.11.0), and macOS ships whatever brew has. Pin one version where the documentation fixture runs so its
+      # assertions mean the same thing on every run.
+      - name: Install doxygen (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl -fsSL -o /tmp/doxygen.tar.gz https://github.com/doxygen/doxygen/releases/download/Release_1_13_0/doxygen-1.13.0.linux.bin.tar.gz
+          tar -xzf /tmp/doxygen.tar.gz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/doxygen-1.13.0/bin" >> "$GITHUB_PATH"
 
       - uses: actions/cache@v6
         with:
@@ -111,9 +126,8 @@ jobs:
           SDL_LOGGING: "*=info"
         run: xvfb-run -a build/debug/bin/render-lifecycle 2>&1 | grep "Validation layers enabled"
 
-      # Tests that need a real GPU device and a window are excluded: the hosted runners are not guaranteed either.
       - name: Test
-        run: ${{ matrix.test_prefix }} ctest --preset debug -E "lifecycle-smoke|camera-lifecycle|buffer-smoke|shape-buffer-smoke"
+        run: ${{ matrix.test_prefix }} ctest --preset debug -E "${{ matrix.exclude_tests }}"
 
       # Stop the server so the post-job cache upload never sees open files, and report the hit rate.
       - name: sccache stats
