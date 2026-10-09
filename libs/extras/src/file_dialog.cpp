@@ -11,7 +11,9 @@
 #include <memory>
 #include <stdexcept>
 #include <string_view>
+#include <chrono>
 #include <utility>
+#include <functional>
 
 // SDL3 library
 #include <SDL3/SDL_init.h>
@@ -246,7 +248,8 @@ void SDLCALL nativeCompletion (void *userdata, const char *const *files, int fil
 		if (filter >= 0 && (std::size_t)filter < state->filters.size())
 			selection.selectedFilter = (std::size_t)filter;
 		complete(state, std::move(selection));
-	} catch (...) {
+	}
+	catch (...) {
 		std::terminate();
 	}
 }
@@ -309,6 +312,19 @@ void showFileDialog (
 	launch(type, state);
 }
 
+/// Drive the event loop while the file dialog waits for completion
+[[nodiscard]] auto runToCompletion (std::future<FileDialogResult> &&future) -> FileDialogResult
+{
+#ifdef _WIN32
+	// Need to spin the event loop on Windows :(
+	while (future.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready)
+		SDL_PumpEvents();
+#else
+	future.wait();
+#endif
+	return std::move(*future.get());
+}
+
 // Anonymous namespace end
 }
 
@@ -340,9 +356,7 @@ void showOpenFileDialogCallback (
 }
 
 auto showOpenFileDialog (FileDialogOptions options) -> FileDialogResult {
-	auto future = showOpenFileDialogAsync(std::move(options));
-	future.wait();
-	return std::move(*future.get());
+	return runToCompletion(showOpenFileDialogAsync(std::move(options)));
 }
 
 auto showSaveFileDialogAsync (FileDialogOptions options) -> std::future<FileDialogResult> {
@@ -356,9 +370,7 @@ void showSaveFileDialogCallback (
 }
 
 auto showSaveFileDialog (FileDialogOptions options) -> FileDialogResult {
-	auto future = showSaveFileDialogAsync(std::move(options));
-	future.wait();
-	return std::move(*future.get());
+	return runToCompletion(showSaveFileDialogAsync(std::move(options)));
 }
 
 auto showOpenFolderDialogAsync (FileDialogOptions options) -> std::future<FileDialogResult> {
@@ -372,9 +384,7 @@ void showOpenFolderDialogCallback (
 }
 
 auto showOpenFolderDialog (FileDialogOptions options) -> FileDialogResult {
-	auto future = showOpenFolderDialogAsync(std::move(options));
-	future.wait();
-	return std::move(*future.get());
+	return runToCompletion(showOpenFolderDialogAsync(std::move(options)));
 }
 
 

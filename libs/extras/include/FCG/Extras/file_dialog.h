@@ -11,11 +11,11 @@
 // C++ STL
 #include <expected>
 #include <filesystem>
-#include <functional>
 #include <future>
 #include <optional>
 #include <string>
 #include <vector>
+#include <functional>
 
 // Local includes
 #include "FCG/Extras/export.h"
