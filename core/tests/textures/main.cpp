@@ -263,6 +263,10 @@ auto sample (fcg::Device &device, const fcg::Texture &input, glm::uvec2 size={2,
 	return read<glm::vec4>(output);
 }
 
+/// Tolerances appropriate to an 8-bit sRGB round trip. One sRGB8 step is about 3.6e-3 in linear light around 0.216,
+/// so half a step admits any driver's conversion precision while a missing or wrong gamma still fails.
+constexpr float srgb8Tolerance = 1.8e-3f;
+
 /// Verify floats with tolerances appropriate to sRGB8 quantization or precise linear data.
 void near (float actual, float expected, float tolerance=1e-5f) {
 	if (std::abs(actual - expected) > tolerance)
@@ -283,7 +287,7 @@ void images (fcg::Device &device)
 		const std::vector<std::byte> saved(bytes.begin(), bytes.end());
 		auto texture = take(image.upload(device));
 		auto pixels = sample(device, texture, {4, 4});
-		near(pixels[0].r, .2158605f, 1e-4f);
+		near(pixels[0].r, .2158605f, srgb8Tolerance);
 		near(pixels[0].a, 64.f / 255);
 		near(pixels[3].g, 1.f);
 		near(pixels[12].b, 1.f);
@@ -295,7 +299,7 @@ void images (fcg::Device &device)
 	const auto savedRGB = rgb;
 	auto paddedTexture = take(padded.upload(device));
 	const auto paddedPixels = sample(device, paddedTexture);
-	near(paddedPixels[0].r, .2158605f, 1e-4f);
+	near(paddedPixels[0].r, .2158605f, srgb8Tolerance);
 	near(paddedPixels[2].b, 1.f);
 	near(paddedPixels[0].a, 1.f);
 	require(rgb == savedRGB, "Padded source changed");
@@ -310,7 +314,7 @@ void images (fcg::Device &device)
 	require(SDL_SetSurfaceColorKey(indexed.handle(), true, 1), SDL_GetError());
 	auto indexedTexture = take(indexed.upload(device));
 	const auto indexedPixels = sample(device, indexedTexture, {2, 1});
-	near(indexedPixels[0].r, .2158605f, 1e-4f);
+	near(indexedPixels[0].r, .2158605f, srgb8Tolerance);
 	near(indexedPixels[1].a, 0.f);
 	Uint32 key = 0;
 	require(SDL_GetSurfaceColorKey(indexed.handle(), &key) && key == 1 && palette->colors[1].a == 255,
