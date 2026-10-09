@@ -31,6 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # test_prefix wraps the test command on platforms that need a headless display.
         # Excluded everywhere: tests that need a real GPU device and a window - hosted runners have neither.
         # Windows also skips three tests that are not portable yet: install-smoke-verify (POSIX-only artifact
         # names), dependencies-smoke (the in-tree shared-framework consumer cannot find its DLLs), and
@@ -38,10 +39,13 @@ jobs:
         # macOS and Linux skip them - leaving those assertions unexercised).
         include:
           - os: ubuntu-26.04
+            test_prefix: "xvfb-run -a"
             exclude_tests: "lifecycle-smoke|camera-lifecycle|buffer-smoke|shape-buffer-smoke"
           - os: macos-latest
+            test_prefix: ""
             exclude_tests: "lifecycle-smoke|camera-lifecycle|buffer-smoke|shape-buffer-smoke"
           - os: windows-latest
+            test_prefix: ""
             exclude_tests: "lifecycle-smoke|camera-lifecycle|buffer-smoke|shape-buffer-smoke|install-smoke-verify|dependencies-smoke|documentation-smoke"
 
     steps:
@@ -52,14 +56,17 @@ jobs:
         if: runner.os == 'Windows'
 
       # The pinned SDL3 is newer than any distribution package, so it is always built from source and its
-      # configure step needs the X11 development libraries on Linux.
-      - name: Install build dependencies (Linux)
+      # configure step needs the X11 development libraries on Linux. Running the graphics tests there also needs
+      # a Vulkan device (lavapipe) and a display (Xvfb). The validation layer matters: Debug builds ask SDL for
+      # debug mode, and SDL silently continues without validation when the layer is missing.
+      - name: Install build and graphics dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y sccache libasound2-dev libdecor-0-dev libdrm-dev libgbm-dev \
-            libpulse-dev libudev-dev libwayland-dev libx11-dev libxcursor-dev libxext-dev libxfixes-dev \
-            libxi-dev libxinerama-dev libxkbcommon-dev libxrandr-dev
+          sudo apt-get install -y sccache mesa-vulkan-drivers vulkan-validationlayers xvfb \
+            libasound2-dev libdecor-0-dev libdrm-dev libgbm-dev libpulse-dev libudev-dev \
+            libwayland-dev libx11-dev libxcursor-dev libxext-dev libxfixes-dev libxi-dev \
+            libxinerama-dev libxkbcommon-dev libxrandr-dev
 
       # sccache is taken from the native package manager, never from a third-party action, so nothing here
       # depends on the Actions cache backend.
@@ -104,7 +111,7 @@ jobs:
         run: cmake --build --preset debug
 
       - name: Test
-        run: ctest --preset debug -E "${{ matrix.exclude_tests }}"
+        run: ${{ matrix.test_prefix }} ctest --preset debug -E "${{ matrix.exclude_tests }}"
 
       # Stop the server so the post-job cache upload never sees open files, and report the hit rate.
       - name: sccache stats
