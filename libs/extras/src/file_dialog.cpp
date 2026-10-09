@@ -313,15 +313,10 @@ void showFileDialog (
 }
 
 /// Drive the event loop while the file dialog waits for completion
-[[nodiscard]] auto runToCompletion (std::future<FileDialogResult> &&future) -> FileDialogResult
-{
-#ifdef _WIN32
-	// Need to spin the event loop on Windows :(
+[[nodiscard]] auto runToCompletion (std::future<FileDialogResult> &&future) -> FileDialogResult {
+	// Need to spin the event loop unfortunately :(
 	while (future.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready)
 		SDL_PumpEvents();
-#else
-	future.wait();
-#endif
 	return std::move(*future.get());
 }
 
