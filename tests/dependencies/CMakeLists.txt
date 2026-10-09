@@ -131,6 +131,14 @@ else()
     set(test_consumer optional-codec)
 endif()
 if(test_consumer)
+    # A Windows deployment ships the shared libraries beside the executable; elsewhere the build tree carries an
+    # rpath. Without this the consumer links but cannot start.
+    if(WIN32)
+        add_custom_command(TARGET ${test_consumer} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different $<TARGET_RUNTIME_DLLS:${test_consumer}>
+                "$<TARGET_FILE_DIR:${test_consumer}>"
+            COMMAND_EXPAND_LISTS)
+    endif()
     file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/consumer-$<CONFIG>.cmake"
         CONTENT "set(consumer \"$<TARGET_FILE:${test_consumer}>\")\n")
 endif()
