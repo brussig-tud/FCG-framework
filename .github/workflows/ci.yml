@@ -32,21 +32,13 @@ jobs:
       fail-fast: false
       matrix:
         # test_prefix wraps the test command on platforms that need a headless display.
-        # Excluded everywhere: tests that need a real GPU device and a window - hosted runners have neither.
-        # Windows also skips three tests that are not portable yet: install-smoke-verify (POSIX-only artifact
-        # names), dependencies-smoke (the in-tree shared-framework consumer cannot find its DLLs), and
-        # documentation-smoke (the Windows image ships Doxygen, so its HTML checks run there and fail, while
-        # macOS and Linux skip them - leaving those assertions unexercised).
         include:
           - os: ubuntu-26.04
             test_prefix: "xvfb-run -a"
-            exclude_tests: "lifecycle-smoke|camera-lifecycle|buffer-smoke|shape-buffer-smoke"
           - os: macos-latest
             test_prefix: ""
-            exclude_tests: "lifecycle-smoke|camera-lifecycle|buffer-smoke|shape-buffer-smoke"
           - os: windows-latest
             test_prefix: ""
-            exclude_tests: "lifecycle-smoke|camera-lifecycle|buffer-smoke|shape-buffer-smoke|install-smoke-verify|dependencies-smoke|documentation-smoke"
 
     steps:
       - uses: actions/checkout@v7
@@ -119,8 +111,9 @@ jobs:
           SDL_LOGGING: "*=info"
         run: xvfb-run -a build/debug/bin/render-lifecycle 2>&1 | grep "Validation layers enabled"
 
+      # Tests that need a real GPU device and a window are excluded: the hosted runners are not guaranteed either.
       - name: Test
-        run: ${{ matrix.test_prefix }} ctest --preset debug -E "${{ matrix.exclude_tests }}"
+        run: ${{ matrix.test_prefix }} ctest --preset debug -E "lifecycle-smoke|camera-lifecycle|buffer-smoke|shape-buffer-smoke"
 
       # Stop the server so the post-job cache upload never sees open files, and report the hit rate.
       - name: sccache stats
