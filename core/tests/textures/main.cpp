@@ -263,11 +263,14 @@ auto sample (fcg::Device &device, const fcg::Texture &input, glm::uvec2 size={2,
 	return read<glm::vec4>(output);
 }
 
-/// Verify floats with tolerances appropriate to sRGB8 quantization or precise linear data.
+/// Verify floats with tolerance
 void near (float actual, float expected, float tolerance=1e-5f) {
 	if (std::abs(actual - expected) > tolerance)
 		throw std::runtime_error("Color differs: " + std::to_string(actual) + " versus " + std::to_string(expected));
 }
+
+/// Appropriate tolerance for sRGB8 quantization with 32bit floats
+constexpr static float srgbTol = 5e-4;
 
 /// Exercise native linear precision, format expansion, alpha, color keys, source preservation, and HDR.
 void images (fcg::Device &device)
@@ -283,7 +286,7 @@ void images (fcg::Device &device)
 		const std::vector<std::byte> saved(bytes.begin(), bytes.end());
 		auto texture = take(image.upload(device));
 		auto pixels = sample(device, texture, {4, 4});
-		near(pixels[0].r, .2158605f, 1e-4f);
+		near(pixels[0].r, .2158605f, srgbTol);
 		near(pixels[0].a, 64.f / 255);
 		near(pixels[3].g, 1.f);
 		near(pixels[12].b, 1.f);
@@ -295,7 +298,7 @@ void images (fcg::Device &device)
 	const auto savedRGB = rgb;
 	auto paddedTexture = take(padded.upload(device));
 	const auto paddedPixels = sample(device, paddedTexture);
-	near(paddedPixels[0].r, .2158605f, 1e-4f);
+	near(paddedPixels[0].r, .2158605f, srgbTol);
 	near(paddedPixels[2].b, 1.f);
 	near(paddedPixels[0].a, 1.f);
 	require(rgb == savedRGB, "Padded source changed");
@@ -310,7 +313,7 @@ void images (fcg::Device &device)
 	require(SDL_SetSurfaceColorKey(indexed.handle(), true, 1), SDL_GetError());
 	auto indexedTexture = take(indexed.upload(device));
 	const auto indexedPixels = sample(device, indexedTexture, {2, 1});
-	near(indexedPixels[0].r, .2158605f, 1e-4f);
+	near(indexedPixels[0].r, .2158605f, srgbTol);
 	near(indexedPixels[1].a, 0.f);
 	Uint32 key = 0;
 	require(SDL_GetSurfaceColorKey(indexed.handle(), &key) && key == 1 && palette->colors[1].a == 255,
