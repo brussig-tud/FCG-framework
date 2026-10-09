@@ -15,10 +15,23 @@ set(common "-DFCG_SOURCE=${FCG_SOURCE}" "-DIMAGE_DEPENDENCY_SOURCE=${IMAGE_DEPEN
 foreach(package glslang SDL_shadercross cpp-embedlib)
     list(APPEND common "-DCPM_${package}_SOURCE=${CPM_${package}_SOURCE}")
 endforeach()
-foreach(mode provided provided-namespaced provided-imported provided-empty package package-visible png-normal png-cache disabled unresolved)
+foreach(mode provided provided-namespaced provided-imported provided-empty package package-visible png-normal png-cache disabled unresolved
+    avif-provided avif-package-normal avif-package-cache avif-local avif-system avif-dav1d avif-gav1
+    avif-codec-provided avif-provided-dav1d
+    avif-overrides avif-save avif-alternate-encoder avif-shared avif-vendored)
     run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${TEST_BINARY}/${mode}" -G "${TEST_GENERATOR}"
         ${common} "-DMODE=${mode}" -DFRAMEWORK_SHARED=OFF)
 endforeach()
+execute_process(COMMAND "${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${TEST_BINARY}/avif-no-decoder" -G "${TEST_GENERATOR}"
+    ${common} -DMODE=avif-no-decoder -DFRAMEWORK_SHARED=OFF RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(result EQUAL 0 OR NOT "${out}\n${err}" MATCHES "requires an enabled AV1 decoder")
+    message(FATAL_ERROR "Expected decoder configuration failure: ${result}\n${out}\n${err}")
+endif()
+execute_process(COMMAND "${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${TEST_BINARY}/unresolved-strict" -G "${TEST_GENERATOR}"
+    ${common} -DMODE=unresolved-strict -DFRAMEWORK_SHARED=OFF RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(result EQUAL 0 OR NOT "${out}\n${err}" MATCHES "libavif")
+    message(FATAL_ERROR "Expected strict missing-codec failure: ${result}\n${out}\n${err}")
+endif()
 foreach(mode provided-missing provided-invalid)
     execute_process(COMMAND "${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${TEST_BINARY}/${mode}" -G "${TEST_GENERATOR}"
         ${common} "-DMODE=${mode}" -DFRAMEWORK_SHARED=OFF RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
@@ -54,5 +67,19 @@ if(TEST_WEBP)
     endforeach()
 else()
     message(STATUS "WebP development package absent; external-codec checks skipped")
+endif()
+if(TEST_LIBAVIF_SOURCE AND TEST_LIBAOM_SOURCE)
+    foreach(pair "avif-real-normal;OFF" "avif-real-cache;ON")
+        list(GET pair 0 mode)
+        list(GET pair 1 shared)
+        set(binary "${TEST_BINARY}/${mode}-${shared}")
+        run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${binary}" -G "${TEST_GENERATOR}"
+            ${common} "-DMODE=${mode}" "-DFRAMEWORK_SHARED=${shared}"
+            "-DTEST_LIBAVIF_SOURCE=${TEST_LIBAVIF_SOURCE}" "-DTEST_LIBAOM_SOURCE=${TEST_LIBAOM_SOURCE}")
+        run("${CMAKE_COMMAND}" --build "${binary}" --target optional-codec Extras --config Debug -j 2)
+        include("${binary}/consumer-Debug.cmake")
+        run("${consumer}" "${IMAGE_DEPENDENCY_SOURCE}/test/sample.avif" 23 42)
+        run("${CMAKE_COMMAND}" --install "${binary}" --config Debug --prefix "${binary}/prefix")
+    endforeach()
 endif()
 message(STATUS "Common dependency startup, caller overrides, target reuse, linkage and export checks passed")

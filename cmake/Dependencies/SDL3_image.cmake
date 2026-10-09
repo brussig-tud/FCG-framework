@@ -3,10 +3,12 @@
 # Scoped defaults avoid affecting parent projects or overwriting cache entries. Do not put these in CPM OPTIONS:
 # CPM's normal variables would shadow the caller's cache choices.
 set(FCG_SDL_IMAGE_BUILT_HERE OFF)
+set(FCG_LIBAVIF_BUILT_HERE OFF)
 set(image_backend_lookup_performed OFF)
 if(NOT TARGET SDL3_image::SDL3_image)
 	set(image_backend_lookup_performed ON)
-	block(SCOPE_FOR VARIABLES PROPAGATE FCG_SDL_IMAGE_BUILT_HERE SDL3_image_SOURCE_DIR SDL3_image_BINARY_DIR)
+	block(SCOPE_FOR VARIABLES PROPAGATE FCG_SDL_IMAGE_BUILT_HERE SDL3_image_SOURCE_DIR SDL3_image_BINARY_DIR
+		FCG_LIBAVIF_BUILT_HERE libavif_SOURCE_DIR libavif_BINARY_DIR)
 		foreach(feature AVIF JXL TIF WEBP PNG_LIBPNG VENDORED DEPS_SHARED SAMPLES TESTS)
 			if(NOT DEFINED SDLIMAGE_${feature})
 				set(SDLIMAGE_${feature} OFF)
@@ -36,8 +38,23 @@ if(NOT TARGET SDL3_image::SDL3_image)
 			GIT_TAG release-3.4.4
 			VERSION 3.4.4
 			GIT_SUBMODULES "${image_submodules}"
+			DOWNLOAD_ONLY YES
 		)
-		if(SDL3_image_ADDED)
+		if(NOT TARGET SDL3_image::SDL3_image AND SDL3_image_SOURCE_DIR)
+			if(SDLIMAGE_AVIF)
+				if(NOT DEFINED SDLIMAGE_AVIF_SAVE)
+					set(SDLIMAGE_AVIF_SAVE OFF)
+				endif()
+				if(NOT SDLIMAGE_VENDORED)
+					include("${CMAKE_CURRENT_LIST_DIR}/libavif.cmake")
+				endif()
+			endif()
+			add_subdirectory("${SDL3_image_SOURCE_DIR}" "${SDL3_image_BINARY_DIR}")
+			if(FCG_LIBAVIF_BUILT_HERE)
+				# SDL_image adds this dependency only for its own vendored codecs. Dynamic CPM codecs need it too.
+				get_target_property(image_source_target SDL3_image::SDL3_image ALIASED_TARGET)
+				add_dependencies(${image_source_target} avif)
+			endif()
 			set(FCG_SDL_IMAGE_BUILT_HERE ON)
 		endif()
 	endblock()

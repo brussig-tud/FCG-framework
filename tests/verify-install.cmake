@@ -8,15 +8,21 @@ foreach(library Core Image Render Extras)
     if(NOT EXISTS "${PREFIX}/lib/lib${library}d.a"
         AND NOT EXISTS "${PREFIX}/lib/lib${library}.a"
         AND NOT EXISTS "${PREFIX}/lib/lib${library}d.so"
-        AND NOT EXISTS "${PREFIX}/lib/lib${library}.so")
+        AND NOT EXISTS "${PREFIX}/lib/lib${library}.so"
+        AND NOT EXISTS "${PREFIX}/lib/lib${library}d.dylib"
+        AND NOT EXISTS "${PREFIX}/lib/lib${library}.dylib"
+        AND NOT EXISTS "${PREFIX}/lib/${library}d.lib"
+        AND NOT EXISTS "${PREFIX}/lib/${library}.lib")
         list(APPEND missing "lib${library} (static or shared) in lib/")
     endif()
 endforeach()
 
 # The source-built shared backend must accompany the installed framework runtime.
-if(IMAGE_RUNTIME AND NOT EXISTS "${PREFIX}/lib/${IMAGE_RUNTIME}" AND NOT EXISTS "${PREFIX}/bin/${IMAGE_RUNTIME}")
-    list(APPEND missing "${IMAGE_RUNTIME} runtime")
-endif()
+foreach(runtime IMAGE_RUNTIME AVIF_RUNTIME)
+    if(${runtime} AND NOT EXISTS "${PREFIX}/lib/${${runtime}}" AND NOT EXISTS "${PREFIX}/bin/${${runtime}}")
+        list(APPEND missing "${${runtime}} runtime")
+    endif()
+endforeach()
 
 # Public headers
 foreach (header run.h window.h applet.h event.h export.h buffer.h texture.h fullscreen.h
@@ -73,14 +79,16 @@ if(EXISTS "${PREFIX}/lib/cmake/FCG/FCG-static-targets.cmake")
     if(NOT static_targets MATCHES "add_library\\(FCG-Framework::fcg-render-shaders")
         message(FATAL_ERROR "Static Render shader archive is not exported")
     endif()
-    if(NOT EXISTS "${PREFIX}/lib/libfcg-render-shadersd.a" AND NOT EXISTS "${PREFIX}/lib/libfcg-render-shaders.a")
+    if(NOT EXISTS "${PREFIX}/lib/libfcg-render-shadersd.a" AND NOT EXISTS "${PREFIX}/lib/libfcg-render-shaders.a"
+        AND NOT EXISTS "${PREFIX}/lib/fcg-render-shadersd.lib" AND NOT EXISTS "${PREFIX}/lib/fcg-render-shaders.lib")
         message(FATAL_ERROR "Static Render shader archive is not installed")
     endif()
 endif()
 
 if(EXISTS "${PREFIX}/lib/cmake/FCG/FCG-static-targets.cmake")
     if(NOT static_targets MATCHES "add_library\\(FCG-Framework::fcg-shaders"
-        OR (NOT EXISTS "${PREFIX}/lib/libfcg-shadersd.a" AND NOT EXISTS "${PREFIX}/lib/libfcg-shaders.a"))
+        OR (NOT EXISTS "${PREFIX}/lib/libfcg-shadersd.a" AND NOT EXISTS "${PREFIX}/lib/libfcg-shaders.a"
+            AND NOT EXISTS "${PREFIX}/lib/fcg-shadersd.lib" AND NOT EXISTS "${PREFIX}/lib/fcg-shaders.lib"))
         message(FATAL_ERROR "Static Core shader archive is not installed and exported")
     endif()
 endif()

@@ -40,10 +40,18 @@ if (FCG_INCLUDE_PACKAGING)
 	if(FCG_SDL_IMAGE_BUILT_HERE AND FCG_USE_SHARED_SDL)
 		set(image_runtime "$<TARGET_FILE_NAME:SDL3_image-shared>")
 	endif()
+	set(avif_runtime "")
+	if(FCG_LIBAVIF_BUILT_HERE)
+		get_target_property(avif_runtime_type avif TYPE)
+		if(avif_runtime_type STREQUAL "SHARED_LIBRARY")
+			set(avif_runtime "$<TARGET_FILE_NAME:avif>")
+		endif()
+	endif()
 	add_test(
 		NAME install-smoke
 		COMMAND "${CMAKE_COMMAND}"
 			--install "${CMAKE_BINARY_DIR}"
+			--config "$<CONFIG>"
 			--prefix "${CMAKE_CURRENT_BINARY_DIR}/install-prefix"
 	)
 
@@ -52,6 +60,7 @@ if (FCG_INCLUDE_PACKAGING)
 		COMMAND "${CMAKE_COMMAND}"
 			"-DPREFIX=${CMAKE_CURRENT_BINARY_DIR}/install-prefix"
 			"-DIMAGE_RUNTIME=${image_runtime}"
+			"-DAVIF_RUNTIME=${avif_runtime}"
 			-P "${CMAKE_CURRENT_SOURCE_DIR}/verify-install.cmake"
 	)
 	set_tests_properties(install-smoke-verify PROPERTIES

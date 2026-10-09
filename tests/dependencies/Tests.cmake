@@ -5,6 +5,10 @@ if(FCG_SDL_IMAGE_BUILT_HERE AND SDL3_BINARY_DIR)
     foreach(package glslang SDL_shadercross cpp-embedlib)
         list(APPEND dependency_sources "-DCPM_${package}_SOURCE=${${package}_SOURCE_DIR}")
     endforeach()
+    if(FCG_LIBAVIF_BUILT_HERE)
+        get_directory_property(avif_aom_source DIRECTORY "${libavif_SOURCE_DIR}" DEFINITION libaom_SOURCE_DIR)
+        list(APPEND dependency_sources "-DTEST_LIBAVIF_SOURCE=${libavif_SOURCE_DIR}" "-DTEST_LIBAOM_SOURCE=${avif_aom_source}")
+    endif()
     add_test(NAME dependencies-smoke COMMAND "${CMAKE_COMMAND}"
         "-DFCG_SOURCE=${PROJECT_SOURCE_DIR}"
         "-DTEST_SOURCE=${CMAKE_CURRENT_LIST_DIR}"
@@ -22,5 +26,5 @@ if(FCG_SDL_IMAGE_BUILT_HERE AND SDL3_BINARY_DIR)
         ${dependency_sources}
         -P "${CMAKE_CURRENT_LIST_DIR}/run.cmake"
     )
-    set_tests_properties(dependencies-smoke PROPERTIES TIMEOUT 240)
+    set_tests_properties(dependencies-smoke PROPERTIES TIMEOUT 600)
 endif()

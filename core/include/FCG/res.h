@@ -1,3 +1,4 @@
+
 /**
  * \defgroup fcg_resources Resources
  * \ingroup fcg_components
@@ -108,7 +109,8 @@ class FCG_FRAMEWORK_EXPORT Shader
 	// Friend declarations
 
 	/// Only resource lookup function, which is the only place where shaders may be constructed.
-	friend auto shader (const cpp_embedlib::EmbeddedFS &resources, std::string_view name) -> std::optional<Shader>;
+	friend FCG_FRAMEWORK_EXPORT auto shader (const cpp_embedlib::EmbeddedFS &resources, std::string_view name)
+		-> std::optional<Shader>;
 
 
 public:

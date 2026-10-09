@@ -37,8 +37,18 @@
 /// target_link_libraries(my_app PRIVATE FCG-framework::Image)
 /// \endcode
 /// Replace the source path with your framework checkout, or use your pinned `GITHUB_REPOSITORY`/`GIT_TAG` in CPM.
-/// Set \c SDLIMAGE_VENDORED=ON to fetch requested external codec sources; enabled codec submodules are fetched with the
-/// pinned SDL_image checkout. Enable \c SDLIMAGE_AVIF, \c SDLIMAGE_JXL, \c SDLIMAGE_TIF, or \c SDLIMAGE_PNG_LIBPNG similarly.
+/// To enable AVIF loading, set \c SDLIMAGE_AVIF=ON before adding the framework. For a source-built, non-vendored SDL_image,
+/// CPM reuses a supplied \c avif target or a compatible installed libavif package (minimum version 1.0); otherwise it
+/// fetches libavif 1.4.2. Explicit \c AVIF_CODEC_* settings are respected. Automatic decoder selection reuses an installed
+/// libaom, dav1d, or libgav1, or builds libaom locally when none is available. Without an x86 assembler, local libaom
+/// uses its portable implementation unless \c AOM_TARGET_CPU is explicitly selected. Local libaom requires Perl;
+/// Git for Windows' bundled Perl is discovered automatically. AVIF saving, libavif tools, tests,
+/// examples, and optional libyuv default to `OFF`. Enable \c SDLIMAGE_AVIF_SAVE to also request an encoder. Codec linkage
+/// defaults to static with position-independent code; explicit \c SDLIMAGE_AVIF_SHARED or \c SDLIMAGE_DEPS_SHARED choices
+/// are respected. Supplied or installed SDL_image backends retain their existing capabilities and do not trigger this
+/// codec resolution. Normal variables, cache entries, and standard CPM source/download overrides remain supported.
+/// Set \c SDLIMAGE_VENDORED=ON to use SDL_image's own codec submodules instead; enabled submodules are fetched with the
+/// pinned SDL_image checkout. Enable \c SDLIMAGE_JXL, \c SDLIMAGE_TIF, or \c SDLIMAGE_PNG_LIBPNG similarly.
 /// \c SDLIMAGE_STRICT makes missing dependencies a configuration error rather than silently disabling a requested codec.
 /// Vendored codecs link statically by default (\c SDLIMAGE_DEPS_SHARED=OFF), keeping them inside SDL_image.
 /// Options also work with `-D` on the command line. Prebuilt packages may support more or fewer formats.
