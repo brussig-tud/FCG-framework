@@ -30,6 +30,11 @@ endif()
 set_target_properties(${imgui_fixture_target} PROPERTIES
     IMPORTED_LOCATION "${IMGUI_LIBRARY}"
     INTERFACE_INCLUDE_DIRECTORIES "${IMGUI_SOURCE};${IMGUI_SOURCE}/backends")
+
+# Reuse the pinned glslang the parent build already produced. It is a build-time tool whose version is pinned either
+# way, and rebuilding it here - 44 of the 111 translation units in each fixture build - dominates this test.
+add_executable(glslang-standalone IMPORTED GLOBAL)
+set_target_properties(glslang-standalone PROPERTIES IMPORTED_LOCATION "${GLSLANG_EXECUTABLE}")
 if(MODE MATCHES "^provided")
     add_library(provided_image INTERFACE)
     add_library(SDL3_image::SDL3_image ALIAS provided_image)
