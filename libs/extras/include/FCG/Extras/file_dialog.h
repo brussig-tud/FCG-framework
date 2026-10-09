@@ -69,17 +69,17 @@ struct FileDialogOptions
 	/// Borrowed parent, possibly \c nullptr; must outlive completion.
 	Window *parent = nullptr;
 
-	/// Native filesystem file or directory to start at; empty uses the platform default.
-	std::filesystem::path defaultLocation;
-
-	/// Owned filters; ignored for folder dialogs.
-	std::vector<FileDialogFilter> filters;
-
 	/// UTF-8 title; empty uses the platform default.
 	std::string title;
 
 	/// Allow multiple files or folders; ignored for save dialogs.
 	bool allowMultiple = false;
+
+	/// Native filesystem file or directory to start at; empty uses the platform default.
+	std::filesystem::path defaultLocation;
+
+	/// Owned filters; ignored for folder dialogs.
+	std::vector<FileDialogFilter> filters;
 };
 
 /// \brief Owned native file-dialog selection. \ingroup fcg_file_dialogs
