@@ -17,3 +17,8 @@ target_link_libraries(image-test-registration PRIVATE ${FCG_PROJECT_NAME}::Image
 add_executable(image-registration-smoke registration_main.cpp)
 target_link_libraries(image-registration-smoke PRIVATE ${FCG_PROJECT_NAME}::Image image-test-registration)
 add_test(NAME image-registration-smoke COMMAND image-registration-smoke)
+
+add_executable(image-metadata-smoke metadata.cpp)
+target_link_libraries(image-metadata-smoke PRIVATE Image Extras)
+target_include_directories(image-metadata-smoke PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../private" "${PROJECT_SOURCE_DIR}/app/imgview/src")
+add_test(NAME image-metadata-smoke COMMAND image-metadata-smoke)

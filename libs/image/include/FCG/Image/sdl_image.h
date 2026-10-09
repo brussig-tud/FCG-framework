@@ -64,6 +64,9 @@
 // Includes
 //
 
+// C++ STL
+/* nothing here yet */
+
 // Local includes
 #include "FCG/Image/image_loader.h"
 
@@ -94,6 +97,17 @@ public:
 
 	/// Construct without initializing SDL or allocating codec resources.
 	SDLImageFormatHandler () = default;
+
+
+	////
+	// Accessors
+
+	/// Advertise still-image codecs resolved by the linked SDL_image configuration.
+	///
+	/// \note Configured dynamic codecs may fail when their runtime libraries are unavailable.
+	///
+	/// \return Owned labels and canonical extensions; animation-only ANI is excluded.
+	[[nodiscard]] auto fileFormats () const -> std::vector<ImageFileFormat> override;
 
 
 	////

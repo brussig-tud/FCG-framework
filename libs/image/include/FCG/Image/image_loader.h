@@ -42,6 +42,13 @@
 /// \c SDLIMAGE_STRICT makes missing dependencies a configuration error rather than silently disabling a requested codec.
 /// Vendored codecs link statically by default (\c SDLIMAGE_DEPS_SHARED=OFF), keeping them inside SDL_image.
 /// Options also work with `-D` on the command line. Prebuilt packages may support more or fewer formats.
+/// Resolved source/package capabilities determine the shipped handler's advertised formats. If a supplied target or
+/// package has no trustworthy metadata, set \c FCG_SDL_IMAGE_FORMATS to an explicit list of SDL codec identifiers:
+/// `ANI;AVIF;BMP;GIF;JPG;JXL;LBM;PCX;PNG;PNM;QOI;SVG;TGA;TIF;WEBP;XCF;XPM;XV`. An explicitly empty list is valid;
+/// unknown identifiers and missing declarations fail configuration. This declaration describes the existing backend,
+/// rather than changing its codec configuration. Configured dynamic codecs can still fail when runtime libraries are
+/// unavailable. ANI is animation-only and is omitted from still-image metadata; BMP also advertises ICO and CUR.
+/// Adding the virtual metadata method preserves existing handler source compatibility; binary consumers must rebuild.
 ///
 /// \section image_library_start Starting points
 /// Use <code>\ref fcg::ImageLoader::global "ImageLoader::global()"</code> for the shipped automatic registry, a local
@@ -86,6 +93,11 @@
 /// \snippet image_examples.cpp independent
 ///
 /// \section image_loading_lifetime Registry ownership and synchronization
+/// <tt>\ref fcg::ImageFormatHandler::fileFormats</tt> defaults to an empty list.
+/// <tt>\ref fcg::ImageLoader::fileFormats</tt> collects owning snapshots of <tt>\ref fcg::ImageFileFormat</tt> records
+/// in registry order, retaining overlaps. Metadata advertises formats without guaranteeing decode success. Snapshots
+/// remain valid after registration, removal, and registry destruction. The viewer queries the singleton for each dialog.
+///
 /// Independent loaders start empty and are neither copyable nor movable.
 /// <code>\ref fcg::ImageLoader::registerHandler "registerHandler"</code> takes unique ownership; removal or loader
 /// destruction destroys that handler. Images do not borrow their decoder or registry. Borrowed bytes/hints must not be
@@ -158,6 +170,23 @@ namespace fcg {
 
 //////
 //
+// Structs and enums
+//
+
+/// \brief Owned metadata for an advertised image format; decoding can still fail. \ingroup fcg_image_loading
+struct ImageFileFormat
+{
+	/// Human-readable format label.
+	std::string name;
+
+	/// Canonical lowercase extensions without leading dots.
+	std::vector<std::string> extensions;
+};
+
+
+
+//////
+//
 // Classes
 //
 
@@ -175,6 +204,13 @@ public:
 
 	////
 	// Methods
+
+	/// Advertised formats as an owning snapshot. Existing handlers default to an empty list.
+	///
+	/// \note Advertising a format does not guarantee successful decoding or runtime codec availability.
+	///
+	/// \return Format metadata, independent of handler lifetime.
+	[[nodiscard]] virtual auto fileFormats () const -> std::vector<ImageFileFormat> { return {}; }
 
 	/// Inspect encoded bytes without retaining or changing them. Acceptance need not imply decode success.
 	///
@@ -252,6 +288,13 @@ public:
 	///
 	/// \returns The number of owned handlers.
 	[[nodiscard]] auto handlerCount () const -> std::size_t { return m_handlers.size(); }
+
+	/// Collect owning format snapshots in registry order, retaining overlaps and repeated entries.
+	///
+	/// \note Serialize with other registry operations; handlers must not modify this loader during the call.
+	///
+	/// \return Advertised formats, independent of subsequent registration or removal.
+	[[nodiscard]] auto fileFormats () const -> std::vector<ImageFileFormat>;
 
 
 	////

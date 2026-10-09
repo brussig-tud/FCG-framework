@@ -17,6 +17,7 @@
 // Local includes
 #include "FCG/Image/sdl_image.h"
 #include "image_internal.h"
+#include "sdl_image_capabilities.h"
 
 
 
@@ -93,6 +94,65 @@ namespace fcg {
 
 ////
 // SDLImageFormatHandler
+
+auto SDLImageFormatHandler::fileFormats () const -> std::vector<ImageFileFormat>
+{
+	std::vector<ImageFileFormat> formats;
+#if FCG_SDL_IMAGE_AVIF
+	formats.push_back({"AVIF", {"avif"}});
+#endif
+#if FCG_SDL_IMAGE_BMP
+	formats.push_back({"Bitmap", {"bmp"}});
+	formats.push_back({"Icon", {"ico"}});
+	formats.push_back({"Cursor", {"cur"}});
+#endif
+#if FCG_SDL_IMAGE_GIF
+	formats.push_back({"GIF", {"gif"}});
+#endif
+#if FCG_SDL_IMAGE_JPG
+	formats.push_back({"JPEG", {"jpg", "jpeg"}});
+#endif
+#if FCG_SDL_IMAGE_JXL
+	formats.push_back({"JPEG XL", {"jxl"}});
+#endif
+#if FCG_SDL_IMAGE_LBM
+	formats.push_back({"Interleaved bitmap", {"lbm", "iff"}});
+#endif
+#if FCG_SDL_IMAGE_PCX
+	formats.push_back({"PCX", {"pcx"}});
+#endif
+#if FCG_SDL_IMAGE_PNG
+	formats.push_back({"PNG", {"png"}});
+#endif
+#if FCG_SDL_IMAGE_PNM
+	formats.push_back({"Portable anymap", {"pnm", "pbm", "pgm", "ppm"}});
+#endif
+#if FCG_SDL_IMAGE_QOI
+	formats.push_back({"Quite OK Image", {"qoi"}});
+#endif
+#if FCG_SDL_IMAGE_SVG
+	formats.push_back({"Scalable vector graphics", {"svg"}});
+#endif
+#if FCG_SDL_IMAGE_TGA
+	formats.push_back({"Targa", {"tga"}});
+#endif
+#if FCG_SDL_IMAGE_TIF
+	formats.push_back({"TIFF", {"tif", "tiff"}});
+#endif
+#if FCG_SDL_IMAGE_WEBP
+	formats.push_back({"WebP", {"webp"}});
+#endif
+#if FCG_SDL_IMAGE_XCF
+	formats.push_back({"GIMP", {"xcf"}});
+#endif
+#if FCG_SDL_IMAGE_XPM
+	formats.push_back({"X PixMap", {"xpm"}});
+#endif
+#if FCG_SDL_IMAGE_XV
+	formats.push_back({"XV thumbnail", {"xv"}});
+#endif
+	return formats;
+}
 
 auto SDLImageFormatHandler::accepts (std::span<const std::byte> bytes, std::string_view hint) const
 	-> std::expected<bool, ImageError>

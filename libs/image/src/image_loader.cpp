@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -133,6 +134,17 @@ auto ImageLoader::registerHandler (std::string id, std::unique_ptr<ImageFormatHa
 
 auto ImageLoader::removeHandler (std::string_view id) -> bool {
 	return std::erase_if(m_handlers, [id] (const Entry &entry) { return entry.id == id; }) != 0;
+}
+
+auto ImageLoader::fileFormats () const -> std::vector<ImageFileFormat>
+{
+	std::vector<ImageFileFormat> formats;
+	for (const auto &entry : m_handlers) {
+		auto advertised = entry.handler->fileFormats();
+		formats.insert(formats.end(), std::make_move_iterator(advertised.begin()),
+			std::make_move_iterator(advertised.end()));
+	}
+	return formats;
 }
 
 auto ImageLoader::load (const std::filesystem::path &path) const -> std::expected<Image, ImageError> {

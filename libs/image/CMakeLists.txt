@@ -17,6 +17,18 @@ target_link_libraries(Image
 	PRIVATE "$<BUILD_INTERFACE:fcg-sdl-image>"
 )
 
+# Capability details are private and must never be copied by the installed include-directory rules.
+get_target_property(image_formats fcg-sdl-image FCG_SDL_IMAGE_FORMATS)
+foreach(codec AVIF BMP GIF JPG JXL LBM PCX PNG PNM QOI SVG TGA TIF WEBP XCF XPM XV)
+	if(codec IN_LIST image_formats)
+		set(FCG_SDL_IMAGE_${codec} ON)
+	else()
+		set(FCG_SDL_IMAGE_${codec} OFF)
+	endif()
+endforeach()
+configure_file(src/sdl_image_capabilities.h.in private/sdl_image_capabilities.h)
+target_include_directories(Image PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/private")
+
 # Collect sources
 set(FCG_IMAGE_BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 add_subdirectory(src)

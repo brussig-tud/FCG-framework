@@ -115,8 +115,8 @@ function(fcg_add_documentation)
 					get_filename_component(relative "${header}" NAME)
 				endif()
 				cmake_path(IS_PREFIX PROJECT_BINARY_DIR "${header}" NORMALIZE in_build_tree)
-				# Only public headers; never extract implementation, vendor or build trees.
-				if(header MATCHES "\\.(h|hh|hpp|hxx)$" AND
+				# Public headers and explicitly registered guides; never extract implementation, vendor or build trees.
+				if(header MATCHES "\\.(h|hh|hpp|hxx|dox)$" AND
 				   NOT in_build_tree AND
 				   NOT "/${relative}" MATCHES "/(src|app|apps|applications|test|tests|dependencies|third_party|vendor|_deps|build[^/]*|cmake-build[^/]*|CMakeFiles)/")
 					list(APPEND inputs "${header}")

@@ -238,7 +238,7 @@ struct CameraParameters
 // Classes
 //
 
-/// \breif Abstract camera mutations and pure queries, independent of applet lifecycle.
+/// \brief Abstract camera mutations and pure queries, independent of applet lifecycle.
 ///
 /// Concrete cameras expose read-only parameters and validate all mutations through the virtual setters. Queries and
 /// setters work before applet initialization. Successful manual mutations cancel active focus animations and pending

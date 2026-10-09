@@ -4,7 +4,7 @@
 set(missing "")
 
 # Libraries (static with debug postfix, static release, or shared).
-foreach(library Core Image Render)
+foreach(library Core Image Render Extras)
     if(NOT EXISTS "${PREFIX}/lib/lib${library}d.a"
         AND NOT EXISTS "${PREFIX}/lib/lib${library}.a"
         AND NOT EXISTS "${PREFIX}/lib/lib${library}d.so"
@@ -22,6 +22,7 @@ endif()
 foreach (header run.h window.h applet.h event.h export.h buffer.h texture.h fullscreen.h
     viewing.h camera_focus.h applet/orbit_camera.h applet/camera_2d.h
     Image/export.h Image/image.h Image/image_loader.h Image/sdl_image.h
+    Extras/export.h Extras/file_dialog.h
     render_target.h Render/export.h Render/error.h Render/primitive_attributes.h
     Render/primitive_renderer.h Render/quad_renderer.h Render/box_renderer.h)
 	if (NOT EXISTS "${PREFIX}/include/FCG/${header}")
@@ -51,12 +52,17 @@ endif()
 file(GLOB target_files "${PREFIX}/lib/cmake/FCG/FCG-*-targets.cmake")
 foreach(target_file IN LISTS target_files)
     file(READ "${target_file}" targets)
-    foreach(library Core Image Render)
+    foreach(library Core Image Render Extras)
         if(NOT targets MATCHES "add_library\\(FCG-Framework::${library}")
             list(APPEND missing "FCG-Framework::${library} in ${target_file}")
         endif()
     endforeach()
 endforeach()
+
+file(GLOB_RECURSE private_headers "${PREFIX}/include/*sdl_image_capabilities*" "${PREFIX}/include/*file_dialog_internal*")
+if(private_headers)
+    message(FATAL_ERROR "Private dependency/test headers were installed: ${private_headers}")
+endif()
 
 if (missing)
 	message(FATAL_ERROR "install-smoke: missing deliverables:\n  ${missing}")

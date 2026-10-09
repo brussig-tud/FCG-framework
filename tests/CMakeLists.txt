@@ -13,6 +13,7 @@
 add_subdirectory("${PROJECT_SOURCE_DIR}/core/tests" "${PROJECT_BINARY_DIR}/core/tests")
 add_subdirectory("${PROJECT_SOURCE_DIR}/libs/image/tests" "${PROJECT_BINARY_DIR}/libs/image/tests")
 add_subdirectory("${PROJECT_SOURCE_DIR}/libs/render/tests" "${PROJECT_BINARY_DIR}/libs/render/tests")
+add_subdirectory("${PROJECT_SOURCE_DIR}/libs/extras/tests" "${PROJECT_BINARY_DIR}/libs/extras/tests")
 include(dependencies/Tests.cmake)
 add_test(
 	NAME shader-build-smoke

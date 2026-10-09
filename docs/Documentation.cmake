@@ -29,3 +29,13 @@ fcg_register_documentation(
     EXAMPLE_DIRS "${CMAKE_CURRENT_LIST_DIR}/../libs/render/tests"
     PREDEFINED FCG_RENDER_EXPORT=
 )
+
+fcg_register_documentation(
+    LIBRARY Extras
+    LINK_TARGET FCG-Framework::Extras
+    GUIDE fcg_extras_guide
+    COMPONENTS fcg_file_dialogs
+    INPUTS "${CMAKE_CURRENT_LIST_DIR}/../libs/extras/include/FCG/Extras" "${CMAKE_CURRENT_LIST_DIR}/extras.dox"
+    EXAMPLE_DIRS "${CMAKE_CURRENT_LIST_DIR}/../libs/extras/tests"
+    PREDEFINED FCG_EXTRAS_EXPORT=
+)

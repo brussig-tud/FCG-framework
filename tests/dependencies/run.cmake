@@ -15,16 +15,23 @@ set(common "-DFCG_SOURCE=${FCG_SOURCE}" "-DIMAGE_DEPENDENCY_SOURCE=${IMAGE_DEPEN
 foreach(package glslang SDL_shadercross cpp-embedlib)
     list(APPEND common "-DCPM_${package}_SOURCE=${CPM_${package}_SOURCE}")
 endforeach()
-foreach(mode provided provided-namespaced png-normal png-cache)
+foreach(mode provided provided-namespaced provided-imported provided-empty package package-visible png-normal png-cache disabled unresolved)
     run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${TEST_BINARY}/${mode}" -G "${TEST_GENERATOR}"
         ${common} "-DMODE=${mode}" -DFRAMEWORK_SHARED=OFF)
+endforeach()
+foreach(mode provided-missing provided-invalid)
+    execute_process(COMMAND "${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${TEST_BINARY}/${mode}" -G "${TEST_GENERATOR}"
+        ${common} "-DMODE=${mode}" -DFRAMEWORK_SHARED=OFF RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+    if(result EQUAL 0 OR NOT "${out}\n${err}" MATCHES "FCG_SDL_IMAGE_FORMATS")
+        message(FATAL_ERROR "Expected capability-declaration failure for ${mode}: ${result}\n${out}\n${err}")
+    endif()
 endforeach()
 # Each parent SDK tests both framework linkages. Static and shared parent builds cover all four combinations.
 foreach(shared OFF ON)
     set(binary "${TEST_BINARY}/minimal-${shared}")
     run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${binary}" -G "${TEST_GENERATOR}"
         ${common} -DMODE=minimal "-DFRAMEWORK_SHARED=${shared}")
-    run("${CMAKE_COMMAND}" --build "${binary}" --target backend-consumer --config Debug -j 2)
+    run("${CMAKE_COMMAND}" --build "${binary}" --target backend-consumer Extras --config Debug -j 2)
     include("${binary}/consumer-Debug.cmake")
     run("${consumer}")
     run("${CMAKE_COMMAND}" --install "${binary}" --config Debug --prefix "${binary}/prefix")

@@ -147,6 +147,9 @@ public:
 	/// Borrow the original device, including through a \c const player; it must outlive the player.
 	[[nodiscard]] auto device () const -> Device& { return m_device; }
 
+	/// Borrow the main window, or \c nullptr without one. The window must outlive the player and pending dialogs.
+	[[nodiscard]] auto mainWindow () const -> Window* { return m_window; }
+
 	/// Main-pass attachments; absent without a main window or valid window claim.
 	[[nodiscard]] auto mainRenderTargetInfo () const -> std::optional<RenderTargetInfo>;
 

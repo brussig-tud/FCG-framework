@@ -105,7 +105,7 @@ link target must agree. Inputs are deduplicated, and component ownership conflic
 paths resolve at the registration call's source directory, including subdirectories; absolute paths are useful in
 included manifests.
 
-Register public-header directories or individual `.h`, `.hh`, `.hpp`, or `.hxx` files. Directories are searched
+Register public-header directories or individual `.h`, `.hh`, `.hpp`, `.hxx`, or `.dox` guide files. Directories are searched
 recursively; implementation sources and nested `src`, `app`, `apps`, `applications`, `test`, `tests`, `dependencies`,
 `third_party`, `vendor`, `_deps`, and build directories are excluded. The active binary tree is excluded too. Only
 register public source locations; snippet paths are separate.

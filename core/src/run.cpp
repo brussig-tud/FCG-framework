@@ -148,16 +148,28 @@ FCG_FRAMEWORK_EXPORT auto run (
 			// We now have a working device
 			auto &device = maybeDevice.value();
 
-			// Take ownership of the applet pointers
+			// Moving the vector preserves its element addresses. Declare its owner after the player so applet
+			// destructors can still use the player during normal shutdown and exception unwinding.
+			Player player(device, window.get(), std::span(_applets));
+
+			// Own the device claim separately from the window. Unwinding destroys GUI and applets first,
+			// then finalizes any frame and releases the claim while the player and parent are still alive.
+			auto releaseClaim = [&] (Window*)
+			{
+				if (player.frame) {
+					window->endFrame();
+					player.frame = nullptr;
+				}
+				device.unclaimWindow(window);
+			};
+			std::unique_ptr<Window, decltype(releaseClaim)> windowClaim(nullptr, releaseClaim);
 			std::vector<std::unique_ptr<Applet>> applets = std::move(_applets);
 
-			// Create the player that the applets will interact with
-			Player player(device, window.get(), std::span(applets));
-
 			// Claim the window for the GPU device, then create the framework GUI on top of it. The GUI instance is
-			// destroyed at scope exit, before the window is unclaimed below.
+			// destroyed before releasing the window claim, including during exception unwinding.
 			std::unique_ptr<Gui> gui;
 			if (device.claimWindow(window)) {
+				windowClaim.reset(window.get());
 				gui = Gui::create(device, *window);
 				if (!gui) {
 					SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "Initializing the framework GUI failed");
@@ -316,7 +328,8 @@ FCG_FRAMEWORK_EXPORT auto run (
 				);
 				applet.reset();
 			}
-			device.unclaimWindow(window);
+			gui.reset();
+			windowClaim.reset();
 		}
 	}
 

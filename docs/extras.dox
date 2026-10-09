@@ -1,0 +1,50 @@
+/// \page fcg_extras_guide Extras library guide
+///
+/// Link the target \verbatim FCG-Framework::Extras \endverbatim
+/// and include `<FCG/Extras/file_dialog.h>` for native desktop file and folder dialogs.
+/// Extras publicly links Core and follows the framework's static/shared choice, versioning, and installation rules.
+/// The \ref fcg_file_dialogs guide describes the completion interfaces and lifetime contract.
+
+
+/// \defgroup fcg_file_dialogs File and folder dialogs
+/// \ingroup fcg_components
+/// \brief Owned C++23 future and callback interfaces over SDL's native dialogs.
+///
+/// \section dialogs_workflows Launch and completion
+/// <tt>\ref fcg::showOpenFileDialog</tt>, <tt>\ref fcg::showSaveFileDialog</tt>, and
+/// <tt>\ref fcg::showOpenFolderDialog</tt> accept owned <tt>\ref fcg::FileDialogOptions</tt>.
+/// Launch on the main thread with SDL events initialized. The optional <tt>\ref fcg::Window</tt> parent is borrowed.
+/// <tt>\ref fcg::Player::mainWindow</tt> provides the nullable main-window pointer for applets.
+/// Locations and selected paths use native `std::filesystem::path`; conversion to and from SDL UTF-8 is explicit.
+/// Filters own their labels and extensions. Extensions omit leading dots and may contain ASCII letters, digits,
+/// hyphens, underscores, and interior dots. `"*"` is accepted only as the sole extension of an all-files filter.
+/// Save dialogs ignore multiple selection. Folder dialogs ignore filters and permit multiple selection.
+/// Platforms may ignore individual settings.
+///
+/// Futures become ready directly on SDL completion. Keep the future in the applet and poll it while processing events;
+/// a continuous redraw request keeps the idle loop responsive while waiting. Balance that request when the result arrives.
+/// \snippet file_dialog_examples.cpp future
+///
+/// Callbacks own their captures and default to <tt>\ref fcg::FileDialogCallbackThread::MainThread</tt> dispatch through
+/// `SDL_RunOnMainThread`. Pump SDL events to receive deferred callbacks. Both native completion and main-thread delivery
+/// can be inline. <tt>\ref fcg::FileDialogCallbackThread::SDLThread</tt> invokes directly on SDL's completion thread;
+/// that can be a worker or the main thread. Callbacks must not throw.
+/// See SDL's <a href="https://wiki.libsdl.org/SDL3/SDL_ShowFileDialogWithProperties">dialog threading contract</a> and
+/// <a href="https://wiki.libsdl.org/SDL3/SDL_RunOnMainThread">main-thread dispatch contract</a>.
+/// \snippet file_dialog_examples.cpp callback
+///
+/// \section dialogs_lifetime Pending native dialogs
+/// Keep SDL and the parent alive until completion. Native dialogs cannot be cancelled through this wrapper, and destroying
+/// a future neither blocks nor cancels. During shutdown, continue pumping events until the pending future is ready before
+/// destroying its parent or shutting down SDL. Filter strings, native filter arrays, and completion data remain owned
+/// through completion. Results do not borrow SDL strings. The wrapper starts no thread and owns no SDL initialization.
+/// Android content-URI loading is outside this desktop filesystem API.
+///
+/// \section dialogs_errors Results and errors
+/// <tt>\ref fcg::FileDialogResult</tt> is `std::expected`. Empty selected paths mean cancellation; the optional zero-based
+/// filter index is present only when the platform reports an index within the submitted list. Failure returns an owned
+/// <tt>\ref fcg::FileDialogError</tt>, categorized as invalid arguments, invalid launch state, or an SDL failure.
+/// SDL error text is captured immediately. Empty callbacks throw `std::invalid_argument` at launch.
+/// Callback exceptions, allocation failures inside SDL callbacks, and failure to dispatch a requested main-thread callback
+/// terminate; exceptions never cross an SDL callback boundary. Allocation failures outside those callbacks may propagate.
+/// The wrapper does not log.

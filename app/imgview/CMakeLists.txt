@@ -4,7 +4,7 @@ set(APP_NAME imgview) # variable APP_NAME required by subdirectories
 add_executable(${APP_NAME})
 
 # Depend on the FCG framework
-target_link_libraries(${APP_NAME} PRIVATE Core Image Render)
+target_link_libraries(${APP_NAME} PRIVATE Core Image Render Extras)
 
 # Collect sources
 add_subdirectory(src)
