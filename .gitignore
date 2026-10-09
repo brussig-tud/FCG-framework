@@ -2,11 +2,15 @@
 build*/
 cmake-build*/
 
-# User-local CMake presets (machine-specific overrides)
+# User-local CMake settings (machine-specific overrides)
 CMakeUserPresets.json
+CMakeSettings.json
 
 # IDE settings files
-.idea
+.vs/
+.vscode/
+.idea/
 
+# Misc artifacts
 /.cache/
 /imgui.ini
