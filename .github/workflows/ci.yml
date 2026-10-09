@@ -110,9 +110,6 @@ jobs:
       - name: Build
         run: cmake --build --preset debug
 
-      - name: Test
-        run: ${{ matrix.test_prefix }} ctest --preset debug -E "${{ matrix.exclude_tests }}"
-
       # Debug builds ask SDL for debug mode, but SDL only enables the validation layer when it is installed and
       # otherwise carries on silently - and at the default log level (GPU=error) even its warning is suppressed.
       # Turn that silent degradation into a failure: the layer must actually be active on Linux.
@@ -121,6 +118,9 @@ jobs:
         env:
           SDL_LOGGING: "*=info"
         run: xvfb-run -a build/debug/bin/render-lifecycle 2>&1 | grep -q "Validation layers enabled"
+
+      - name: Test
+        run: ${{ matrix.test_prefix }} ctest --preset debug -E "${{ matrix.exclude_tests }}"
 
       # Stop the server so the post-job cache upload never sees open files, and report the hit rate.
       - name: sccache stats
