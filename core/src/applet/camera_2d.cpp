@@ -268,6 +268,7 @@ void Camera2D::onEvent (const Event &event, EventContext &context, Player &playe
 void Camera2D::gui (Device&, Player&)
 {
 	ImGui::SetNextWindowSize({0, 0}, ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
 	ImGui::Begin("2D Camera");
 	ImGui::PushItemWidth(10.f * ImGui::GetFontSize());
 	const auto &in = m_params.intrinsics;
