@@ -19,6 +19,10 @@ e.g. `doxygen build/debug/docs/Doxyfile`.
 Doxygen is optional: if absent, configuration succeeds and reports that `fcg-docs` is unavailable. Documentation is
 outside the default build and has no library or executable dependencies.
 
+The `Deploy documentation to Pages` workflow (`.github/workflows/docs.yml`) builds `fcg-docs` on every pull request —
+warnings fail the build — and deploys `docs/html` to GitHub Pages on pushes to `master`. It requires the repository's
+Pages source to be set to "GitHub Actions".
+
 
 ## Module guides
 
