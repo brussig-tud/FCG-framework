@@ -6,5 +6,7 @@ if(NOT TARGET glm::glm)
 		GITHUB_REPOSITORY g-truc/glm
 		GIT_TAG           1.0.1
 		VERSION           1.0.1
+		OPTIONS
+			"GLM_BUILD_LIBRARY OFF"
 	)
 endif()
