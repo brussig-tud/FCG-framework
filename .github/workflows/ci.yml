@@ -56,12 +56,13 @@ jobs:
       # The pinned SDL3 is newer than any distribution package, so it is always built from source and its
       # configure step needs the X11 development libraries on Linux. Running the graphics tests there also needs
       # a Vulkan device (lavapipe) and a display (Xvfb). The validation layer matters: Debug builds ask SDL for
-      # debug mode, and SDL silently continues without validation when the layer is missing.
+      # debug mode, and SDL silently continues without validation when the layer is missing. Doxygen builds the
+      # framework manual, which the deploy-docs job publishes from this leg.
       - name: Install build and graphics dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y sccache mesa-vulkan-drivers vulkan-validationlayers xvfb \
+          sudo apt-get install -y doxygen sccache mesa-vulkan-drivers vulkan-validationlayers xvfb \
             libasound2-dev libdecor-0-dev libdrm-dev libgbm-dev libpulse-dev libudev-dev \
             libwayland-dev libx11-dev libxcursor-dev libxext-dev libxfixes-dev libxi-dev \
             libxinerama-dev libxkbcommon-dev libxrandr-dev
@@ -91,7 +92,6 @@ jobs:
           Expand-Archive doxygen.zip -DestinationPath "$env:RUNNER_TEMP/doxygen"
           $bin = Get-ChildItem "$env:RUNNER_TEMP/doxygen" -Recurse -Filter doxygen.exe | Select-Object -First 1
           Add-Content -Path $env:GITHUB_PATH -Value $bin.DirectoryName
-
       - uses: actions/cache@v6
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
@@ -119,9 +119,18 @@ jobs:
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
 
-      - name: Build framework manual (Windows)
-        if: runner.os == 'Windows'
+      # Doxygen treats documentation warnings as errors, so this gates the manual on every PR. The Linux leg
+      # additionally feeds the GitHub Pages deployment below.
+      - name: Build framework manual
+        if: runner.os == 'Windows' || runner.os == 'Linux'
         run: cmake --build --preset ${{ matrix.preset }} --target fcg-docs
+
+      # The Pages artifact is only ever consumed from the default branch; PRs and ci-* branches skip the upload.
+      - name: Upload manual artifact (Linux, master only)
+        if: runner.os == 'Linux' && github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/${{ matrix.preset }}/docs/html
 
       # Debug builds ask SDL for debug mode, but SDL only enables the validation layer when it is installed and
       # otherwise carries on silently - and at the default log level (GPU=error) even its warning is suppressed.
@@ -144,3 +153,22 @@ jobs:
         run: |
           sccache --show-stats
           sccache --stop-server || true
+
+  # Publishes the manual built by the Linux buildability leg. Only runs once the whole matrix is green, and
+  # never for pull requests (forks would not get the pages permission anyway).
+  deploy-docs:
+    name: deploy documentation
+    needs: buildability
+    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
