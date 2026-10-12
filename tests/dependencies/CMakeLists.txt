@@ -32,6 +32,11 @@ endif()
 set_target_properties(${imgui_fixture_target} PROPERTIES
     IMPORTED_LOCATION "${IMGUI_LIBRARY}"
     INTERFACE_INCLUDE_DIRECTORIES "${IMGUI_SOURCE};${IMGUI_SOURCE}/backends")
+
+# Reuse the pinned glslang the parent build already produced. It is a build-time tool whose version is pinned either
+# way, and rebuilding it here - 44 of the 111 translation units in each fixture build - dominates this test.
+add_executable(glslang-standalone IMPORTED GLOBAL)
+set_target_properties(glslang-standalone PROPERTIES IMPORTED_LOCATION "${GLSLANG_EXECUTABLE}")
 if(MODE MATCHES "^provided")
     if(MODE STREQUAL "provided-imported")
         add_library(provided_image INTERFACE IMPORTED)
@@ -279,6 +284,14 @@ if(test_consumer)
         add_custom_command(TARGET ${test_consumer} POST_BUILD
             COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:SDL3::SDL3>"
                 "$<TARGET_FILE_DIR:${test_consumer}>")
+    endif()
+    # A Windows deployment ships the shared libraries beside the executable; elsewhere the build tree carries an
+    # rpath. Without this the consumer links but cannot start.
+    if(WIN32 AND BUILD_SHARED_LIBS)
+        add_custom_command(TARGET ${test_consumer} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different $<TARGET_RUNTIME_DLLS:${test_consumer}>
+                "$<TARGET_FILE_DIR:${test_consumer}>"
+            COMMAND_EXPAND_LISTS)
     endif()
     file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/consumer-$<CONFIG>.cmake"
         CONTENT "set(consumer \"$<TARGET_FILE:${test_consumer}>\")\n")
