@@ -114,7 +114,7 @@ struct DialogState
 	std::optional<std::promise<FileDialogResult>> promise;
 
 	/// Callback completion, absent for future launches.
-	std::move_only_function<void(FileDialogResult)> callback;
+	std::function<void(FileDialogResult)> callback;
 
 	/// Requested callback thread.
 	FileDialogCallbackThread thread = FileDialogCallbackThread::MainThread;
@@ -299,7 +299,7 @@ auto showFileDialog (SDL_FileDialogType type, FileDialogOptions &&options, FileD
 }
 
 void showFileDialog (
-	SDL_FileDialogType type, FileDialogOptions &&options, std::move_only_function<void(FileDialogResult)> callback,
+	SDL_FileDialogType type, FileDialogOptions &&options, std::function<void(FileDialogResult)> callback,
 	FileDialogCallbackThread thread, FileDialogBackend backend={}
 ){
 	if (!callback)
@@ -345,7 +345,7 @@ auto showOpenFileDialogAsync (FileDialogOptions options) -> std::future<FileDial
 }
 
 void showOpenFileDialogCallback (
-	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback, FileDialogCallbackThread thread
+	FileDialogOptions options, std::function<void(FileDialogResult)> callback, FileDialogCallbackThread thread
 ){
 	showFileDialog(SDL_FILEDIALOG_OPENFILE, std::move(options), std::move(callback), thread);
 }
@@ -359,7 +359,7 @@ auto showSaveFileDialogAsync (FileDialogOptions options) -> std::future<FileDial
 }
 
 void showSaveFileDialogCallback (
-	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback, FileDialogCallbackThread thread
+	FileDialogOptions options, std::function<void(FileDialogResult)> callback, FileDialogCallbackThread thread
 ){
 	showFileDialog(SDL_FILEDIALOG_SAVEFILE, std::move(options), std::move(callback), thread);
 }
@@ -373,7 +373,7 @@ auto showOpenFolderDialogAsync (FileDialogOptions options) -> std::future<FileDi
 }
 
 void showOpenFolderDialogCallback (
-	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback, FileDialogCallbackThread thread
+	FileDialogOptions options, std::function<void(FileDialogResult)> callback, FileDialogCallbackThread thread
 ){
 	showFileDialog(SDL_FILEDIALOG_OPENFOLDER, std::move(options), std::move(callback), thread);
 }

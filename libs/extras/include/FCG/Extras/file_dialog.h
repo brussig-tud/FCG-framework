@@ -154,10 +154,10 @@ enum class FileDialogCallbackThread
 /// 	Native dialogs cannot be cancelled through this wrapper. An empty callback throws \c std::invalid_argument.
 ///
 /// \param options Owned launch settings.
-/// \param callback Move-only completion function, retained until invoked exactly once.
+/// \param callback Completion function, retained until invoked exactly once.
 /// \param thread Callback dispatch policy, including for validation errors.
 FCG_EXTRAS_EXPORT void showOpenFileDialogCallback (
-	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback,
+	FileDialogOptions options, std::function<void(FileDialogResult)> callback,
 	FileDialogCallbackThread thread=FileDialogCallbackThread::MainThread
 );
 
@@ -183,7 +183,7 @@ FCG_EXTRAS_EXPORT void showOpenFileDialogCallback (
 /// \param callback Nonempty completion function; must not throw.
 /// \param thread Callback dispatch policy.
 FCG_EXTRAS_EXPORT void showSaveFileDialogCallback (
-	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback,
+	FileDialogOptions options, std::function<void(FileDialogResult)> callback,
 	FileDialogCallbackThread thread=FileDialogCallbackThread::MainThread
 );
 
@@ -209,7 +209,7 @@ FCG_EXTRAS_EXPORT void showSaveFileDialogCallback (
 /// \param callback Nonempty completion function; must not throw.
 /// \param thread Callback dispatch policy.
 FCG_EXTRAS_EXPORT void showOpenFolderDialogCallback (
-	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback,
+	FileDialogOptions options, std::function<void(FileDialogResult)> callback,
 	FileDialogCallbackThread thread=FileDialogCallbackThread::MainThread
 );
 
