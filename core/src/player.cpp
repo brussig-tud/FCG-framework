@@ -101,7 +101,7 @@ auto Player::shouldClose () const -> bool {
 
 auto Player::findCamera (std::string_view name) -> std::optional<Camera*> {
 	for (auto &applet : applets)
-		if (Camera *cam = dynamic_cast<Camera*>(applet.get()); applet->name() == name)
+		if (Camera *cam = dynamic_cast<Camera*>(applet.get()); cam && applet->name() == name)
 			return cam;
 	return {};
 }

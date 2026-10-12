@@ -328,6 +328,43 @@ void images (fcg::Device &device)
 	const auto duplicatePixels = sample(device, duplicateTexture, {2, 1});
 	near(duplicatePixels[0].a, 1.f);
 	near(duplicatePixels[1].a, 0.f);
+	// Sub-byte color keys must select the same pixel in either bit order, including across padded rows.
+	for (auto format : {SDL_PIXELFORMAT_INDEX1LSB, SDL_PIXELFORMAT_INDEX1MSB, SDL_PIXELFORMAT_INDEX2LSB,
+		SDL_PIXELFORMAT_INDEX2MSB, SDL_PIXELFORMAT_INDEX4LSB, SDL_PIXELFORMAT_INDEX4MSB})
+	{
+		constexpr unsigned width = 9, height = 2;
+		const unsigned bits = SDL_BITSPERPIXEL(format);
+		const unsigned rowBytes = (width * bits + 7) / 8, pitch = rowBytes + 3;
+		std::vector<Uint8> storage(pitch * height, 0xa5);
+		auto packedImage = take(fcg::Image::adopt(SDL_CreateSurfaceFrom(width, height, format, storage.data(), pitch)));
+		auto *packedPalette = SDL_CreateSurfacePalette(packedImage.handle());
+		require(packedPalette, SDL_GetError());
+		require(SDL_SetPaletteColors(packedPalette, duplicateColors.data(), 0, 2), SDL_GetError());
+		const bool lsb = SDL_PIXELORDER(format) == SDL_BITMAPORDER_4321;
+		for (unsigned y = 0; y < height; ++y)
+		{
+			auto *row = storage.data() + y * pitch;
+			std::memset(row, 0, rowBytes);
+			for (unsigned x = 0; x < width; ++x)
+				if ((x + y) % 3 == 0 || x == width - 1) {
+					const unsigned shift = lsb ? x * bits % 8 : 8 - bits - x * bits % 8;
+					row[x * bits / 8] |= 1u << shift;
+				}
+		}
+		const auto saved = storage;
+		require(SDL_SetSurfaceColorKey(packedImage.handle(), true, 1), SDL_GetError());
+		auto uploaded = packedImage.upload(device);
+		if (!uploaded)
+			throw std::runtime_error(std::string(SDL_GetPixelFormatName(format)) + ": " + uploaded.error().message);
+		auto packedTexture = std::move(*uploaded);
+		const auto pixels = sample(device, packedTexture, {width, height});
+		for (unsigned y = 0; y < height; ++y)
+			for (unsigned x = 0; x < width; ++x)
+				near(pixels[y * width + x].a, (x + y) % 3 == 0 || x == width - 1 ? 0.f : 1.f);
+		require(storage == saved, "Sub-byte source pixels or padding changed");
+		require(SDL_GetSurfaceColorKey(packedImage.handle(), &key) && key == 1 && packedPalette->colors[1].a == 255,
+			"Sub-byte source color key or palette changed");
+	}
 	// A keyed 10-bit representation must promote to float before applying alpha without quantizing RGB.
 	auto keyed = take(fcg::Image::adopt(SDL_CreateSurface(2, 1, SDL_PIXELFORMAT_ARGB2101010)));
 	require(SDL_SetSurfaceColorspace(keyed.handle(), SDL_COLORSPACE_SRGB_LINEAR), SDL_GetError());

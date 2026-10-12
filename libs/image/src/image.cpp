@@ -5,6 +5,7 @@
 //
 
 // C++ STL
+#include <cstddef>
 #include <cstring>
 #include <utility>
 #include <memory>
@@ -25,6 +26,49 @@
 
 // Anonymous namespace begin
 namespace {
+
+/// \brief Copy a sub-byte indexed surface into independent storage for upload conversion.
+///
+/// SDL's surface duplication cannot blit these formats to themselves. Copy their packed rows and palette directly;
+/// the upload path reads the color key from the original and applies it after conversion.
+///
+/// \param source The indexed surface to copy; its pixel depth is below eight bits.
+///
+/// \return An owned surface to destroy with \c SDL_DestroySurface, or \c nullptr with an SDL error on failure.
+[[nodiscard]] auto copyBitmapForUpload (SDL_Surface &source) -> SDL_Surface*
+{
+	const bool lock = SDL_MUSTLOCK(&source);
+	if (lock && !SDL_LockSurface(&source))
+		return nullptr;
+	const std::unique_ptr<SDL_Surface, decltype(&SDL_UnlockSurface)> unlock(
+		lock ? &source : nullptr, SDL_UnlockSurface
+	);
+	std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> copy(
+		SDL_CreateSurface(source.w, source.h, source.format), SDL_DestroySurface
+	);
+	if (!copy)
+		return nullptr;
+	auto *sourcePalette = SDL_GetSurfacePalette(&source);
+	if (!sourcePalette) {
+		SDL_SetError("Indexed image has no palette");
+		return nullptr;
+	}
+	const std::unique_ptr<SDL_Palette, decltype(&SDL_DestroyPalette)> palette(
+		SDL_CreatePalette(sourcePalette->ncolors), SDL_DestroyPalette
+	);
+	if (!palette || !SDL_SetPaletteColors(palette.get(), sourcePalette->colors, 0, sourcePalette->ncolors)
+		|| !SDL_SetSurfacePalette(copy.get(), palette.get())
+		|| !SDL_SetSurfaceColorspace(copy.get(), SDL_GetSurfaceColorspace(&source))
+		|| !SDL_CopyProperties(SDL_GetSurfaceProperties(&source), SDL_GetSurfaceProperties(copy.get())))
+		return nullptr;
+	const auto rowBytes = (std::size_t(source.w) * SDL_BITSPERPIXEL(source.format) + 7) / 8;
+	for (int y = 0; y < source.h; ++y)
+		std::memcpy(
+			static_cast<Uint8*>(copy->pixels) + std::size_t(y) * copy->pitch,
+			static_cast<const Uint8*>(source.pixels) + std::size_t(y) * source.pitch, rowBytes
+		);
+	return copy.release();
+}
 
 /// \brief
 /// 	Sets alpha to zero in \c destination for every pixel whose color in \c source matches the color key.
@@ -212,7 +256,9 @@ auto Image::upload (Device &device) const -> std::expected<Texture, ImageError>
 		// Conversion can temporarily change source blit state. Perform it on an independent duplicate and disable
 		// its tone mapping, so HDR headroom and any source tone-map preference cannot clip uploaded values.
 		std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> copy(
-			SDL_DuplicateSurface(surface), SDL_DestroySurface
+			SDL_ISPIXELFORMAT_INDEXED(surface->format) && SDL_BITSPERPIXEL(surface->format) < 8
+				? copyBitmapForUpload(*surface) : SDL_DuplicateSurface(surface),
+			SDL_DestroySurface
 		);
 		if (!copy || !SDL_SetStringProperty(
 			SDL_GetSurfaceProperties(copy.get()), SDL_PROP_SURFACE_TONEMAP_OPERATOR_STRING, "none"

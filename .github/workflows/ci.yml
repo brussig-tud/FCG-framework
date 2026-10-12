@@ -25,7 +25,7 @@ env:
 
 jobs:
   buildability:
-    name: buildability (${{ matrix.os }})
+    name: buildability (${{ matrix.os }}, ${{ matrix.preset }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
@@ -34,10 +34,16 @@ jobs:
         # test_prefix wraps the test command on platforms that need a headless display.
         include:
           - os: ubuntu-26.04
+            preset: debug
             test_prefix: "xvfb-run -a"
           - os: macos-latest
+            preset: debug
             test_prefix: ""
           - os: windows-latest
+            preset: debug
+            test_prefix: ""
+          - os: windows-latest
+            preset: debug-shared
             test_prefix: ""
 
     steps:
@@ -106,12 +112,16 @@ jobs:
       # the setting is ignored by the non-MSVC compilers.
       - name: Configure
         run: >
-          cmake --preset debug -G Ninja
+          cmake --preset ${{ matrix.preset }} -G Ninja
           -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
 
       - name: Build
-        run: cmake --build --preset debug
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Build framework manual (Windows)
+        if: runner.os == 'Windows'
+        run: cmake --build --preset ${{ matrix.preset }} --target fcg-docs
 
       # Debug builds ask SDL for debug mode, but SDL only enables the validation layer when it is installed and
       # otherwise carries on silently - and at the default log level (GPU=error) even its warning is suppressed.
@@ -120,13 +130,13 @@ jobs:
         if: runner.os == 'Linux'
         env:
           SDL_LOGGING: "*=info"
-        run: xvfb-run -a build/debug/bin/render-lifecycle 2>&1 | grep "Validation layers enabled"
+        run: xvfb-run -a build/${{ matrix.preset }}/bin/render-lifecycle 2>&1 | grep "Validation layers enabled"
 
       # Every test is attempted on every platform. The graphics tests run against whatever device the platform
       # provides - Metal, WARP or lavapipe - and the documentation fixture reports for itself when no usable
       # Doxygen is present, so nothing needs to be excluded here.
       - name: Test
-        run: ${{ matrix.test_prefix }} ctest --preset debug
+        run: ${{ matrix.test_prefix }} ctest --preset ${{ matrix.preset }}
 
       # Stop the server so the post-job cache upload never sees open files, and report the hit rate.
       - name: sccache stats

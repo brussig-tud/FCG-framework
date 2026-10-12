@@ -25,3 +25,10 @@ set_tests_properties(lifecycle-smoke PROPERTIES
 	# Validation diagnostics can be emitted even when the process exits successfully, including during teardown.
 	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-"
 )
+
+# Public camera lookup and handled/unhandled Escape behavior through the actual runtime loop.
+add_executable(runtime-contract-smoke lifecycle/contracts.cpp)
+target_link_libraries(runtime-contract-smoke PRIVATE Core)
+add_test(NAME runtime-contract-smoke COMMAND runtime-contract-smoke)
+set_tests_properties(runtime-contract-smoke PROPERTIES TIMEOUT 60
+	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
