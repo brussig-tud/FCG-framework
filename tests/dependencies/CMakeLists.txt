@@ -20,18 +20,30 @@ find_package(SDL3 3.4 CONFIG REQUIRED)
 add_library(provided_glm INTERFACE)
 add_library(glm::glm ALIAS provided_glm)
 target_include_directories(provided_glm INTERFACE "${GLM_SOURCE}")
+if(IMGUI_SHARED)
+    set(imgui_fixture_type SHARED)
+else()
+    set(imgui_fixture_type STATIC)
+endif()
 if(MODE STREQUAL "provided-namespaced")
-    add_library(provided_imgui UNKNOWN IMPORTED)
+    add_library(provided_imgui ${imgui_fixture_type} IMPORTED)
     set(imgui_fixture_target provided_imgui)
     add_library(imgui::imgui ALIAS provided_imgui)
 else()
     # Also cover normalization of an unnamespaced target into imgui::imgui.
-    add_library(imgui UNKNOWN IMPORTED)
+    add_library(imgui ${imgui_fixture_type} IMPORTED)
     set(imgui_fixture_target imgui)
 endif()
 set_target_properties(${imgui_fixture_target} PROPERTIES
-    IMPORTED_LOCATION "${IMGUI_LIBRARY}"
     INTERFACE_INCLUDE_DIRECTORIES "${IMGUI_SOURCE};${IMGUI_SOURCE}/backends")
+if(IMGUI_SHARED)
+    set_target_properties(${imgui_fixture_target} PROPERTIES IMPORTED_LOCATION "${IMGUI_RUNTIME}")
+    if(WIN32)
+        set_target_properties(${imgui_fixture_target} PROPERTIES IMPORTED_IMPLIB "${IMGUI_LIBRARY}")
+    endif()
+else()
+    set_target_properties(${imgui_fixture_target} PROPERTIES IMPORTED_LOCATION "${IMGUI_LIBRARY}")
+endif()
 
 # Reuse the pinned glslang the parent build already produced. It is a build-time tool whose version is pinned either
 # way, and rebuilding it here - 44 of the 111 translation units in each fixture build - dominates this test.
@@ -287,7 +299,7 @@ if(test_consumer)
     endif()
     # A Windows deployment ships the shared libraries beside the executable; elsewhere the build tree carries an
     # rpath. Without this the consumer links but cannot start.
-    if(WIN32 AND BUILD_SHARED_LIBS)
+    if(WIN32 AND (BUILD_SHARED_LIBS OR IMGUI_SHARED))
         add_custom_command(TARGET ${test_consumer} POST_BUILD
             COMMAND "${CMAKE_COMMAND}" -E copy_if_different $<TARGET_RUNTIME_DLLS:${test_consumer}>
                 "$<TARGET_FILE_DIR:${test_consumer}>"
