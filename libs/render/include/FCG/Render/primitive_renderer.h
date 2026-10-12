@@ -10,9 +10,9 @@
 
 /// \page fcg_render_overview Render library overview
 ///
-/// The Render library draws instanced primitives — textured quads and shaded 3D boxes — that share one set of
-/// per-instance attributes on the GPU. It is the quickest way to put many simple objects on the screen without writing
-/// your own pipelines and shaders.
+/// The Render library draws instanced primitives – currently just (optionally textured) quads and boxes – from
+/// user-definable attributes on the GPU; the quickest way to put many simple objects on the screen without writing your
+/// own pipelines and shaders.
 ///
 /// Link your application against \verbatim FCG-Framework::Render \endverbatim and include the renderer headers under
 /// \c FCG/Render/:
