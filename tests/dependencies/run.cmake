@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.31)
 function(run)
     execute_process(COMMAND ${ARGV} RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
     if(NOT result EQUAL 0)
-        message(FATAL_ERROR "Command failed: ${ARGV}\n${out}\n${err}")
+        message(FATAL_ERROR "Command failed (exit ${result}): ${ARGV}\n${out}\n${err}")
     endif()
 endfunction()
 
@@ -11,7 +11,8 @@ set(common "-DFCG_SOURCE=${FCG_SOURCE}" "-DIMAGE_DEPENDENCY_SOURCE=${IMAGE_DEPEN
     "-DSDL3_DIR=${SDL3_DIR}" "-DCMAKE_C_COMPILER=${TEST_C_COMPILER}" "-DCMAKE_CXX_COMPILER=${TEST_CXX_COMPILER}"
     "-DTEST_BACKEND_SHARED=${TEST_BACKEND_SHARED}" "-DCMAKE_BUILD_TYPE=Debug"
     "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
-    "-DGLM_SOURCE=${GLM_SOURCE}" "-DIMGUI_SOURCE=${IMGUI_SOURCE}" "-DIMGUI_LIBRARY=${IMGUI_LIBRARY}")
+    "-DGLM_SOURCE=${GLM_SOURCE}" "-DIMGUI_SOURCE=${IMGUI_SOURCE}" "-DIMGUI_LIBRARY=${IMGUI_LIBRARY}"
+    "-DGLSLANG_EXECUTABLE=${GLSLANG_EXECUTABLE}")
 foreach(package glslang SDL_shadercross cpp-embedlib)
     list(APPEND common "-DCPM_${package}_SOURCE=${CPM_${package}_SOURCE}")
 endforeach()
@@ -44,7 +45,7 @@ foreach(shared OFF ON)
     set(binary "${TEST_BINARY}/minimal-${shared}")
     run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${binary}" -G "${TEST_GENERATOR}"
         ${common} -DMODE=minimal "-DFRAMEWORK_SHARED=${shared}")
-    run("${CMAKE_COMMAND}" --build "${binary}" --target backend-consumer Extras --config Debug -j 2)
+    run("${CMAKE_COMMAND}" --build "${binary}" --target backend-consumer Extras --config Debug --parallel)
     include("${binary}/consumer-Debug.cmake")
     run("${consumer}")
     run("${CMAKE_COMMAND}" --install "${binary}" --config Debug --prefix "${binary}/prefix")
@@ -61,7 +62,7 @@ if(TEST_WEBP)
     foreach(mode normal cache)
         run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${TEST_BINARY}/${mode}" -G "${TEST_GENERATOR}"
             ${common} "-DMODE=${mode}" -DFRAMEWORK_SHARED=OFF)
-        run("${CMAKE_COMMAND}" --build "${TEST_BINARY}/${mode}" --target optional-codec --config Debug -j 2)
+        run("${CMAKE_COMMAND}" --build "${TEST_BINARY}/${mode}" --target optional-codec --config Debug --parallel)
         include("${TEST_BINARY}/${mode}/consumer-Debug.cmake")
         run("${consumer}" "${FCG_SOURCE}/libs/image/tests/fixtures/colors.webp")
     endforeach()
@@ -76,7 +77,7 @@ if(TEST_LIBAVIF_SOURCE AND TEST_LIBAOM_SOURCE)
         run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${binary}" -G "${TEST_GENERATOR}"
             ${common} "-DMODE=${mode}" "-DFRAMEWORK_SHARED=${shared}"
             "-DTEST_LIBAVIF_SOURCE=${TEST_LIBAVIF_SOURCE}" "-DTEST_LIBAOM_SOURCE=${TEST_LIBAOM_SOURCE}")
-        run("${CMAKE_COMMAND}" --build "${binary}" --target optional-codec Extras --config Debug -j 2)
+        run("${CMAKE_COMMAND}" --build "${binary}" --target optional-codec Extras --config Debug --parallel)
         include("${binary}/consumer-Debug.cmake")
         run("${consumer}" "${IMAGE_DEPENDENCY_SOURCE}/test/sample.avif" 23 42)
         run("${CMAKE_COMMAND}" --install "${binary}" --config Debug --prefix "${binary}/prefix")

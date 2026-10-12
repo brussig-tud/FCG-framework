@@ -268,14 +268,15 @@ enum class FileDialogCallbackThread
 /// \param callback
 /// 	Function receiving the result, which is a selection, an empty selection if the user cancelled, or an error
 /// 	with the same meaning as described for <tt>\ref showOpenFileDialogAsync</tt>. Must not be empty. The callback,
-/// 	including its captures, is kept alive until it has been invoked.
+/// 	including its captures, is kept alive until it has been invoked. The callable and its captures must be
+/// 	copyable to be stored in <tt>std::function</tt>.
 /// \param thread
 /// 	The thread on which to invoke \c callback, also for errors detected at launch.
 ///
 /// \throws std::invalid_argument
 /// 	If \c callback is empty. No dialog is shown in this case.
 FCG_EXTRAS_EXPORT void showOpenFileDialogCallback (
-	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback,
+	FileDialogOptions options, std::function<void(FileDialogResult)> callback,
 	FileDialogCallbackThread thread=FileDialogCallbackThread::MainThread
 );
 
@@ -333,7 +334,7 @@ FCG_EXTRAS_EXPORT void showOpenFileDialogCallback (
 /// \throws std::invalid_argument
 /// 	If \c callback is empty. No dialog is shown in this case.
 FCG_EXTRAS_EXPORT void showSaveFileDialogCallback (
-	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback,
+	FileDialogOptions options, std::function<void(FileDialogResult)> callback,
 	FileDialogCallbackThread thread=FileDialogCallbackThread::MainThread
 );
 
@@ -388,7 +389,7 @@ FCG_EXTRAS_EXPORT void showSaveFileDialogCallback (
 /// \throws std::invalid_argument
 /// 	If \c callback is empty. No dialog is shown in this case.
 FCG_EXTRAS_EXPORT void showOpenFolderDialogCallback (
-	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback,
+	FileDialogOptions options, std::function<void(FileDialogResult)> callback,
 	FileDialogCallbackThread thread=FileDialogCallbackThread::MainThread
 );
 

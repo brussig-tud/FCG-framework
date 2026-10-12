@@ -14,8 +14,8 @@ if(NOT TARGET SDL3::SDL3)
 	CPMFindPackage(
 		NAME              SDL3
 		GITHUB_REPOSITORY libsdl-org/SDL
-		GIT_TAG           release-3.4.14
-		VERSION           3.4.14
+		GIT_TAG           release-3.4.18
+		VERSION           3.4.18
 		OPTIONS
 			# XTest is a niche runtime feature (X11 mouse warping, currently disabled upstream) also used by SDL's own tests
 			# - off avoids the libxtst dependency
@@ -24,4 +24,5 @@ if(NOT TARGET SDL3::SDL3)
 			"SDL_X11_XSCRNSAVER OFF"
 	)
 	include("${CMAKE_CURRENT_LIST_DIR}/../Patches/SDL3-vulkan-volume-barrier.cmake")
+	include("${CMAKE_CURRENT_LIST_DIR}/../Patches/SDL3-metal-texture-upload-stride.cmake")
 endif()

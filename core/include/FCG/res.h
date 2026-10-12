@@ -136,6 +136,8 @@ class FCG_FRAMEWORK_EXPORT Shader
 	////
 	// Friend declarations
 
+	// Repeat the export macro: MSVC requires the friend and namespace declarations to agree on
+	// dllexport linkage in Windows shared builds (C2375).
 	/// Constructs shaders when looking them up in embedded resources.
 	friend FCG_FRAMEWORK_EXPORT auto shader (const cpp_embedlib::EmbeddedFS &resources, std::string_view name)
 		-> std::optional<Shader>;

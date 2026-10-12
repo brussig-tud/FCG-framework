@@ -270,8 +270,9 @@ void near (float actual, float expected, float tolerance=1e-5f) {
 		throw std::runtime_error("Color differs: " + std::to_string(actual) + " versus " + std::to_string(expected));
 }
 
-/// Appropriate tolerance for sRGB8 quantization with 32bit floats
-constexpr static float srgbTol = 5e-4;
+/// Tolerances appropriate to an 8-bit sRGB round trip. One sRGB8 step is about 3.6e-3 in linear light around
+/// 0.216, so half a step admits any driver's conversion precision while a missing or wrong gamma still fails.
+constexpr static float srgbTol = 1.8e-3f;
 
 /// Exercise native linear precision, format expansion, alpha, color keys, source preservation, and HDR.
 void images (fcg::Device &device)

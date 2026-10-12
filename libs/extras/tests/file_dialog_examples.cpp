@@ -36,12 +36,12 @@ void futureExample (fcg::Window *parent)
 // [future]
 }
 
-/// Move-only callbacks default to main-thread delivery during SDL event processing.
+/// Completion callbacks default to main-thread delivery during SDL event processing.
 void callbackExample ()
 {
 // [callback]
 	fcg::extra::showOpenFolderDialogCallback({.allowMultiple = true},
-		[state = std::make_unique<int>(0)] (fcg::extra::FileDialogResult result) {
+		[state = std::make_shared<int>(0)] (fcg::extra::FileDialogResult result) {
 			if (result)
 				*state = (int)result->paths.size(); // Zero means cancellation.
 		});

@@ -116,7 +116,9 @@ and extending the coordinator's required-target or required-command checks. Invo
 normal framework builds; independently configured test fixtures establish their own startup prerequisites.
 
 SDL3, SDL_image, GLM, and ImGui reuse supplied targets, otherwise preferring compatible installed packages before source
-fallback. glslang, SDL_shadercross, and cpp-embedlib retain their source pins. Configure source overrides and codec options
+fallback. glslang, SDL_shadercross, and cpp-embedlib retain their source pins. A supplied `glslang-standalone` target
+replaces glslang's build and must provide the pinned version; the dependency test reuses the parent's tool this way.
+Configure source overrides and codec options
 before adding the framework. Source defaults respect normal and cache `SDLIMAGE_*` overrides; third-party packages still
 manage their own transitive dependencies. Source-built SDL3 and SDL_image follow `FCG_USE_SHARED_SDL`, while the framework
 follows `FCG_SHARED_LIBS` or `BUILD_SHARED_LIBS`.
