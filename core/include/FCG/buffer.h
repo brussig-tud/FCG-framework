@@ -9,137 +9,110 @@
 //
 
 /// \defgroup fcg_buffers Buffer facilities
-/// \ingroup fcg_components
+/// \ingroup fcg_modules
 /// \brief GPU storage, host transfers, batched uploads, asynchronous readback, and pushed uniforms.
 ///
-/// \section buffers_model Resource model and lifetime
+/// This module covers everything that moves bytes between the CPU and the GPU, and the GPU storage itself:
+/// <tt>\ref fcg::Buffer "Buffer"</tt> owns a fixed-size GPU allocation for vertices, indices, indirect arguments, or
+/// graphics/compute storage; <tt>\ref fcg::TransferBuffer "TransferBuffer"</tt> is host-visible memory for transfers;
+/// <tt>\ref fcg::UploadBatch "UploadBatch"</tt> collects several uploads and submits them together;
+/// <tt>\ref fcg::BufferReadback "BufferReadback"</tt> reads GPU contents back to the CPU; and
+/// <tt>\ref fcg::pushUniforms "pushUniforms"</tt> pushes small uniform blocks directly into a command buffer.
+///
+/// \section fcg_buffers_usage Getting started
+/// Include the module's header:
 /// \snippet buffer_examples.cpp includes
-///
-/// A <code>\ref fcg::Buffer</code> owns a fixed-size GPU allocation. Use SDL usage flags for vertices, indices,
-/// indirect arguments, or graphics/compute storage. Instance data is a vertex buffer whose pipeline description uses
-/// \c SDL_GPU_VERTEXINPUTRATE_INSTANCE. Storage bindings address whole buffers, not arbitrary subranges. SDL does not
-/// expose a GPU uniform-buffer handle: <code>\ref fcg::pushUniforms</code> copies CPU values into a command buffer's
-/// vertex, fragment, or compute uniform slot instead.
-///
-/// A <code>\ref fcg::TransferBuffer</code> is host-visible staging storage, created for either upload or download. Its
-/// <code>\ref fcg::TransferBuffer::Mapping</code> guard unmaps on destruction. Destroy mappings before moving or
-/// destroying their transfer buffer (including a readback ticket containing it). The device must outlive every
-/// resource. Resources are move-only; moving transfers ownership and leaves the source empty.
-/// <code>\ref fcg::Buffer "Buffer"</code> destruction asks SDL to release storage when safe and never waits for GPU
-/// idle. None of these objects provides internal thread synchronization; externally serialize access and record/submit
-/// command buffers on the thread that acquired them.
-///
-/// All sizes and offsets are in bytes, even in typed overloads. Typed uploads accept trivially copyable elements
-/// and copy their object representations, without serializing, converting, or fixing shader layout. Uniforms must
-/// follow `std140` and storage data `std430`. In particular, align `vec3`/`vec4` fields to 16 bytes and account for matrix
-/// column and array strides. Trivially copyable does not mean shader-compatible. The portable uniform helper limits
-/// each push to 4096 bytes (the descriptor range in SDL 3.4's Vulkan backend); use storage for larger blocks.
-///
-/// \section buffers_errors Construction, absence, and errors
-/// <code>\ref fcg::Buffer "Buffer"</code> and <code>\ref fcg::TransferBuffer "TransferBuffer"</code> have no default
-/// constructor. Their <code>\ref fcg::Buffer::create "Buffer::create"</code> and
-/// <code>\ref fcg::TransferBuffer::create "TransferBuffer::create"</code> factories return either a fully initialized
-/// resource or an error. Required resource members should be initialized directly from successful factory results. Use
-/// \c std::optional for resources created later or released before their containing object. Moving transfers ownership;
-/// the source has a null handle and zero size and may be destroyed or reassigned. Moving an already moved-from owner
-/// transfers that empty state. Moving out of an optional does not disengage the optional: explicitly reset it when it
-/// should represent absence. Never reset, replace, move, or destroy an optional transfer buffer while a mapping still
-/// borrows it.
-///
-/// Factories return <code>std::expected&lt;T,\ref fcg::BufferError "BufferError"&gt;</code>, and operations return
-/// <code>std::expected&lt;void,\ref fcg::BufferError "BufferError"&gt;</code>. Inspect the error's code and owned
-/// message; SDL failures capture \c SDL_GetError immediately. The facilities do not log, so callers can decide how to
-/// report or recover. Standard allocation exceptions can still propagate from C++ containers and strings. Moved-from
-/// owners reject resource operations with <code>\ref fcg::BufferErrorCode::InvalidState</code>. Empty uploads are
-/// no-ops on valid owners; zero-size allocations and downloads are errors. Buffers smaller than four bytes use a
-/// four-byte SDL allocation internally while retaining the requested logical size.
-///
-/// \section buffers_upload Choosing an upload path
-/// For occasional data, <code>\ref buffers_create_initial_data "Buffer::create"</code> with initial data or
-/// <code>\ref fcg::Buffer::upload "Buffer::upload"</code> allocates temporary staging and submits one copy pass. It
-/// copies CPU bytes once and returns without waiting. For repeated or multi-buffer updates, retain an
-/// <code>\ref fcg::UploadBatch "UploadBatch"</code>: it packs bytes directly into mapped staging pages, retains pages
-/// and descriptor capacity, and amortizes allocation and command submission. Once staged, the input CPU span may be
-/// destroyed. Destinations must remain alive until the queued operations have been recorded.
-/// <code>\ref fcg::UploadBatch::record "record()"</code> uses a caller-owned copy pass;
-/// <code>\ref fcg::UploadBatch::submit "submit()"</code> creates and submits a command buffer. Neither is called
-/// implicitly by a destructor.
-///
-/// The following snippets are compiled as part of the buffer examples target. Functions return errors to their
-/// caller; pipeline/pass parameters must already be valid for the given device and data layout.
+/// The typical way to get data onto the GPU is to create a buffer with initial contents and bind it in a render pass:
 /// \snippet buffer_examples.cpp geometry
+/// All sizes and offsets are in bytes, even in the typed overloads. Data is copied as-is; making it readable in a
+/// shader is the caller's responsibility (see \ref fcg_buffers_workflows_layout).
 ///
-/// Keep required buffers together and make the entire resource optional when creation is delayed.
-/// \snippet buffer_examples.cpp optional_ownership
-///
-/// A binding at slot 1 becomes per-instance when the pipeline uses the following description. Index element size
-/// is supplied when binding, not when allocating the index buffer.
-/// \snippet buffer_examples.cpp instances
-///
-/// Keep the batch outside your frame loop. After <code>\ref fcg::UploadBatch::record "record()"</code> the caller must
-/// end the copy pass before rendering and submit its command buffer later. A successful
-/// <code>\ref fcg::UploadBatch::record "record"</code> only encodes work; it does not submit or complete it.
+/// \section fcg_buffers_workflows Common tasks
+/// \subsection fcg_buffers_workflows_uploads Uploading data
+/// For occasional data, create the buffer with initial contents or call
+/// <tt>\ref fcg::Buffer::upload "Buffer::upload"</tt>: both copy the CPU bytes once and return without waiting for the
+/// GPU. Once the call returns, the input CPU data can be released.
+/// For repeated or multi-buffer updates, keep an <tt>\ref fcg::UploadBatch "UploadBatch"</tt> outside the frame loop:
+/// its <tt>\ref fcg::UploadBatch::upload "upload"</tt> copies CPU data into the batch, and
+/// <tt>\ref fcg::UploadBatch::submit "submit"</tt> records and submits all queued uploads in one go. Use
+/// <tt>\ref fcg::UploadBatch::record "record"</tt> instead to record the uploads into a copy pass that you manage
+/// yourself.
 /// \snippet buffer_examples.cpp batch
 ///
-/// \section buffers_cycling Partial updates and cycling
-/// <code>\ref fcg::UploadBatch "UploadBatch"</code> always cycles a staging page when mapping it for a new batch,
-/// protecting bytes referenced by earlier commands. Destination cycling is independent and defaults to `false`. Setting
-/// it to `true` may select fresh GPU storage: all contents not rewritten are undefined for subsequent commands,
-/// although earlier bound data remains valid. For several writes building one replacement, cycle only the first write.
-/// Set `false` for a partial update that must preserve other bytes. Never overwrite host staging still referenced by
-/// GPU work without cycling or waiting for its fence. Noncycling GPU copies remain ordered on the GPU timeline; CPU
-/// mapping is not such a copy.
+/// \subsection fcg_buffers_workflows_partial Partial updates and cycling
+/// The \c cycle flag of an upload decides whether existing buffer contents may be discarded. Leave it \c false for a
+/// partial update that must preserve the other bytes, and set it \c true when the upload replaces the whole content;
+/// for several uploads that together build one replacement, cycle only the first one.
 /// \snippet buffer_examples.cpp partial
 ///
-/// For procedural data, map a <code>\ref fcg::TransferBuffer "TransferBuffer"</code> and write directly to avoid an
-/// intermediate CPU array. End the mapping before recording the upload. With the low-level transfer path, the caller
-/// owns synchronization and submission.
+/// \subsection fcg_buffers_workflows_procedural Writing data directly
+/// For data that is produced on the CPU anyway, map a <tt>\ref fcg::TransferBuffer "TransferBuffer"</tt> and write
+/// into it directly, then upload it:
 /// \snippet buffer_examples.cpp mapped
 ///
-/// \section buffers_shaders Uniforms, storage, and indirect commands
-/// Uniform pushes copy immediately, so the input object can die afterwards. Data remains in a slot until another
-/// push replaces it in the same command buffer. There are four slots per shader stage; slots must also match the
-/// shader's declared resources. Pushing during a render or compute pass is allowed.
-/// \snippet buffer_examples.cpp uniforms
+/// \subsection fcg_buffers_workflows_bindings Binding buffers
+/// Vertex and index buffers are bound in a render pass by slot. A buffer becomes per-instance data when the pipeline's
+/// vertex input description uses \c SDL_GPU_VERTEXINPUTRATE_INSTANCE for its slot; the index element size is supplied
+/// when binding, not when allocating the buffer:
+/// \snippet buffer_examples.cpp instances
+/// Storage bindings address whole buffers; there is no subrange binding.
 ///
-/// Graphics shader creation must declare its storage resources as well as uniforms. SPIR-V uses set 0 for vertex
-/// storage, set 2 for fragment storage, set 1 for vertex uniforms, and set 3 for fragment uniforms. Within a storage
-/// set, samplers precede storage textures, which precede storage buffers, with consecutive bindings from zero.
+/// \subsection fcg_buffers_workflows_layout Uniforms, storage, and shader layout
+/// Uniform blocks are pushed per draw call with <tt>\ref fcg::pushUniforms "pushUniforms"</tt>:
+/// \snippet buffer_examples.cpp uniforms
+/// Uniform data must follow \c std140 and storage data \c std430. In particular, align \c vec3 and \c vec4 fields to
+/// 16 bytes and account for matrix column and array strides; trivially copyable does not mean shader-compatible.
+/// \note A uniform push is limited to 4096 bytes; use a storage buffer for larger blocks.
+///
+/// Graphics shaders that read storage buffers must declare them at pipeline creation; see
+/// <tt>\ref fcg::Device::createShader "Device::createShader"</tt> for the binding rules.
 /// \snippet buffer_examples.cpp graphics_storage
 ///
-/// Compute read-only buffers are bound inside a pass; writable buffers are provided when beginning it. A writable
-/// buffer can also be read by its shader. End a compute pass before another dependent dispatch: reads and writes
-/// within the same compute pass are not implicitly synchronized. Configure compute shader bindings according to
-/// \c SDL_CreateGPUComputePipeline; pipeline creation remains an SDL operation.
+/// In compute passes, read-only buffers are bound inside the pass, while writable buffers are provided when beginning
+/// it. A writable buffer can also be read by its shader. End a compute pass before a dispatch that depends on its
+/// results: reads and writes within one compute pass are not implicitly synchronized.
 /// \snippet buffer_examples.cpp compute
 ///
-/// Indirect argument buffers use SDL's argument structs and \c INDIRECT usage. Add \c COMPUTE_STORAGE_WRITE if a compute
-/// shader generates them. The following functions assume the appropriate graphics or compute pipeline is bound.
+/// \subsection fcg_buffers_workflows_indirect Indirect commands
+/// Draw and dispatch argument buffers use SDL's argument structs and the \c SDL_GPU_BUFFERUSAGE_INDIRECT usage. Add
+/// \c SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE if a compute shader generates the arguments. The indirect draw and
+/// dispatch functions assume that the appropriate pipeline is already bound.
 /// \snippet buffer_examples.cpp indirect
 ///
-/// GPU-to-GPU copies require no CPU staging. Both ranges must fit, and overlapping self-copies are rejected.
+/// \subsection fcg_buffers_workflows_copy Copying on the GPU
+/// <tt>\ref fcg::Buffer::copyTo "Buffer::copyTo"</tt> copies between buffers entirely on the GPU, without CPU
+/// staging. Both ranges must fit, and overlapping self-copies are rejected.
 /// \snippet buffer_examples.cpp copy
 ///
-/// \section buffers_readback Host readback and submission ordering
-/// <code>\ref fcg::Buffer::readback "Buffer::readback"</code> allocates a download buffer and submits a separate copy
-/// with a fence. It sees work already submitted, not commands pending in another unsubmitted command buffer. No host
-/// mirror or readback allocation is kept by ordinary <code>\ref fcg::Buffer "Buffer"</code> objects. A ticket can be
-/// destroyed while pending without waiting; SDL retires its storage safely. The device retains abandoned fences until a
-/// later readback, idle wait, or teardown collects them. <code>\ref fcg::BufferReadback::ready "ready()"</code> polls,
-/// <code>\ref fcg::BufferReadback::wait "wait()"</code> explicitly blocks, and
-/// <code>\ref fcg::BufferReadback::map "map()"</code> reports
-/// <code>\ref fcg::BufferErrorCode::NotReady "NotReady"</code> until the fence is signaled. A mapping borrows ticket
-/// storage and must end before the ticket moves or dies. A mapped download is a snapshot, not live GPU memory. Copy
-/// bytes into your own objects with `memcpy` when you need typed CPU values.
-/// \snippet buffer_examples.cpp readback
+/// \section fcg_buffers_lifetime Ownership and lifetime
+/// The device must outlive every resource created from it. Resources are move-only: moving transfers ownership and
+/// leaves the source empty, and operations on an empty source fail with
+/// <tt>\ref fcg::BufferErrorCode::InvalidState "InvalidState"</tt>. There are no default constructors; create resources
+/// with the \c create factories and keep them directly, or in \c std::optional when creation is delayed or release may
+/// happen earlier:
+/// \snippet buffer_examples.cpp optional_ownership
+/// Destroying a resource asks SDL to release its storage as soon as the GPU no longer uses it, and never waits for GPU
+/// idle. Do not move or destroy a transfer buffer while one of its mappings still exists. None of these objects
+/// synchronizes internally; use them from the thread that acquired the command buffers involved.
 ///
-/// To download as part of an existing render/compute submission, call
-/// <code>\ref fcg::Buffer::downloadTo "Buffer::downloadTo"</code> in a copy pass with a caller-owned download
-/// <code>\ref fcg::TransferBuffer "TransferBuffer"</code>. End the pass, submit with
-/// \c SDL_SubmitGPUCommandBufferAndAcquireFence, and wait or poll that fence before
-/// <code>\ref fcg::TransferBuffer::map "map(false)"</code>. Never cycle a download mapping: that could discard the
-/// result. The wrapper cannot inspect raw command-buffer ownership, pass state, or external fences; these remain caller
-/// preconditions. See SDL's GPU overview for the underlying synchronization and shader-binding contracts.
+/// \section fcg_buffers_errors Handling errors
+/// Factories return <tt>std::expected&lt;T, \ref fcg::BufferError "BufferError"&gt;</tt> and operations return
+/// <tt>std::expected&lt;void, \ref fcg::BufferError "BufferError"&gt;</tt>. Inspect the error's
+/// <tt>\ref fcg::BufferError::code "code"</tt> and <tt>\ref fcg::BufferError::message "message"</tt>; SDL failures are
+/// captured with their diagnostics. The facilities do not log, so you decide how to report or recover. Standard
+/// allocation exceptions can still propagate from C++ containers. Empty uploads are no-ops on valid buffers;
+/// zero-size allocations and downloads are errors.
+///
+/// \section fcg_buffers_examples More examples
+/// Besides the transfer paths above, GPU contents can be read back to the CPU. The standalone form allocates a
+/// download buffer, submits its own copy, and the result is then polled, awaited, and mapped:
+/// \snippet buffer_examples.cpp readback
+/// To download as part of an existing render or compute submission, call
+/// <tt>\ref fcg::Buffer::downloadTo "Buffer::downloadTo"</tt> in a copy pass with a download
+/// <tt>\ref fcg::TransferBuffer "TransferBuffer"</tt>, then end the pass, submit the command buffer, and wait for its
+/// fence before mapping the transfer buffer.
+///
+/// \see \ref fcg_textures, \ref fcg_devices
 
 
 
@@ -196,35 +169,42 @@ namespace fcg {
 /// The library top-level namespace.
 namespace fcg {
 
+/// \addtogroup fcg_buffers
+/// @{
+
 
 
 //////
 //
-// Structs & enums
+// Structs and enums
 //
 
-/// Categories of recoverable buffer failures. \ingroup fcg_buffers
+/// Categories of errors reported by buffer operations.
 enum class BufferErrorCode
 {
-	/// Invalid size, range, usage, slot, or device combination.
+	/// An argument is invalid: a size, offset or range is out of bounds, a usage flag, slot or stage is unsuitable, a
+	/// pass or command buffer is null, or the resources involved belong to different devices.
 	InvalidArgument,
 
-	/// Moved-from owner, duplicate mapping, or incompatible current state.
+	/// The object is moved-from, or its current state does not permit the operation, e.g. a transfer buffer that is
+	/// already mapped.
 	InvalidState,
 
-	/// A nonblocking readback mapping was requested before GPU completion.
+	/// A readback was mapped before the GPU completed it.
 	NotReady,
 
-	/// SDL resource creation, mapping, submission, or waiting failed.
+	/// An SDL call failed to create, map, submit or wait.
 	SDLFailure
 };
 
-/// A self-contained failure; messages remain valid after subsequent SDL calls. \ingroup fcg_buffers
-struct BufferError {
-	/// Machine-readable error category for recovery decisions.
+/// Error returned by buffer operations: a category plus a human-readable message (including SDL's message where
+/// relevant).
+struct BufferError
+{
+	/// The error category.
 	BufferErrorCode code;
 
-	/// Human-readable context, including captured SDL diagnostics when applicable.
+	/// A human-readable description of the error, including SDL's error message for SDL failures.
 	std::string message;
 };
 
@@ -235,17 +215,21 @@ struct BufferError {
 // Classes
 //
 
-/// \brief Host-visible upload or download staging, with exclusive scoped mapping. \ingroup fcg_buffers
+/// \brief
+/// 	Host-visible staging memory for uploading data to GPU buffers or downloading data from them.
 ///
-/// The device is borrowed and must outlive this owner and its mapping. Only one mapping may exist at a time. Map upload
-/// storage with cycling when earlier commands may still reference it; download storage must be fence-ready and mapped
-/// without cycling. This class cannot know about externally submitted fences. Moving or destroying a mapped owner
-/// violates a precondition (asserted in debug builds). Destruction releases storage without waiting. There is no
-/// default constructor, instances are obtained via <code>\ref create</code> . Only moves can leave an existing owner
-/// without storage.
+/// For an upload, create a transfer buffer with \c SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, write into it through
+/// \c map, end the mapping, then record the copy with \c Buffer::uploadFrom in a copy pass. For a download, create it
+/// with \c SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, record \c Buffer::downloadTo, submit the command buffer with a fence,
+/// wait for the fence, then map the transfer buffer and read the data. \c Buffer::upload, \c UploadBatch and
+/// \c Buffer::readback manage the staging memory for you in common cases.
 ///
-/// All access needs to be externally serialized. See \ref fcg_buffers for complete transfer and synchronization
-/// examples.
+/// Only one mapping can be active at a time. A transfer buffer must not be moved or destroyed while it is mapped
+/// (checked by an assertion in debug builds). The device must outlive the transfer buffer. Destruction never waits for
+/// the GPU. All access must be serialized externally.
+///
+/// A moved-from transfer buffer is empty: \c handle returns \c nullptr and \c size returns zero. Only assignment and
+/// destruction are valid; \c map returns \c InvalidState.
 class FCG_FRAMEWORK_EXPORT TransferBuffer
 {
 public:
@@ -253,84 +237,100 @@ public:
 	////
 	// Types
 
-	// Forward declaration of our mapping guard class (defined outside for readability).
+	// Forward declaration of the mapping guard class (defined outside for readability).
 	class Mapping;
 
 
 	////
 	// Object construction/destruction
 
-	/// Create staging memory. Does not map, submit, or wait.
+	/// \brief
+	/// 	Create an unmapped transfer buffer.
 	///
-	/// \param device Borrowed device; must outlive the returned owner and any mapping.
-	/// \param size Number of bytes; must be nonzero and fit \c Uint32.
-	/// \param usage SDL upload or download direction (not a combination).
-	/// \param properties Optional SDL creation properties; borrowed only during this call.
+	/// \param device
+	/// 	The device to create the transfer buffer on. Must outlive the transfer buffer.
+	/// \param size
+	/// 	The size in bytes; between 1 and \c UINT32_MAX.
+	/// \param usage
+	/// 	The transfer direction: \c SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD or \c SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD.
+	/// \param properties
+	/// 	SDL properties for the creation, only read during the call; 0 for none.
 	///
-	/// \returns
-	/// 	An owner, \link BufferErrorCode::InvalidArgument <code>InvalidArgument</code> \endlink for invalid input, or
-	/// 	\link BufferErrorCode::SDLFailure <code>SDLFailure</code> \endlink for allocation failure.
+	/// \return
+	/// 	The transfer buffer, or an error: \c InvalidArgument for an invalid size or usage, \c SDLFailure if SDL
+	/// 	fails to allocate it.
 	[[nodiscard]] static auto create (
 		Device &device, std::size_t size, SDL_GPUTransferBufferUsage usage, SDL_PropertiesID properties=0
 	) -> std::expected<TransferBuffer, BufferError>;
 
-	/// Release staging without waiting. There must be no live `Mapping` referring to this owner.
+	/// \brief
+	/// 	Release the transfer buffer without waiting for the GPU.
+	///
+	/// \pre
+	/// 	The transfer buffer is not mapped.
 	~TransferBuffer ();
 
-	/// A \c TransferBuffer cannot be copy-constructed (staging storage has unique ownership).
+	/// Not copyable.
 	TransferBuffer (const TransferBuffer&) = delete;
 
-	/// A \c TransferBuffer cannot be copy-assigned (staging storage has unique ownership).
+	/// Not copy-assignable.
 	auto operator= (const TransferBuffer&) -> TransferBuffer& = delete;
 
-	/// Transfer ownership and empty the source without waiting. The source must not have a live mapping.
+	/// \brief
+	/// 	Take over the memory of another transfer buffer.
 	///
-	/// \param other Source owner, left without storage after the move.
+	/// \pre
+	/// 	\c other is not mapped.
+	///
+	/// \param other
+	/// 	The transfer buffer to move from; it is left empty.
 	TransferBuffer (TransferBuffer &&other) noexcept;
 
-	/// Move assignment. Release existing storage, take ownership, and empty the source. Neither owner may be mapped; no
-	/// GPU wait.
+	/// \brief
+	/// 	Release this transfer buffer's memory and take over the memory of another one.
 	///
-	/// \param other Source owner, left empty after a successful move; self-assignment is a no-op.
+	/// Self-assignment has no effect.
 	///
-	/// \returns A reference to this owner.
+	/// \pre
+	/// 	Neither transfer buffer is mapped.
+	///
+	/// \param other
+	/// 	The transfer buffer to move from; it is left empty.
+	///
+	/// \return
+	/// 	A reference to this transfer buffer.
 	auto operator= (TransferBuffer &&other) noexcept -> TransferBuffer&;
 
 
 	////
 	// Accessors
 
-	/// Borrow the SDL handle, or null for a moved-from owner. Never release it through SDL; ownership stays here.
+	/// \brief
+	/// 	Access the underlying SDL transfer buffer.
 	///
-	/// \returns The borrowed SDL handle, or `nullptr` after move; ownership stays with this object.
+	/// \return
+	/// 	The SDL handle, or \c nullptr if moved-from. The transfer buffer keeps ownership; never release the handle
+	/// 	yourself.
 	[[nodiscard]] inline auto handle () const -> SDL_GPUTransferBuffer* {
 		return m_handle;
 	}
 
-	/// Logical allocation size in bytes; zero for a moved-from owner. No synchronization is performed.
-	///
-	/// \returns The logical allocation size in bytes, or zero after move.
+	/// The size in bytes, or zero if moved-from.
 	[[nodiscard]] inline auto size () const -> std::size_t {
 		return m_size;
 	}
 
-	/// Transfer direction. Meaningful only when `handle()` is non-null.
-	///
-	/// \returns The fixed creation usage; meaningful only while owning storage.
+	/// The transfer direction chosen at creation. Only meaningful if the transfer buffer is not moved-from.
 	[[nodiscard]] inline auto usage () const -> SDL_GPUTransferBufferUsage {
 		return m_usage;
 	}
 
-	/// Whether a live mapping currently borrows this storage. Does not query GPU completion.
-	///
-	/// \returns `true` while an exclusive CPU mapping is active, `false` otherwise.
+	/// Whether a mapping of this transfer buffer is currently active.
 	[[nodiscard]] auto mapped () const -> bool {
 		return m_mapped;
 	}
 
-	/// Borrow the associated device, or null for a moved-from owner. Does not extend its lifetime.
-	///
-	/// \returns The borrowed creating device, or `nullptr` after move.
+	/// The device the transfer buffer was created on, or \c nullptr if moved-from.
 	[[nodiscard]] auto device () const -> Device* {
 		return m_device;
 	}
@@ -339,21 +339,26 @@ public:
 	////
 	// Methods
 
-	/// Map the whole allocation without submitting or waiting. The returned guard unmaps automatically.
+	/// \brief
+	/// 	Map the whole transfer buffer into CPU memory for reading or writing.
+	///
+	/// The mapping stays active until the returned \c Mapping is destroyed or unmapped. Never waits for the GPU.
 	///
 	/// \pre
-	/// 	Any GPU download has completed. With noncycling upload mapping, no GPU command may still read the bytes
-	/// 	being changed. The owner must remain alive at its current address until the mapping ends.
+	/// 	For a download transfer buffer, the GPU has completed the download into it, e.g. its fence has signaled.
+	/// 	For an upload transfer buffer mapped without \c cycle, no submitted GPU command still reads the bytes you
+	/// 	are going to overwrite. The transfer buffer is neither moved nor destroyed until the mapping ends.
 	///
 	/// \param cycle
-	/// 	Select fresh storage if bound; allowed only for upload buffers. Defaults to `false` so download results cannot
-	/// 	accidentally be discarded. Upload callers should normally pass `true`.
+	/// 	Only allowed for upload transfer buffers. If \c true and the transfer buffer is still in use by submitted
+	/// 	GPU work, SDL provides fresh memory, so earlier commands keep reading their data; the mapped contents are
+	/// 	then undefined. Pass \c true when refilling an upload transfer buffer whose earlier contents may still be in
+	/// 	use.
 	///
-	/// \returns
-	/// A mapping guard for the transfer buffer, or \link BufferErrorCode::InvalidState <code>InvalidState</code> \endlink
-	/// if moved from/already mapped, \link BufferErrorCode::InvalidArgument <code>InvalidArgument</code> \endlink for
-	/// download cycling, or \link BufferErrorCode::SDLFailure <code>SDLFailure</code> \endlink if mapping fails. A failed
-	/// call leaves the owner unmapped (or its existing mapping intact).
+	/// \return
+	/// 	The mapping, or an error: \c InvalidState if the transfer buffer is moved-from or already mapped,
+	/// 	\c InvalidArgument if \c cycle is \c true for a download transfer buffer, \c SDLFailure if SDL fails to map
+	/// 	it. On failure, the mapping state of the transfer buffer is unchanged.
 	[[nodiscard]] auto map (bool cycle=false) -> std::expected<Mapping, BufferError>;
 
 
@@ -362,13 +367,16 @@ private:
 	////
 	// Object construction/destruction
 
-	/// Construct adopting a successful allocation. For internal use only, use <code>\ref create</code> to obtain an
-	/// instance.
+	/// Construct adopting a successful allocation. For internal use only, use \c create to obtain an instance.
 	///
-	/// \param device Borrowed creating device; must outlive the allocation.
-	/// \param handle Non-null SDL allocation whose ownership is transferred here.
-	/// \param size Validated nonzero logical byte count.
-	/// \param usage Validated transfer direction.
+	/// \param device
+	/// 	Borrowed creating device; must outlive the allocation.
+	/// \param handle
+	/// 	Non-null SDL allocation whose ownership is transferred here.
+	/// \param size
+	/// 	Validated nonzero logical byte count.
+	/// \param usage
+	/// 	Validated transfer direction.
 	TransferBuffer (
 		Device &device, SDL_GPUTransferBuffer *handle, std::size_t size, SDL_GPUTransferBufferUsage usage
 	) noexcept
@@ -388,25 +396,30 @@ private:
 	/// Logical size of the buffer in bytes.
 	std::size_t m_size = 0;
 
-	/// The once-fixed transfer direction.
+	/// The transfer direction, fixed at creation.
 	SDL_GPUTransferBufferUsage m_usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
 
-	/// Whether exclusive CPU mapping is active.
+	/// Whether a mapping is currently active.
 	bool m_mapped = false;
 };
 
-/// \brief Exclusive mapping of a `TransferBuffer`; its destructor unmaps, without waiting. \ingroup fcg_buffers
+/// \brief
+/// 	Scoped CPU access to the memory of a mapped \c TransferBuffer.
 ///
-/// Returned only after a successful map. The transfer owner must outlive this guard and stay at the same address.
-/// Moving the guard transfers the mapping and empties the source; spans obtained before the move remain valid until the
-/// new guard unmaps. Pointers must not escape that lifetime. The driver owns the memory: never free it. Download
-/// mappings expose bytes only after caller-managed synchronization (or `BufferReadback`'s fence check).
+/// Obtained from \c TransferBuffer::map or \c BufferReadback::map. The memory is accessible through \c data until the
+/// mapping is destroyed or \c unmap is called; then all pointers and spans into it become invalid. The memory belongs
+/// to SDL; never free it. Moving a mapping transfers it to the new object, and spans obtained before the move stay
+/// valid until the new object ends the mapping. The mapped transfer buffer or readback must stay alive and must not be
+/// moved while the mapping is active. Writing to the mapping of a download only changes the CPU copy, not the GPU
+/// buffer. Ending a mapping never waits for the GPU.
+///
+/// A moved-from mapping is empty: \c data returns an empty span.
 class FCG_FRAMEWORK_EXPORT TransferBuffer::Mapping
 {
 	////
 	// Friend declarations
 
-	/// Only the transfer owner can adopt a successful SDL mapping.
+	/// Creates mappings in \c TransferBuffer::map.
 	friend class TransferBuffer;
 
 
@@ -415,43 +428,54 @@ public:
 	////
 	// Object construction/destruction
 
-	/// Unmap if still active. Every pointer/span into this mapping is invalidated. Does not submit or wait.
+	/// End the mapping if it is still active. All pointers and spans into it become invalid.
 	~Mapping ();
 
-	/// A \c Mapping cannot be copy-constructed (exactly one guard must perform the unmap).
+	/// Not copyable.
 	Mapping (const Mapping&) = delete;
 
-	/// A \c Mapping cannot be copy-assigned (exactly one guard must perform the unmap).
+	/// Not copy-assignable.
 	auto operator= (const Mapping&) -> Mapping& = delete;
 
-	/// The move constructor. Transfer the active mapping; the source becomes empty and no longer unmaps anything.
+	/// \brief
+	/// 	Take over the active mapping of another guard.
 	///
-	/// \param other Source owner, left empty after the move.
+	/// \param other
+	/// 	The mapping guard to move from; it is left empty.
 	Mapping (Mapping &&other) noexcept;
 
-	/// Move assignment. Unmap this guard's previous storage, then take the other's mapping. The source becomes empty;
-	/// no GPU wait.
+	/// \brief
+	/// 	End this guard's mapping if active, then take over the mapping of another guard.
 	///
-	/// \param other Source owner, left empty after a successful move; self-assignment is a no-op.
+	/// Self-assignment has no effect.
 	///
-	/// \returns A reference to this owner.
+	/// \param other
+	/// 	The mapping guard to move from; it is left empty.
+	///
+	/// \return
+	/// 	A reference to this mapping guard.
 	auto operator= (Mapping &&other) noexcept -> Mapping&;
 
 
 	////
 	// Accessors
 
-	/// Mutable mapped bytes, or an empty span after move/unmap. Valid only until this mapping ends.
-	/// For downloads, mutations affect staging only, not the original GPU buffer.
+	/// \brief
+	/// 	Access the mapped bytes for reading and writing.
 	///
-	/// \returns A span over the active mapping, or an empty span after move or unmap.
+	/// \return
+	/// 	A span over the whole mapped memory, valid until the mapping ends, or an empty span if the mapping has
+	/// 	ended or was moved from.
 	[[nodiscard]] auto data () -> std::span<std::byte> {
 		return m_data;
 	}
 
-	/// Read-only mapped bytes, or an empty span after move/unmap. Does not extend the mapping lifetime.
+	/// \brief
+	/// 	Access the mapped bytes for reading.
 	///
-	/// \returns A span over the active mapping, or an empty span after move or unmap.
+	/// \return
+	/// 	A span over the whole mapped memory, valid until the mapping ends, or an empty span if the mapping has
+	/// 	ended or was moved from.
 	[[nodiscard]] auto data () const -> std::span<const std::byte> {
 		return m_data;
 	}
@@ -460,7 +484,7 @@ public:
 	////
 	// Methods
 
-	/// End the mapping early and invalidate its spans. Safe to call repeatedly; never submits or waits.
+	/// End the mapping early. All pointers and spans into it become invalid. Calling it again has no effect.
 	void unmap ();
 
 
@@ -469,37 +493,46 @@ private:
 	////
 	// Object construction/destruction
 
-	/// Construct adopting a successful mapping. For internal use only, use <code>\ref TransferBuffer::map</code> to obtain
-	/// an instance.
+	/// Construct adopting a successful mapping. For internal use only, use \c TransferBuffer::map to obtain an
+	/// instance.
 	///
-	/// \param owner The parent transfer buffer that is being mapped.
-	/// \param data The view on the driver-owned transfer buffer bytes at the mapping.
+	/// \param owner
+	/// 	The transfer buffer that has been mapped.
+	/// \param data
+	/// 	The driver-owned bytes of the mapping.
 	Mapping (TransferBuffer &owner, std::span<std::byte> data) : owner(&owner), m_data(data) {}
 
 
 	////
 	// Fields
 
-	/// The parent transfer buffer that is being mapped. Needed so the guard can autonomously unmap and mark available
-	/// again.
+	/// The mapped transfer buffer, or null once the mapping has ended. Lets the guard unmap the transfer buffer and
+	/// mark it as available again.
 	TransferBuffer *owner = nullptr;
 
 	/// Driver-owned bytes, invalid after unmapping.
 	std::span<std::byte> m_data;
 };
 
-/// \brief A submitted buffer download and its completion fence. \ingroup fcg_buffers
+/// \brief
+/// 	A pending download of buffer contents to CPU memory, created by \c Buffer::readback.
 ///
-/// Obtained from <code>\ref Buffer::readback</code>; owns staging and a fence, not the source GPU buffer. No source
-/// ownership is needed after submission. Destruction may occur before completion and does not wait. `Mapping` is
-/// exclusive and permitted only after the fence signals. Destroy the mapping before moving or destroying the ticket.
-/// The device must outlive the ticket. Access must be externally serialized, including polling and waiting.
+/// Keep the readback after calling \c Buffer::readback, check \c ready in later frames (or call \c wait to block),
+/// then \c map it and copy the bytes into your own objects, e.g. with \c std::memcpy. The mapped bytes are a copy of
+/// the buffer range at the time the GPU executed the download.
+///
+/// The source buffer is not needed after \c Buffer::readback returns. A readback can be destroyed at any time, even
+/// while the GPU is still working on it; destruction never waits for the GPU. Only one mapping can be active at a time,
+/// and the readback must not be moved or destroyed while it is mapped. The device must outlive the readback. All
+/// access, including \c ready and \c wait, must be serialized externally.
+///
+/// A moved-from readback is empty: \c ready returns \c false, and \c wait and \c map return \c InvalidState.
 class FCG_FRAMEWORK_EXPORT BufferReadback
 {
 	////
 	// Friend declarations
 
-	/// Only `Buffer::readback` can adopt storage and its successfully submitted fence.
+	/// Creates readbacks in \c Buffer::readback.
 	friend class Buffer;
 
 
@@ -508,45 +541,76 @@ public:
 	////
 	// Object construction/destruction
 
-	/// Release fence and download storage without waiting. No mapping may outlive this ticket.
+	/// \brief
+	/// 	Destroy the readback without waiting for the GPU.
+	///
+	/// \pre
+	/// 	The readback is not mapped.
 	~BufferReadback ();
 
-	/// A \c BufferReadback cannot be copy-constructed (a ticket uniquely owns its fence and storage).
+	/// Not copyable.
 	BufferReadback (const BufferReadback&) = delete;
 
-	/// A \c BufferReadback cannot be copy-assigned (a ticket uniquely owns its fence and storage).
+	/// Not copy-assignable.
 	auto operator= (const BufferReadback&) -> BufferReadback& = delete;
 
-	/// The move constructor. Transfer the pending/completed operation and empty the source. No mapping may be active.
+	/// \brief
+	/// 	Take over another readback, whether pending or completed.
 	///
-	/// \param other Source owner, left empty after the move.
+	/// \pre
+	/// 	\c other is not mapped.
+	///
+	/// \param other
+	/// 	The readback to move from; it is left empty.
 	BufferReadback (BufferReadback &&other) noexcept;
 
-	/// Move assignment. Release this operation and take another, without waiting. Neither ticket may have a live
-	/// mapping.
+	/// \brief
+	/// 	Discard this readback without waiting for the GPU and take over another one.
 	///
-	/// \param other Source owner, left empty after a successful move; self-assignment is a no-op.
+	/// Self-assignment has no effect.
 	///
-	/// \returns A reference to this owner.
+	/// \pre
+	/// 	Neither readback is mapped.
+	///
+	/// \param other
+	/// 	The readback to move from; it is left empty.
+	///
+	/// \return
+	/// 	A reference to this readback.
 	auto operator= (BufferReadback &&other) noexcept -> BufferReadback&;
 
 
 	////
 	// Methods
 
-	/// Poll the fence without blocking. Returns `false` for an moved-from ticket; never maps or submits.
+	/// \brief
+	/// 	Check whether the GPU has completed the download. Never blocks.
 	///
-	/// \returns `true` when this ticket's fence has signaled, `false` while pending or after move.
+	/// \return
+	/// 	\c true once the download has completed, \c false while it is pending or if the readback is moved-from.
 	[[nodiscard]] auto ready () const -> bool;
 
-	/// Wait for this operation only, not the entire device. Repeated waits on a completed ticket are allowed.
+	/// \brief
+	/// 	Block until the GPU has completed this download.
 	///
-	/// \returns Success, `InvalidState` for a moved-from ticket, or `SDLFailure` if waiting fails.
+	/// Only waits for this readback, not for other GPU work. Returns immediately if the download has already
+	/// completed.
+	///
+	/// \return
+	/// 	Nothing on success, or an error: \c InvalidState if the readback is moved-from, \c SDLFailure if waiting
+	/// 	fails.
 	[[nodiscard]] auto wait () const -> std::expected<void, BufferError>;
 
-	/// Map completed staging without waiting. The guard must end before moving or destroying this ticket.
+	/// \brief
+	/// 	Map the downloaded bytes for reading. Never blocks.
 	///
-	/// \returns A mapping, `NotReady` if pending, `InvalidState` if moved from/already mapped, or `SDLFailure`.
+	/// \pre
+	/// 	The readback is neither moved nor destroyed until the mapping ends.
+	///
+	/// \return
+	/// 	A mapping containing exactly the requested range of the buffer, or an error: \c NotReady if the GPU has not
+	/// 	completed the download, \c InvalidState if the readback is moved-from or already mapped, \c SDLFailure if
+	/// 	SDL fails to map the data.
 	[[nodiscard]] auto map () -> std::expected<TransferBuffer::Mapping, BufferError>;
 
 
@@ -555,10 +619,12 @@ private:
 	////
 	// Object construction/destruction
 
-	/// Construct adopting the given download storage and its successfully acquired completion fence.
+	/// Construct adopting the given download storage and the fence acquired when submitting the download.
 	///
-	/// \param owner The \c TransferBuffer that was used for downloading.
-	/// \param data The view on the driver-owned transfer buffer bytes at the mapping.
+	/// \param storage
+	/// 	The download transfer buffer that receives the data.
+	/// \param fence
+	/// 	Preallocated node holding the successfully acquired completion fence.
 	BufferReadback (TransferBuffer &&storage, std::unique_ptr<Device::RetiredFence> fence);
 
 
@@ -568,19 +634,23 @@ private:
 	/// The download allocation, kept alive while the fence is pending.
 	TransferBuffer m_storage;
 
-	/// Preallocated fence ownership; handed to the device if abandoned.
+	/// Preallocated fence ownership; handed to the device for retirement if the readback is abandoned.
 	std::unique_ptr<Device::RetiredFence> m_fence;
 };
 
-/// \brief Fixed-size GPU memory with typed upload conveniences and explicit SDL interoperability. \ingroup fcg_buffers
+/// \brief
+/// 	A fixed-size block of GPU memory, e.g. for vertices, indices, indirect draw arguments or shader storage.
 ///
-/// Owns one \c SDL_GPUBuffer , borrows its device, and never retains a CPU mirror or permanent upload/download staging.
-/// Use <code>\ref UploadBatch</code> for frequent uploads. Usage is fixed at creation; combine compatible SDL flags for
-/// resources generated by compute and later consumed as vertices, storage, or indirect arguments. Allocations cannot
-/// resize, but you can create a replacement and optionally copy old contents. All offsets and lengths are bytes.
-/// Destruction releases through SDL without a device-wide wait. Access is externally synchronized; a handle does not
-/// extend ownership. There is no default constructor. Obtain instances through <code>\ref create</code> . Only moves
-/// can leave an existing owner without storage.
+/// Create a buffer with \c create, choosing the SDL usage flags for everything you want to use it for; size and usage
+/// cannot be changed later. To grow a buffer, create a larger one and copy the old contents with \c copyTo. Fill the
+/// buffer with \c upload for occasional updates, or use an \c UploadBatch for frequent ones. Bind it in render or
+/// compute passes with \c bindVertex, \c bindIndex and \c bindStorage, and read its contents back with \c readback.
+/// All offsets and sizes are in bytes.
+///
+/// The device must outlive the buffer. Destruction never waits for the GPU. All access must be serialized externally.
+///
+/// A moved-from buffer is empty: \c handle returns \c nullptr, and \c size and \c usage return zero. Only assignment
+/// and destruction are valid; other operations return \c InvalidState.
 class FCG_FRAMEWORK_EXPORT Buffer
 {
 public:
@@ -588,39 +658,72 @@ public:
 	////
 	// Object construction/destruction
 
-	/// Allocate uninitialized GPU memory. No staging allocation, submission, or wait occurs.
+	/// \brief
+	/// 	Create a buffer with uninitialized contents.
 	///
-	/// \param device Borrowed creating device, which must outlive the buffer.
-	/// \param size Logical bytes, nonzero and representable by \c Uint32; backing storage is at least four bytes.
-	/// \param usage Nonzero SDL usage flags. \c VERTEX and \c INDEX cannot be combined.
-	/// \param properties SDL creation properties, borrowed only for this call; zero means no properties.
+	/// \param device
+	/// 	The device to create the buffer on. Must outlive the buffer.
+	/// \param size
+	/// 	The size in bytes; between 1 and \c UINT32_MAX.
+	/// \param usage
+	/// 	The SDL buffer usage flags; must be non-zero. \c SDL_GPU_BUFFERUSAGE_VERTEX and
+	/// 	\c SDL_GPU_BUFFERUSAGE_INDEX cannot be combined.
+	/// \param properties
+	/// 	SDL properties for the creation, only read during the call; 0 for none.
 	///
-	/// \returns An owner, `InvalidArgument` for invalid parameters, or `SDLFailure` for allocation failure.
+	/// \return
+	/// 	The buffer, or an error: \c InvalidArgument for an invalid size or usage, \c SDLFailure if SDL fails to
+	/// 	allocate it.
 	[[nodiscard]] static auto create (
 		Device &device, std::size_t size, SDL_GPUBufferUsageFlags usage, SDL_PropertiesID properties=0
 	) -> std::expected<Buffer, BufferError>;
 
-	/// Allocate and submit an initial upload. CPU data is copied before return; GPU completion is asynchronous.
+	/// \brief
+	/// 	Create a buffer of the size of \c data and upload \c data into it.
+	///
 	/// \anchor buffers_create_initial_data
+	/// The data is copied before the function returns. The upload is submitted on its own command buffer; the
+	/// function does not wait for it to complete.
 	///
-	/// \param device Borrowed device that must outlive the returned buffer.
-	/// \param data Initial bytes, nonempty and at most \c Uint32 bytes.
-	/// \param usage Fixed SDL buffer usage flags.
-	/// \param properties Optional SDL allocation properties, borrowed during creation.
+	/// \param device
+	/// 	The device to create the buffer on. Must outlive the buffer.
+	/// \param data
+	/// 	The initial contents; between 1 and \c UINT32_MAX bytes. Only read during the call.
+	/// \param usage
+	/// 	The SDL buffer usage flags; must be non-zero. \c SDL_GPU_BUFFERUSAGE_VERTEX and
+	/// 	\c SDL_GPU_BUFFERUSAGE_INDEX cannot be combined.
+	/// \param properties
+	/// 	SDL properties for the creation, only read during the call; 0 for none.
 	///
-	/// \returns An initialized owner or the allocation/upload error. Failure releases all temporary resources.
+	/// \return
+	/// 	The buffer, or an error: \c InvalidArgument for empty or too large data or an invalid usage, \c SDLFailure
+	/// 	if SDL fails to allocate the buffer or to stage and submit the upload. On failure, no resources remain
+	/// 	allocated.
 	[[nodiscard]] static auto create (
 		Device &device, std::span<const std::byte> data, SDL_GPUBufferUsageFlags usage, SDL_PropertiesID properties=0
 	) -> std::expected<Buffer, BufferError>;
 
-	/// Typed initial upload; equivalent to the byte overload using `std::as_bytes`, with no layout conversion.
+	/// \brief
+	/// 	Create a buffer of the size of \c data and upload the elements of \c data into it.
 	///
-	/// \tparam T Trivially copyable element type (possibly `const`).
-	/// \tparam Extent Static or dynamic span extent.
-	/// \param device Borrowed device. \param data Nonempty input elements, copied during the call.
-	/// \param usage Fixed SDL usage flags. \param properties Optional creation properties.
+	/// Equivalent to the byte overload called with <tt>std::as_bytes(data)</tt>. The elements are copied bitwise,
+	/// without any layout conversion.
 	///
-	/// \returns The created owner or the same errors as the byte overload; `sizeof(T)` contributes to byte size.
+	/// \tparam T
+	/// 	The element type; must be trivially copyable, and may be \c const.
+	/// \tparam Extent
+	/// 	The static or dynamic extent of the span.
+	/// \param device
+	/// 	The device to create the buffer on. Must outlive the buffer.
+	/// \param data
+	/// 	The initial contents; must not be empty. Only read during the call.
+	/// \param usage
+	/// 	The SDL buffer usage flags, as for the byte overload.
+	/// \param properties
+	/// 	SDL properties for the creation, only read during the call; 0 for none.
+	///
+	/// \return
+	/// 	The buffer of <tt>data.size_bytes()</tt> bytes, or the same errors as the byte overload.
 	template <class T, std::size_t Extent> requires std::is_trivially_copyable_v<T>
 	[[nodiscard]] static auto create (
 		Device &device, std::span<T, Extent> data, SDL_GPUBufferUsageFlags usage, SDL_PropertiesID properties=0
@@ -628,126 +731,223 @@ public:
 		return create(device, std::span<const std::byte>(std::as_bytes(data)), usage, properties);
 	}
 
-	/// Release through SDL without waiting for GPU idle. Queued but unrecorded `UploadBatch` references must end first.
+	/// \brief
+	/// 	Release the buffer without waiting for the GPU.
+	///
+	/// GPU work that was already submitted and uses the buffer is unaffected.
+	///
+	/// \pre
+	/// 	No \c UploadBatch holds queued writes to this buffer that have not been recorded yet.
 	~Buffer ();
 
-	/// GPU allocations have unique ownership and cannot be copied.
+	/// Not copyable.
 	Buffer (const Buffer&) = delete;
 
-	/// GPU allocations cannot be copy-assigned.
+	/// Not copy-assignable.
 	auto operator= (const Buffer&) -> Buffer& = delete;
 
-	/// Transfer ownership, leaving the source empty. Recorded SDL commands remain valid; no GPU wait occurs.
+	/// \brief
+	/// 	Take over the GPU memory of another buffer.
 	///
-	/// \param other Source owner, left empty after the move.
+	/// \param other
+	/// 	The buffer to move from; it is left empty.
 	Buffer (Buffer &&other) noexcept;
 
-	/// Release current storage and take the other's allocation. The source becomes empty; no GPU wait occurs.
+	/// \brief
+	/// 	Release this buffer's GPU memory without waiting for the GPU and take over the memory of another buffer.
 	///
-	/// \param other Source owner, left empty after a successful move; self-assignment is a no-op.
+	/// Self-assignment has no effect.
 	///
-	/// \returns A reference to this owner.
+	/// \param other
+	/// 	The buffer to move from; it is left empty.
+	///
+	/// \return
+	/// 	A reference to this buffer.
 	auto operator= (Buffer &&other) noexcept -> Buffer&;
 
 
 	////
 	// Accessors
 
-	/// Borrow the SDL handle for indirect commands and other interoperability; null after move. Do not release it.
+	/// \brief
+	/// 	Access the underlying SDL buffer, e.g. for indirect draw calls or other direct use of the SDL GPU API.
 	///
-	/// \returns The borrowed SDL handle, or `nullptr` after move; ownership stays with this object.
+	/// \return
+	/// 	The SDL handle, or \c nullptr if moved-from. The buffer keeps ownership; never release the handle yourself.
 	[[nodiscard]] auto handle () const -> SDL_GPUBuffer* { return m_handle; }
 
-	/// Fixed logical byte count, or zero after move; this is not an element count.
-	///
-	/// \returns The logical allocation size in bytes, or zero after move.
+	/// The size in bytes (not in elements), or zero if moved-from.
 	[[nodiscard]] auto size () const -> std::size_t { return m_size; }
 
-	/// Creation usage flags, or zero after move. Does not query or synchronize the GPU.
-	///
-	/// \returns The fixed creation usage; meaningful only while owning storage.
+	/// The SDL usage flags chosen at creation, or zero if moved-from.
 	[[nodiscard]] auto usage () const -> SDL_GPUBufferUsageFlags { return m_usage; }
 
-	/// Borrow the creating device, or null after move. The caller must keep it alive independently.
-	///
-	/// \returns The borrowed creating device, or `nullptr` after move.
+	/// The device the buffer was created on, or \c nullptr if moved-from.
 	[[nodiscard]] auto device () const -> Device* { return m_device; }
 
 
 	////
 	// Transfers
 
-	/// Copy CPU bytes into temporary staging and submit one upload without waiting for completion.
+	/// \brief
+	/// 	Copy CPU data into the buffer.
 	///
-	/// \param data Bytes copied before return; an empty span is a no-op for a valid buffer/range.
-	/// \param offset Destination byte offset; the entire span must fit the logical size.
-	/// \param cycle Cycle destination storage if bound. `false` preserves other bytes; `true` may discard them.
+	/// The data is copied into temporary staging memory, and the upload is submitted on its own command buffer before
+	/// the function returns. The function does not wait for the upload to complete. For frequent updates, prefer an
+	/// \c UploadBatch.
 	///
-	/// \returns Success after submission, or a validation/SDL error. Success does not imply GPU completion.
+	/// \param data
+	/// 	The bytes to write, only read during the call. An empty span does nothing.
+	/// \param offset
+	/// 	The byte offset in the buffer at which to write. The written range must lie within the buffer.
+	/// \param cycle
+	/// 	If \c true and the buffer is still in use by submitted GPU work, SDL may give the buffer fresh memory;
+	/// 	the bytes outside the written range are then undefined. Pass \c false to preserve the rest of the buffer.
+	///
+	/// \return
+	/// 	Nothing on success, or an error: \c InvalidState if the buffer is moved-from, \c InvalidArgument if the
+	/// 	range does not fit, \c SDLFailure if staging or submitting the upload fails.
 	[[nodiscard]] auto upload (std::span<const std::byte> data, std::size_t offset=0, bool cycle=false)
 		-> std::expected<void, BufferError>;
 
-	/// Upload trivially copyable elements without conversion; delegates to the byte overload.
+	/// \brief
+	/// 	Copy the elements of \c data into the buffer.
 	///
-	/// \tparam T Trivially copyable element type. \tparam Extent Static or dynamic span extent.
+	/// Equivalent to the byte overload called with <tt>std::as_bytes(data)</tt>. The elements are copied bitwise,
+	/// without any layout conversion.
 	///
-	/// \param data Elements copied during the call. \param offset Destination offset in bytes, not elements.
-	/// \param cycle Whether destination storage may be discarded. \returns The byte upload's result.
+	/// \tparam T
+	/// 	The element type; must be trivially copyable, and may be \c const.
+	/// \tparam Extent
+	/// 	The static or dynamic extent of the span.
+	/// \param data
+	/// 	The elements to write, only read during the call. An empty span does nothing.
+	/// \param offset
+	/// 	The byte offset (not element index) in the buffer at which to write.
+	/// \param cycle
+	/// 	Whether SDL may give the buffer fresh memory, as for the byte overload.
+	///
+	/// \return
+	/// 	The same result as the byte overload.
 	template <class T, std::size_t Extent> requires std::is_trivially_copyable_v<T>
 	[[nodiscard]] auto upload (std::span<T, Extent> data, std::size_t offset=0, bool cycle=false)
 		-> std::expected<void, BufferError> {
 		return upload(std::span<const std::byte>(std::as_bytes(data)), offset, cycle);
 	}
 
-	/// Record a staging-to-GPU copy into an active copy pass; never submits or waits.
+	/// \brief
+	/// 	Record a copy from an upload transfer buffer into this buffer.
 	///
-	/// \pre The pass is valid and source bytes are initialized; neither resource is released before recording.
+	/// The copy executes when the command buffer of \c pass is submitted. Until it has completed on the GPU, refill
+	/// \c source only by mapping it with cycling.
 	///
-	/// \param pass Active copy pass on this device. \param source Unmapped `UPLOAD` staging on this device.
-	/// \param size Bytes to copy (zero is a no-op after validation). \param sourceOffset Staging byte offset.
-	/// \param destinationOffset GPU byte offset. \param cycle Whether destination contents may be discarded.
+	/// \pre
+	/// 	\c pass is an active copy pass of a command buffer on this buffer's device, used on the thread that acquired
+	/// 	the command buffer. The bytes to copy have been written to \c source.
 	///
-	/// \returns Success after encoding, or an invalid-argument/state error. Both ranges must fit.
+	/// \param pass
+	/// 	The copy pass to record into.
+	/// \param source
+	/// 	An unmapped upload transfer buffer on the same device.
+	/// \param size
+	/// 	The number of bytes to copy; zero records nothing.
+	/// \param sourceOffset
+	/// 	The byte offset in \c source to copy from.
+	/// \param destinationOffset
+	/// 	The byte offset in this buffer to copy to.
+	/// \param cycle
+	/// 	If \c true and the buffer is still in use by submitted GPU work, SDL may give the buffer fresh memory;
+	/// 	the bytes outside the written range are then undefined. Pass \c false to preserve the rest of the buffer.
+	///
+	/// \return
+	/// 	Nothing on success, or an error: \c InvalidState if this buffer or \c source is moved-from or \c source is
+	/// 	mapped, \c InvalidArgument if \c pass is null, \c source is on another device or is not an upload transfer
+	/// 	buffer, or either range does not fit.
 	[[nodiscard]] auto uploadFrom (
 		SDL_GPUCopyPass *pass, const TransferBuffer &source, std::size_t size, std::size_t sourceOffset=0,
 		std::size_t destinationOffset=0, bool cycle=false
 	) -> std::expected<void, BufferError>;
 
-	/// Record a GPU-to-staging copy; the caller submits and waits on a fence before mapping the destination.
+	/// \brief
+	/// 	Record a copy from this buffer into a download transfer buffer.
 	///
-	/// \pre No earlier pending download or live mapping uses the destination range. Pass/device validity is caller-owned.
+	/// To read the data, end the copy pass, submit its command buffer with
+	/// \c SDL_SubmitGPUCommandBufferAndAcquireFence, wait for or poll the fence, then map \c destination without
+	/// cycling. \c readback does all of this for you.
 	///
-	/// \param pass Active copy pass on this device. \param destination Unmapped `DOWNLOAD` staging on this device.
-	/// \param size Nonzero bytes to download. \param sourceOffset GPU byte offset.
-	/// \param destinationOffset Staging byte offset.
+	/// \pre
+	/// 	\c pass is an active copy pass of a command buffer on this buffer's device, used on the thread that acquired
+	/// 	the command buffer. No other pending download writes to the same range of \c destination.
 	///
-	/// \returns Success after encoding, or an invalid-argument/state error; success is not host visibility.
+	/// \param pass
+	/// 	The copy pass to record into.
+	/// \param destination
+	/// 	An unmapped download transfer buffer on the same device.
+	/// \param size
+	/// 	The number of bytes to copy; must not be zero.
+	/// \param sourceOffset
+	/// 	The byte offset in this buffer to copy from.
+	/// \param destinationOffset
+	/// 	The byte offset in \c destination to copy to.
+	///
+	/// \return
+	/// 	Nothing on success, or an error: \c InvalidState if this buffer or \c destination is moved-from or
+	/// 	\c destination is mapped, \c InvalidArgument if \c pass is null, \c size is zero, \c destination is on
+	/// 	another device or is not a download transfer buffer, or either range does not fit.
 	[[nodiscard]] auto downloadTo (
 		SDL_GPUCopyPass *pass, TransferBuffer &destination, std::size_t size, std::size_t sourceOffset=0,
 		std::size_t destinationOffset=0
 	) const -> std::expected<void, BufferError>;
 
-	/// Record a GPU-to-GPU copy. Subsequent GPU commands see the copied bytes; no CPU staging or wait is involved.
+	/// \brief
+	/// 	Record a copy from this buffer into another buffer, entirely on the GPU.
 	///
-	/// \param pass Active copy pass on the common device. \param destination `Buffer` to receive the bytes.
-	/// \param size Bytes to copy; zero is a no-op after validation. \param sourceOffset Source byte offset.
-	/// \param destinationOffset Destination byte offset. \param cycle Whether destination contents may be discarded.
+	/// GPU commands executed after the copy see the copied bytes.
 	///
-	/// \returns
-	/// 	Success or a validation error. Both ranges must fit; overlapping self-copies are invalid. Self-copy with
-	/// 	cycling is rejected because it can change which underlying allocation supplies the source.
+	/// \pre
+	/// 	\c pass is an active copy pass of a command buffer on the buffers' device, used on the thread that acquired
+	/// 	the command buffer.
+	///
+	/// \param pass
+	/// 	The copy pass to record into.
+	/// \param destination
+	/// 	The buffer to copy into, on the same device. May be this buffer if the source and destination ranges do not
+	/// 	overlap and \c cycle is \c false.
+	/// \param size
+	/// 	The number of bytes to copy; zero records nothing.
+	/// \param sourceOffset
+	/// 	The byte offset in this buffer to copy from.
+	/// \param destinationOffset
+	/// 	The byte offset in \c destination to copy to.
+	/// \param cycle
+	/// 	If \c true and \c destination is still in use by submitted GPU work, SDL may give it fresh memory; the bytes
+	/// 	outside the written range are then undefined. Pass \c false to preserve the rest of \c destination.
+	///
+	/// \return
+	/// 	Nothing on success, or an error: \c InvalidState if either buffer is moved-from, \c InvalidArgument if
+	/// 	\c pass is null, the buffers are on different devices, either range does not fit, or a copy within the same
+	/// 	buffer has overlapping ranges or uses cycling.
 	[[nodiscard]] auto copyTo (
 		SDL_GPUCopyPass *pass, Buffer &destination, std::size_t size, std::size_t sourceOffset=0,
 		std::size_t destinationOffset=0, bool cycle=false
 	) const -> std::expected<void, BufferError>;
 
-	/// Submit a separate download with its own staging and fence; returns without waiting for completion.
+	/// \brief
+	/// 	Start downloading a range of this buffer to CPU memory.
 	///
-	/// \pre Writes to be observed have already been submitted. Commands pending in other command buffers are excluded.
+	/// The download is submitted on its own command buffer, and the function returns immediately with a
+	/// \c BufferReadback that can be polled, waited for and mapped. The downloaded data reflects all GPU work
+	/// submitted before this call, but not commands in command buffers that have not been submitted yet.
 	///
-	/// \param offset Source byte offset. \param size Bytes to copy; `dynamic_extent` means the remaining buffer.
+	/// \param offset
+	/// 	The byte offset of the range to download.
+	/// \param size
+	/// 	The number of bytes to download; \c std::dynamic_extent downloads everything from \c offset to the end of
+	/// 	the buffer.
 	///
-	/// \returns An owning ticket, or validation/SDL failure. Empty ranges are invalid. No host mirror is retained here.
+	/// \return
+	/// 	The readback, or an error: \c InvalidState if the buffer is moved-from, \c InvalidArgument if the range is
+	/// 	empty or does not fit, \c SDLFailure if allocating staging memory or submitting the download fails.
 	[[nodiscard]] auto readback (std::size_t offset=0, std::size_t size=std::dynamic_extent) const
 		-> std::expected<BufferReadback, BufferError>;
 
@@ -755,54 +955,124 @@ public:
 	////
 	// Bindings
 
-	/// Build a borrowed SDL vertex/index descriptor; does not record commands or extend buffer lifetime.
+	/// \brief
+	/// 	Get an SDL vertex or index buffer binding for this buffer.
 	///
-	/// \param offset Byte offset strictly within the buffer.
+	/// Use the result with \c SDL_BindGPUVertexBuffers or \c SDL_BindGPUIndexBuffer, e.g. to bind several buffers in
+	/// one call. The binding refers to the buffer without keeping it alive.
 	///
-	/// \returns A descriptor, or `InvalidState`/`InvalidArgument` for an empty, incompatible, or out-of-range buffer.
+	/// \param offset
+	/// 	The byte offset of the first vertex or index; must be less than \c size.
+	///
+	/// \return
+	/// 	The binding, or an error: \c InvalidState if the buffer is moved-from, \c InvalidArgument if it has neither
+	/// 	\c SDL_GPU_BUFFERUSAGE_VERTEX nor \c SDL_GPU_BUFFERUSAGE_INDEX usage or \c offset is out of range.
 	[[nodiscard]] auto binding (std::size_t offset=0) const -> std::expected<SDL_GPUBufferBinding, BufferError>;
 
-	/// Build a borrowed compute-write descriptor for \c SDL_BeginGPUComputePass; requires \c COMPUTE_STORAGE_WRITE.
+	/// \brief
+	/// 	Get an SDL binding for this buffer as writable compute storage, for use with \c SDL_BeginGPUComputePass.
 	///
-	/// \param cycle Whether pass startup may discard previous buffer contents.
+	/// The buffer needs \c SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE usage. The compute shader can also read a
+	/// writable storage buffer. The binding refers to the buffer without keeping it alive.
 	///
-	/// \returns A descriptor or an moved-from/incompatible-buffer error. No pass is begun and no synchronization occurs.
+	/// \param cycle
+	/// 	If \c true and the buffer is still in use by submitted GPU work, SDL may give the buffer fresh memory when
+	/// 	the compute pass begins; its previous contents are then undefined.
+	///
+	/// \return
+	/// 	The binding, or an error: \c InvalidState if the buffer is moved-from, \c InvalidArgument if it lacks
+	/// 	\c SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE usage.
 	[[nodiscard]] auto readWriteBinding (bool cycle=false) const
 		-> std::expected<SDL_GPUStorageBufferReadWriteBinding, BufferError>;
 
-	/// Bind one vertex/instance buffer; requires \c VERTEX usage and an active compatible render pass.
+	/// \brief
+	/// 	Bind this buffer as a vertex buffer, e.g. for per-vertex or per-instance attributes.
 	///
-	/// \param pass Active render pass on this device. \param slot Pipeline vertex slot.
-	/// \param offset Byte offset within the buffer; layout/stride are supplied by the pipeline.
+	/// The buffer needs \c SDL_GPU_BUFFERUSAGE_VERTEX usage. The attribute layout, stride and input rate come from the
+	/// bound pipeline.
 	///
-	/// \returns Success after encoding or a validation error. SDL validates pipeline-specific slot limits.
+	/// \pre
+	/// 	\c pass is an active render pass on this buffer's device.
+	///
+	/// \param pass
+	/// 	The render pass to record into.
+	/// \param slot
+	/// 	The vertex buffer slot, as declared in the pipeline's vertex input state.
+	/// \param offset
+	/// 	The byte offset of the first element; must be less than \c size.
+	///
+	/// \return
+	/// 	Nothing on success, or an error: \c InvalidState if the buffer is moved-from, \c InvalidArgument if it lacks
+	/// 	\c SDL_GPU_BUFFERUSAGE_VERTEX usage, \c pass is null, or \c offset is out of range.
 	[[nodiscard]] auto bindVertex (SDL_GPURenderPass *pass, Uint32 slot=0, std::size_t offset=0) const
 		-> std::expected<void, BufferError>;
 
-	/// Bind an index buffer; requires \c INDEX usage and a compatible active render pass.
+	/// \brief
+	/// 	Bind this buffer as the index buffer for subsequent indexed draws.
 	///
-	/// \param pass Active render pass. \param elementSize SDL 16-bit or 32-bit index size.
-	/// \param offset Byte offset, aligned to the chosen element size, with at least one element remaining.
+	/// The buffer needs \c SDL_GPU_BUFFERUSAGE_INDEX usage.
 	///
-	/// \returns Success after encoding or a validation error. Does not draw or submit.
+	/// \pre
+	/// 	\c pass is an active render pass on this buffer's device.
+	///
+	/// \param pass
+	/// 	The render pass to record into.
+	/// \param elementSize
+	/// 	The index size: \c SDL_GPU_INDEXELEMENTSIZE_16BIT or \c SDL_GPU_INDEXELEMENTSIZE_32BIT.
+	/// \param offset
+	/// 	The byte offset of the first index; must be a multiple of the index size, with at least one complete index
+	/// 	between \c offset and the end of the buffer.
+	///
+	/// \return
+	/// 	Nothing on success, or an error: \c InvalidState if the buffer is moved-from, \c InvalidArgument if it lacks
+	/// 	\c SDL_GPU_BUFFERUSAGE_INDEX usage, \c pass is null, \c elementSize is invalid, or \c offset is misaligned
+	/// 	or out of range.
 	[[nodiscard]] auto bindIndex (
 		SDL_GPURenderPass *pass, SDL_GPUIndexElementSize elementSize, std::size_t offset=0
 	) const -> std::expected<void, BufferError>;
 
-	/// Bind this whole buffer as graphics read-only storage; requires \c GRAPHICS_STORAGE_READ usage.
+	/// \brief
+	/// 	Bind the whole buffer as read-only storage for the vertex or fragment shader.
 	///
-	/// \param pass Active render pass. \param stage `VERTEX` or `FRAGMENT` (`COMPUTE` is invalid for this overload).
-	/// \param slot Storage-buffer slot declared by the shader, independent of sampler/texture slots.
+	/// The buffer needs \c SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ usage, and the shader must declare the storage
+	/// buffer (see <tt>\ref ShaderResources "ShaderResources"</tt>).
 	///
-	/// \returns Success after encoding or a validation error. Shader counts/layout must match the pipeline.
+	/// \pre
+	/// 	\c pass is an active render pass on this buffer's device.
+	///
+	/// \param pass
+	/// 	The render pass to record into.
+	/// \param stage
+	/// 	The shader stage to bind to; <tt>ShaderStage::VERTEX</tt> or <tt>ShaderStage::FRAGMENT</tt>.
+	/// \param slot
+	/// 	The index of the storage buffer among the storage buffers declared by the shader stage, starting at 0 and
+	/// 	independent of samplers and storage textures.
+	///
+	/// \return
+	/// 	Nothing on success, or an error: \c InvalidState if the buffer is moved-from, \c InvalidArgument if it lacks
+	/// 	\c SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ usage, \c pass is null, or \c stage is
+	/// 	<tt>ShaderStage::COMPUTE</tt>.
 	[[nodiscard]] auto bindStorage (SDL_GPURenderPass *pass, ShaderStage stage, Uint32 slot=0) const
 		-> std::expected<void, BufferError>;
 
-	/// Bind this whole buffer as compute read-only storage; requires \c COMPUTE_STORAGE_READ usage.
+	/// \brief
+	/// 	Bind the whole buffer as read-only storage for the compute shader.
 	///
-	/// \param pass Active compute pass. \param slot Read-only storage-buffer slot declared by the compute shader.
+	/// The buffer needs \c SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ usage. Writable storage buffers are passed to
+	/// \c SDL_BeginGPUComputePass instead; see \c readWriteBinding.
 	///
-	/// \returns Success after encoding or a validation error. Writable bindings instead use `readWriteBinding()`.
+	/// \pre
+	/// 	\c pass is an active compute pass on this buffer's device.
+	///
+	/// \param pass
+	/// 	The compute pass to record into.
+	/// \param slot
+	/// 	The index of the storage buffer among the read-only storage buffers declared by the compute shader,
+	/// 	starting at 0.
+	///
+	/// \return
+	/// 	Nothing on success, or an error: \c InvalidState if the buffer is moved-from, \c InvalidArgument if it lacks
+	/// 	\c SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ usage or \c pass is null.
 	[[nodiscard]] auto bindStorage (SDL_GPUComputePass *pass, Uint32 slot=0) const -> std::expected<void, BufferError>;
 
 
@@ -811,13 +1081,16 @@ private:
 	////
 	// Object construction/destruction
 
-	/// Construct adopting a successful allocation. For internal use only, use <code>\ref create</code> to obtain an
-	/// instance.
+	/// Construct adopting a successful allocation. For internal use only, use \c create to obtain an instance.
 	///
-	/// \param device Borrowed creating device; must outlive the allocation.
-	/// \param handle Non-null SDL allocation whose ownership is transferred here.
-	/// \param size Validated nonzero logical byte count.
-	/// \param usage Validated SDL usage flags.
+	/// \param device
+	/// 	Borrowed creating device; must outlive the allocation.
+	/// \param handle
+	/// 	Non-null SDL allocation whose ownership is transferred here.
+	/// \param size
+	/// 	Validated nonzero logical byte count.
+	/// \param usage
+	/// 	Validated SDL usage flags.
 	Buffer (Device &device, SDL_GPUBuffer *handle, std::size_t size, SDL_GPUBufferUsageFlags usage) noexcept
 		: m_device(&device), m_handle(handle), m_size(size), m_usage(usage)
 	{}
@@ -832,22 +1105,27 @@ private:
 	/// Owned SDL allocation.
 	SDL_GPUBuffer *m_handle = nullptr;
 
-	/// Logical byte size, possibly smaller than SDL's minimum allocation.
+	/// Logical byte size; the SDL allocation is at least four bytes even if this is smaller.
 	std::size_t m_size = 0;
 
 	/// Fixed SDL usage mask.
 	SDL_GPUBufferUsageFlags m_usage = 0;
 };
 
-/// \brief Reusable packed staging for several uploads and/or repeated frames. \ingroup fcg_buffers
+/// \brief
+/// 	Collects writes to one or more buffers and records them together, reusing its staging memory.
 ///
-/// <code>\ref upload</code> copies input immediately into mapped pages and queues descriptors, but records no commands.
-/// <code>\ref record</code> unmaps pages and encodes all queued uploads in order into a borrowed pass;
-/// <code>\ref submit</code> owns a fresh command buffer. Afterwards, the same batch can be reused while prior
-/// submissions are in flight: staging maps cycle automatically. Page and descriptor allocations are retained until
-/// destruction; destination allocations are never owned. Keep destinations alive until recording, and the device alive
-/// throughout. Destruction discards unrecorded work rather than submitting it. Access is externally serialized. A
-/// moved-from batch rejects further uploads/recording.
+/// Keep one batch for as long as you need to update buffers, e.g. as a member of your applet. Whenever data changes,
+/// queue writes with \c upload, which copies the data immediately, so the input can be discarded right away. Then
+/// either call \c record in a copy pass of a command buffer you submit yourself, or call \c submit to record and
+/// submit the writes on a new command buffer. Afterwards, the batch is empty and can be reused immediately, even while
+/// earlier submissions are still executing on the GPU. Its staging memory is kept for reuse.
+///
+/// Queued writes execute in the order they were queued. Destination buffers are not owned by the batch and must stay
+/// alive until their writes have been recorded. The device must outlive the batch. Destroying or clearing a batch
+/// discards queued writes without submitting them. All access must be serialized externally.
+///
+/// A moved-from batch is empty; \c upload, \c record and \c submit return \c InvalidState.
 class FCG_FRAMEWORK_EXPORT UploadBatch
 {
 public:
@@ -855,56 +1133,91 @@ public:
 	////
 	// Object construction/destruction
 
-	/// Construct an empty batch borrowing the device. No SDL allocation, mapping, or submission occurs yet.
-	/// \param device Borrowed device; must outlive this batch and its recorded resource use.
+	/// \brief
+	/// 	Construct an empty batch for the given device. Allocates no GPU memory.
+	///
+	/// \param device
+	/// 	The device of all destination buffers. Must outlive the batch.
 	explicit UploadBatch (Device &device);
 
-	/// Unmap and release retained staging; discard queued descriptors without submitting or waiting.
+	/// Destroy the batch, discarding queued writes without submitting them. Never waits for the GPU.
 	~UploadBatch ();
 
-	/// An \c UploadBatch cannot be copy-constructed (batches uniquely own their staging).
+	/// Not copyable.
 	UploadBatch (const UploadBatch&) = delete;
 
-	/// An \c UploadBatch cannot be copy-assigned (batches uniquely own their staging).
+	/// Not copy-assignable.
 	auto operator= (const UploadBatch&) -> UploadBatch& = delete;
 
-	/// The move constructor. Transfer pages and queued operations, leaving an inert source. Existing input copies
-	/// remain queued.
+	/// \brief
+	/// 	Take over the queued writes and staging memory of another batch.
 	///
-	/// \param other Source owner, left empty after the move.
+	/// \param other
+	/// 	The batch to move from; it is left empty.
 	UploadBatch (UploadBatch &&other) noexcept;
 
-	/// Move assignement. Discards this batch's pending work and takes the other's pages/queue. No implicit submission
-	/// or GPU wait.
+	/// \brief
+	/// 	Discard this batch's queued writes and staging memory, then take over those of another batch.
 	///
-	/// \param other Source owner, left empty after a successful move; self-assignment is a no-op.
+	/// Never submits and never waits for the GPU. Self-assignment has no effect.
 	///
-	/// \returns A reference to this owner.
+	/// \param other
+	/// 	The batch to move from; it is left empty.
+	///
+	/// \return
+	/// 	A reference to this batch.
 	auto operator= (UploadBatch &&other) noexcept -> UploadBatch&;
 
 
 	////
 	// Methods
 
-	/// Stage bytes for a later `record()`/`submit()`. Previously queued entries survive a failed staging operation.
+	/// \brief
+	/// 	Queue a write of \c data to \c destination.
 	///
-	/// \param destination Live buffer on the batch's device; must survive until recording.
-	/// \param data Bytes copied before return; empty data adds no operation.
-	/// \param offset Destination byte offset. \param cycle Forwarded to SDL for this destination write only.
+	/// The bytes are copied into the batch's staging memory immediately, so \c data may be discarded after the call.
+	/// No GPU command is recorded until \c record or \c submit is called.
 	///
-	/// \returns Success or a validation/allocation/mapping error. No GPU command is recorded yet.
+	/// \param destination
+	/// 	The buffer to write to, on the batch's device. Must stay alive until the write has been recorded.
+	/// \param data
+	/// 	The bytes to write; an empty span queues nothing.
+	/// \param offset
+	/// 	The byte offset in \c destination at which to write. The written range must lie within the buffer.
+	/// \param cycle
+	/// 	If \c true and \c destination is still in use by submitted GPU work when the write executes, SDL may give it
+	/// 	fresh memory; bytes not written by this or later writes are then undefined. When several writes together
+	/// 	replace the whole buffer, pass \c true only for the first one. Pass \c false to preserve other bytes.
+	///
+	/// \return
+	/// 	Nothing on success, or an error: \c InvalidState if the batch or \c destination is moved-from,
+	/// 	\c InvalidArgument if \c destination is on another device or the range does not fit, \c SDLFailure if
+	/// 	allocating or mapping staging memory fails. On failure, previously queued writes are kept.
 	[[nodiscard]] auto upload (
 		Buffer &destination, std::span<const std::byte> data, std::size_t offset=0, bool cycle=false
 	) -> std::expected<void, BufferError>;
 
-	/// Stage trivially copyable elements using their bytes, with no shader-layout conversion.
+	/// \brief
+	/// 	Queue a write of the elements of \c data to \c destination.
 	///
-	/// \tparam T Trivially copyable element type. \tparam Extent Static or dynamic span extent.
+	/// Equivalent to the byte overload called with <tt>std::as_bytes(data)</tt>. The elements are copied bitwise,
+	/// without any layout conversion.
 	///
-	/// \param destination Borrowed GPU destination. \param data Elements copied during this call.
-	/// \param offset Destination byte offset. \param cycle Whether this write may discard old destination contents.
+	/// \tparam T
+	/// 	The element type; must be trivially copyable, and may be \c const.
+	/// \tparam Extent
+	/// 	The static or dynamic extent of the span.
+	/// \param destination
+	/// 	The buffer to write to, on the batch's device. Must stay alive until the write has been recorded.
+	/// \param data
+	/// 	The elements to write; an empty span queues nothing.
+	/// \param offset
+	/// 	The byte offset (not element index) in \c destination at which to write.
+	/// \param cycle
+	/// 	Whether SDL may give \c destination fresh memory, as for the byte overload.
 	///
-	/// \returns The same result as the byte overload; input elements need not survive successful staging.
+	/// \return
+	/// 	The same result as the byte overload.
 	template <class T, std::size_t Extent> requires std::is_trivially_copyable_v<T>
 	[[nodiscard]] auto upload (
 		Buffer &destination, std::span<T, Extent> data, std::size_t offset=0, bool cycle=false
@@ -912,23 +1225,37 @@ public:
 		return upload(destination, std::span<const std::byte>(std::as_bytes(data)), offset, cycle);
 	}
 
-	/// Unmap staging, encode queued copies in order, then clear the queue while retaining capacity.
+	/// \brief
+	/// 	Record all queued writes, in order, into a copy pass and empty the queue.
 	///
-	/// \param pass Caller-owned active copy pass on the batch device; must be ended/submitted by its caller.
+	/// The writes execute when the command buffer of \c pass is submitted. Ending the pass and submitting the command
+	/// buffer remain the caller's responsibility.
 	///
-	/// \returns
-	/// 	Success or `InvalidState`/`InvalidArgument` for a moved-from owner/null pass. Failure before encoding preserves
-	/// 	the queue. An empty queue is a no-op. Cannot verify raw pass device/thread ownership.
+	/// \pre
+	/// 	\c pass is an active copy pass of a command buffer on the batch's device, used on the thread that acquired
+	/// 	the command buffer.
+	///
+	/// \param pass
+	/// 	The copy pass to record into.
+	///
+	/// \return
+	/// 	Nothing on success, including when the queue is empty, or an error: \c InvalidState if the batch is
+	/// 	moved-from, \c InvalidArgument if \c pass is null. On failure, the queue is unchanged.
 	[[nodiscard]] auto record (SDL_GPUCopyPass *pass) -> std::expected<void, BufferError>;
 
-	/// Record and submit one owned command buffer without waiting. An empty valid batch is a successful no-op.
+	/// \brief
+	/// 	Record all queued writes on a new command buffer, submit it and empty the queue.
 	///
-	/// \returns
-	/// 	Success or an SDL/state error. Acquisition failure preserves the queue. Once encoded, the queue is consumed
-	/// 	even if submission fails; do not assume failed submissions updated any destination.
+	/// Returns without waiting for the GPU. If the queue is empty, nothing is submitted.
+	///
+	/// \return
+	/// 	Nothing on success, or an error: \c InvalidState if the batch is moved-from, \c SDLFailure if acquiring the
+	/// 	command buffer, beginning the copy pass or submitting fails. If acquiring the command buffer or beginning
+	/// 	the copy pass fails, the queue is unchanged. If submission fails, the queued writes are discarded and their
+	/// 	destinations may not have been updated.
 	[[nodiscard]] auto submit () -> std::expected<void, BufferError>;
 
-	/// Discard queued writes and unmap pages, retaining capacity for reuse. Never submits or waits.
+	/// Discard all queued writes without recording them, keeping the staging memory for reuse. Never waits for the GPU.
 	void clear ();
 
 
@@ -937,10 +1264,11 @@ private:
 	////
 	// Types
 
-	/// Stable-address staging owner and its optional live mapping. For internal use only.
+	/// Upload transfer buffer at a stable address, plus its mapping while writes are being staged. For internal use
+	/// only.
 	struct Page;
 
-	/// A single copy operation. For internal use only.
+	/// A single queued copy operation. For internal use only.
 	struct Copy
 	{
 		/// Source page index.
@@ -963,7 +1291,7 @@ private:
 	/// Borrowed common device; null after move.
 	Device *device = nullptr;
 
-	/// Stable owners; mapped pages must never move.
+	/// Staging pages, held by pointer so that mapped pages never change their address.
 	std::vector<std::unique_ptr<Page>> pages;
 
 	/// Queued copies in user order, retaining capacity across submissions.
@@ -977,30 +1305,63 @@ private:
 // Functions
 //
 
-/// \brief Push a uniform byte block to one shader stage and slot. \ingroup fcg_buffers
+/// \brief
+/// 	Push a block of uniform data to a uniform slot of one shader stage.
 ///
-/// SDL copies bytes immediately; the input may die after return. The value applies to subsequent draws/dispatches in
-/// this command buffer until replaced in the same slot. Valid inside render or compute passes; does not submit or wait.
-/// The caller supplies bytes observing \c std140 rules and matching their shader declarations. The portable block limit
-/// is 4096 bytes, matching SDL 3.4's Vulkan uniform descriptor range.
+/// The data is copied immediately and may be discarded after the call. It is used by all draws or dispatches recorded
+/// afterwards on the same command buffer, until another push to the same stage and slot replaces it. Pushing is
+/// allowed both inside and outside of render and compute passes. The bytes must follow the \c std140 layout rules and
+/// match the uniform block the shader declares at that slot.
 ///
-/// \param commandBuffer Live command buffer, used on its acquiring thread.
-/// \param stage `VERTEX`, `FRAGMENT`, or `COMPUTE`. \param slot Uniform slot in [0, 3].
-/// \param data Nonempty `std140`-compatible bytes, at most 4096 bytes.
+/// \pre
+/// 	\c commandBuffer has not been submitted yet and is used on the thread that acquired it.
 ///
-/// \returns Success after the push or `InvalidArgument` for invalid stage, slot, length, or null command buffer.
+/// \note
+/// 	A uniform block can be at most 4096 bytes. Use a storage buffer for larger data.
+///
+/// \param commandBuffer
+/// 	The command buffer to push to.
+/// \param stage
+/// 	The shader stage that receives the data.
+/// \param slot
+/// 	The uniform slot, i.e. the binding number of the uniform block in the shader; 0 to 3.
+/// \param data
+/// 	The uniform data; 1 to 4096 bytes.
+///
+/// \return
+/// 	Nothing on success, or \c InvalidArgument if \c commandBuffer is null, \c slot is greater than 3, or \c data is
+/// 	empty or larger than 4096 bytes.
 [[nodiscard]] FCG_FRAMEWORK_EXPORT auto pushUniforms (
 	SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, Uint32 slot, std::span<const std::byte> data
 ) -> std::expected<void, BufferError>;
 
-/// \brief Push contiguous uniform elements, rather than the representation of the span itself. \ingroup fcg_buffers
+/// \brief
+/// 	Push the elements of \c data as one block of uniform data.
 ///
-/// \tparam T Trivially copyable element type. \tparam Extent Static or dynamic extent.
+/// Equivalent to the byte overload called with <tt>std::as_bytes(data)</tt>: the block consists of the
+/// <tt>data.size_bytes()</tt> bytes of the elements, copied bitwise without any layout conversion.
 ///
-/// \param commandBuffer Live command buffer. \param stage Shader stage. \param slot Uniform slot [0, 3].
-/// \param data Contiguous `std140`-compatible data, copied immediately; no element layout conversion occurs.
+/// \pre
+/// 	\c commandBuffer has not been submitted yet and is used on the thread that acquired it.
 ///
-/// \returns The byte overload's result; byte length is `data.size_bytes()`, not `sizeof(span)`.
+/// \note
+/// 	A uniform block can be at most 4096 bytes. Use a storage buffer for larger data.
+///
+/// \tparam T
+/// 	The element type; must be trivially copyable, and may be \c const.
+/// \tparam Extent
+/// 	The static or dynamic extent of the span.
+/// \param commandBuffer
+/// 	The command buffer to push to.
+/// \param stage
+/// 	The shader stage that receives the data.
+/// \param slot
+/// 	The uniform slot, i.e. the binding number of the uniform block in the shader; 0 to 3.
+/// \param data
+/// 	The elements to push, laid out according to the \c std140 rules.
+///
+/// \return
+/// 	The same result as the byte overload.
 template <class T, std::size_t Extent>
 	requires std::is_trivially_copyable_v<T>
 [[nodiscard]] inline auto pushUniforms (
@@ -1010,14 +1371,32 @@ template <class T, std::size_t Extent>
 	return pushUniforms(commandBuffer, stage, slot, std::span<const std::byte>(std::as_bytes(data)));
 }
 
-/// \brief Push the object representation of a uniform value, without allocating a CPU wrapper. \ingroup fcg_buffers
+/// \brief
+/// 	Push a value as one block of uniform data.
 ///
-/// \tparam T Trivially copyable uniform structure; shader-compatible field alignment/padding is caller-owned.
+/// The block consists of the <tt>sizeof(T)</tt> bytes of \c value, copied bitwise without any layout conversion. The
+/// layout of \c T must therefore match the shader's \c std140 uniform block declaration, e.g. \c vec3 and \c vec4
+/// members must be aligned to 16 bytes.
 ///
-/// \param commandBuffer Live command buffer. \param stage Shader stage. \param slot Uniform slot [0, 3].
-/// \param value Value copied immediately, with `sizeof(T)` bytes. It need not outlive this call.
+/// \pre
+/// 	\c commandBuffer has not been submitted yet and is used on the thread that acquired it.
 ///
-/// \returns The byte overload's result. This does not infer `std140` layout or validate shader declarations.
+/// \note
+/// 	A uniform block can be at most 4096 bytes. Use a storage buffer for larger data.
+///
+/// \tparam T
+/// 	The uniform block type; must be trivially copyable.
+/// \param commandBuffer
+/// 	The command buffer to push to.
+/// \param stage
+/// 	The shader stage that receives the data.
+/// \param slot
+/// 	The uniform slot, i.e. the binding number of the uniform block in the shader; 0 to 3.
+/// \param value
+/// 	The value to push. Only read during the call.
+///
+/// \return
+/// 	The same result as the byte overload.
 template <class T>
 	requires std::is_trivially_copyable_v<T>
 [[nodiscard]] inline auto pushUniforms (
@@ -1028,6 +1407,10 @@ template <class T>
 		commandBuffer, stage, slot, std::span<const std::byte>(std::as_bytes(std::span(&value, 1)))
 	);
 }
+
+
+
+/// @}
 
 
 

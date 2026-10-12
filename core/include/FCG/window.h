@@ -1,32 +1,66 @@
 
-/**
- * \defgroup fcg_windows Windows and frames
- * \ingroup fcg_components
- *
- * <code>\ref fcg::Window</code> and <code>\ref fcg::WindowSettings</code> describe windows and their creation settings.
- * <code>\ref fcg::Frame</code> exposes frame recording and render passes.
- *
- * \par Guide incomplete
- * This guide is a stub. Consult the API declarations below for currently documented behavior.
- *
- * \section fcg_windows_workflows Common workflows
- * Guide incomplete: workflow descriptions remain to be investigated and written.
- *
- * \section fcg_windows_lifetime Ownership and lifetime
- * Guide incomplete: consult individual type and member contracts.
- *
- * \section fcg_windows_errors Errors
- * Guide incomplete: error handling remains to be investigated and written.
- *
- * \section fcg_windows_examples Examples
- * Guide incomplete: worked examples remain to be added and compiled.
- *
- * \see \ref fcg_devices, \ref fcg_render_state, \ref fcg_runtime
- */
-
-
 #ifndef __FCG_WINDOW_H__
 #define __FCG_WINDOW_H__
+
+
+//////
+//
+// Module documentation
+//
+
+/// \defgroup fcg_windows Windows and frames
+/// \ingroup fcg_modules
+/// \brief The application window, and per-frame render-pass recording through \c Frame.
+///
+/// <tt>\ref fcg::Window "Window"</tt> wraps an OS window that the GPU device renders into, and
+/// <tt>\ref fcg::Frame "Frame"</tt> represents one acquired frame: it hands out the command buffer, the scene render
+/// pass, and the scene and presentation textures. Applications run by <tt>\ref fcg::run "run"</tt> can usually skip
+/// this module: the main window is created, claimed, and driven automatically, and applets only record into the render
+/// pass they receive in <tt>\ref fcg::Applet::render "Applet::render"</tt>. Read on when managing a loop yourself, or
+/// to query window properties.
+///
+/// \section fcg_windows_usage Getting started
+/// Create a window, claim it, and run a minimal frame loop:
+/// \snippet window_examples.cpp window_setup
+/// \snippet window_examples.cpp frame_loop
+///
+/// \section fcg_windows_workflows Common tasks
+/// \subsection fcg_windows_workflows_frame Recording a frame
+/// One frame consists of a scene pass, an optional presentation, and an optional overlay pass. Start the scene pass
+/// with <tt>\ref fcg::Frame::beginRenderPass "Frame::beginRenderPass"</tt>, which clears the scene color and depth,
+/// and end it with <tt>\ref fcg::Frame::endRenderPass "endRenderPass"</tt>. Call
+/// <tt>\ref fcg::Frame::present "present"</tt> to show the scene (or another texture) on the window; it also happens
+/// automatically at <tt>\ref fcg::Window::endFrame "endFrame"</tt> if you did not present yourself. Draw the GUI, or
+/// anything else that should appear on top of the presented image, in the depth-free overlay pass from
+/// <tt>\ref fcg::Frame::beginOverlayRenderPass "beginOverlayRenderPass"</tt>.
+///
+/// \subsection fcg_windows_workflows_formats Querying formats
+/// <tt>\ref fcg::Window::renderTargetInfo "Window::renderTargetInfo"</tt> returns the color format, depth format and
+/// sample count of the scene render pass — create pipelines with these, as also reported by
+/// <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt>.
+/// <tt>\ref fcg::Window::swapchainFormat "swapchainFormat"</tt> returns the presentation format.
+///
+/// \subsection fcg_windows_workflows_resize Resizing
+/// <tt>\ref fcg::Window::viewportSize "Window::viewportSize"</tt> returns the current viewport size in pixels. Query
+/// it each frame, or react to the size change in <tt>\ref fcg::Applet::onViewportResize
+/// "Applet::onViewportResize"</tt>; the depth buffer and scene texture are recreated automatically.
+///
+/// \section fcg_windows_lifetime Ownership and lifetime
+/// Windows are created with <tt>\ref fcg::Window::create "Window::create"</tt> and held in a
+/// <tt>std::unique_ptr</tt>. A window must be claimed before frames can be acquired, and a claimed window must outlive
+/// the device that claimed it, or be released with <tt>\ref fcg::Device::unclaimWindow "Device::unclaimWindow"</tt>
+/// first; destroying a claimed window terminates the application. A <tt>\ref fcg::Frame "Frame"</tt> is never owned by
+/// the application: it is obtained from <tt>\ref fcg::Window::beginFrame "beginFrame"</tt> and stays valid until
+/// <tt>\ref fcg::Window::endFrame "endFrame"</tt>.
+///
+/// \section fcg_windows_errors Handling errors
+/// <tt>\ref fcg::Window::create "create"</tt> returns \c nullptr on failure, logged to the SDL log.
+/// <tt>\ref fcg::Window::beginFrame "beginFrame"</tt> returns \c nullptr when no frame could be acquired (e.g. while
+/// the window is minimized); skip rendering in that case. Misuse such as overlapping passes or ending an unfinished
+/// frame throws \c std::logic_error, and GPU-level acquisition or presentation failures throw \c std::runtime_error.
+///
+/// \see \ref fcg_devices, \ref fcg_render_state, \ref fcg_runtime
+
 
 
 //////
@@ -77,18 +111,17 @@ namespace fcg {
 /// The library top-level namespace.
 namespace fcg {
 
-/** \addtogroup fcg_windows
- * @{
- */
+/// \addtogroup fcg_windows
+/// @{
 
 
 
 //////
 //
-// Structs
+// Structs and enums
 //
 
-/// Creation parameters for a <code>\ref Window</code>.
+/// Creation parameters for a <tt>\ref Window</tt>.
 struct WindowSettings
 {
 	/// The text shown in the window title bar.
@@ -111,13 +144,24 @@ struct WindowSettings
 // Classes
 //
 
-/// A window that can be rendered into using a \link fcg::Device GPU device \endlink.
+/// \brief
+/// 	An operating-system window that can be rendered into with a <tt>\ref fcg::Device</tt>.
+///
+/// Before rendering, the window must be claimed by a device with \c Device::claimWindow. Each frame is then rendered
+/// by calling <tt>\ref beginFrame</tt>, recording render passes on the returned <tt>\ref Frame</tt>, and calling
+/// <tt>\ref endFrame</tt>.
+///
+/// A claimed window must outlive the device that claimed it, or be released with \c Device::unclaimWindow before it
+/// is destroyed.
+///
+/// Applications using \c fcg::run don't need to create, claim or drive a window themselves: \c fcg::run does this for
+/// the main window, which applets can access through \c Player::mainWindow.
 class FCG_FRAMEWORK_EXPORT Window
 {
 	////
 	// Friend declarations
 
-	// For claiming and unclaiming the window
+	/// Needs access to claim and release the window in \c Device::claimWindow and \c Device::unclaimWindow.
 	friend class Device;
 
 
@@ -126,84 +170,158 @@ public:
 	////
 	// Object construction/destruction
 
-	/// Create a new window.
-	/// \returns The window, or `nullptr` if window creation failed.
+	/// \brief
+	/// 	Create a new window.
+	///
+	/// The window is created with support for high pixel densities, so its viewport size in pixels can exceed the
+	/// size given in screen coordinates. Failures are logged to the SDL log.
+	///
+	/// \param settings
+	/// 	The creation parameters.
+	///
+	/// \return The new window, or \c nullptr if window creation failed.
 	[[nodiscard]] static auto create (const WindowSettings &settings = {}) -> std::unique_ptr<Window>;
 
-	/// The destructor. Releases the window from the GPU device it was last rendered with, if any, and destroys
-	/// the window. The GPU device itself is not touched beyond that – it is owned elsewhere and must outlive
-	/// the window.
+	/// \brief
+	/// 	Destroy the window.
+	///
+	/// \pre
+	/// 	The window is not claimed by a device. Destroying a claimed window logs a critical error and terminates the
+	/// 	program. Release the claim with \c Device::unclaimWindow first, or destroy the claiming device first.
 	~Window();
 
-	/// Windows are not copyable.
+	/// Not copyable.
 	Window(const Window&) = delete;
 
-	/// Windows are not copy-assignable.
+	/// Not copy-assignable.
 	auto operator= (const Window&) -> Window& = delete;
 
 
 	////
 	// Accessors
 
-	/// The raw SDL window handle.
+	/// The raw SDL window handle, owned by this window and valid for its lifetime.
 	[[nodiscard]] auto handle () const -> SDL_Window*;
 
-	/// The SDL window ID, e.g. for matching window events to this window.
+	/// The SDL window ID, e.g. for matching SDL window events to this window.
 	[[nodiscard]] auto id () const -> unsigned;
 
-	/// The current dimensions of the viewport of this window.
+	/// \brief
+	/// 	The current size of the viewport of this window.
+	///
+	/// The size is updated by <tt>\ref beginFrame</tt> to the size of the acquired window image, and by
+	/// <tt>\ref pollViewportSize</tt>.
+	///
+	/// \return The viewport size in pixels, or <tt>(0, 0)</tt> before the size was first determined.
 	[[nodiscard]] auto viewportSize () const -> const glm::uvec2& {
 		return m_viewportSize;
 	}
 
-	/// The texture format of this window's swapchain images, for presentation; scene pipelines use the main render-target metadata. The window must be claimed by a device.
+	/// \brief
+	/// 	The texture format of the images shown in this window.
+	///
+	/// Only pipelines that draw directly into the window image, such as GUI overlays in
+	/// \c Frame::beginOverlayRenderPass, need this format. Pipelines rendering the scene use
+	/// <tt>\ref renderTargetInfo</tt> instead.
+	///
+	/// \return
+	/// 	The swapchain texture format, which is either \c SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM or
+	/// 	\c SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, or \c SDL_GPU_TEXTUREFORMAT_INVALID if the window is not claimed
+	/// 	by a device.
 	[[nodiscard]] auto swapchainFormat () const -> SDL_GPUTextureFormat;
 
-	/// Attachment description available before rendering and while minimized; absent without a valid claim.
+	/// \brief
+	/// 	Describe the color and depth attachments of the scene render pass (see \c Frame::beginRenderPass).
+	///
+	/// Use this to create graphics pipelines for rendering the scene. The description is available as soon as the
+	/// window is claimed, i.e. also before the first frame and while the window is minimized.
+	///
+	/// \return
+	/// 	The attachment formats and sample count, or \c std::nullopt if the window is not claimed by a device.
 	[[nodiscard]] auto renderTargetInfo () const -> std::optional<RenderTargetInfo>;
-
-	/// Update the stored viewport dimensions from the current window drawable size. In a blocking main loop,
-	/// rendering does not necessarily happen right after a resize event, so this should be polled once per
-	/// iteration to keep the viewport dimensions fresh for users that query them outside of rendering (e.g.
-	/// for displaying them in the GUI).
-	///
-	/// \param oldSize Receives the dimensions before the update when they changed, or is reset to `std::nullopt`
-	///                when they didn't.
-	///
-	/// \returns `true` if the viewport size changed, `false` otherwise.
-	auto pollViewportSize (std::optional<glm::uvec2> &oldSize) -> bool;
 
 
 	////
 	// Methods
 
-	/// Begin the next \link fcg::Frame frame \endlink, which will contain th acquires swapchain texture of this window
-	/// as target, a depth buffer of matching size, and a command buffer to begin render passes on.
+	/// \brief
+	/// 	Update the viewport size from the current size of the window in pixels.
 	///
-	/// \param device The GPU device to render the frame with. Must have a current claim to this window.
+	/// Called by \c fcg::run once per main loop iteration; applications normally don't call this. Call it when
+	/// \c viewportSize must be up to date while no frames are being rendered, e.g. after a resize event. If querying
+	/// the window size fails, the error is logged and the viewport size is left unchanged.
 	///
-	/// \returns The new frame ready for rendering, or `nullptr` when no frame can be rendered right now (for
-	/// example when the window is minimized). In the latter case, rendering must be skipped.
+	/// \param oldSize
+	/// 	Receives the previous viewport size if it changed, or is reset to \c std::nullopt otherwise.
+	///
+	/// \return \c true if the viewport size changed, \c false otherwise.
+	auto pollViewportSize (std::optional<glm::uvec2> &oldSize) -> bool;
+
+	/// \brief
+	/// 	Begin rendering the next frame of this window.
+	///
+	/// Waits until the next window image is available, which can block. The returned <tt>\ref Frame</tt> provides a
+	/// command buffer, the scene texture, the window image and a depth texture of matching size. It is owned by the
+	/// window and stays valid until <tt>\ref endFrame</tt> is called. Also updates <tt>\ref viewportSize</tt>.
+	///
+	/// \pre
+	/// 	No other frame of this window is in progress.
+	///
+	/// \param device
+	/// 	The GPU device to render the frame with. It must currently claim this window.
+	///
+	/// \return
+	/// 	The new frame, or \c nullptr if no frame can be rendered right now (e.g. while the window is minimized). In
+	/// 	the latter case, skip rendering and do not call \c endFrame.
+	///
+	/// \throws std::logic_error
+	/// 	If another frame of this window is still in progress, or if \c device does not claim this window.
+	/// \throws std::runtime_error
+	/// 	If acquiring the command buffer or the window image fails, or if the depth or scene texture cannot be
+	/// 	created.
 	auto beginFrame (Device &device) -> Frame*;
 
-	/// End the current frame, releasing its resources after submitting the associated command buffer. The main reason
-	/// for requiring a call to this function is to establish an explicit workflow, violations of which can be easily
-	/// detected and thus avoid spurious or hard to track down bugs/crashes.
+	/// \brief
+	/// 	Finish the current frame and submit it to the GPU for display.
+	///
+	/// If the scene has not been presented, presents it first (see \c Frame::present). Afterwards, the
+	/// <tt>\ref Frame</tt> returned by <tt>\ref beginFrame</tt> is invalid. Submission failures are logged to the SDL
+	/// log. If an exception is thrown, the frame remains in progress.
+	///
+	/// \pre
+	/// 	A frame of this window is in progress and has no active render pass.
+	///
+	/// \throws std::logic_error
+	/// 	If no frame is in progress or a render pass of the frame is still active.
+	/// \throws std::runtime_error
+	/// 	If the automatic presentation of the scene fails.
 	void endFrame ();
 
-	/// Set the text shown in the window title bar.
-	/// Note that SDL requires window titles to be set on the main thread.
+	/// \brief
+	/// 	Set the text shown in the window title bar.
 	///
-	/// \param title The new window title.
+	/// Failures are logged to the SDL log.
+	///
+	/// \note
+	/// 	SDL requires window titles to be set on the main thread.
+	///
+	/// \param title
+	/// 	The new window title.
 	void setTitle (const std::string &title);
 
-	/// Request the window to be closed. In case of the main window, <code>\ref fcg::run</code> will destroy it at the next
-	/// opportunity.
+	/// \brief
+	/// 	Request the window to close.
+	///
+	/// Afterwards, <tt>\ref shouldClose</tt> returns \c true. The window itself stays open until it is destroyed. For
+	/// the main window, \c fcg::run leaves its main loop at the next opportunity and shuts the application down.
 	void requestClose () {
 		closeRequested = true;
 	}
 
-	/// Check whether closing the window was requested, e.g. by the user clicking its close button.
+	/// \brief
+	/// 	Check whether closing the window was requested.
+	///
+	/// \return \c true after a call to <tt>\ref requestClose</tt>, \c false otherwise.
 	[[nodiscard]] auto shouldClose () const -> bool {
 		return closeRequested;
 	}
@@ -214,17 +332,20 @@ private:
 	////
 	// Object construction
 
-	/// Private default constructor. Windows are created via <code>\ref create</code>.
+	/// Private default constructor. Windows are created via <tt>\ref create</tt>.
 	Window() = default;
 
 
 	////
 	// Methods
 
-	/// Claim the window for the given <code>\ref fcg::Device</code>.
+	/// Claim the window for the given device and create the presentation resources. Returns \c false if SDL or
+	/// resource creation fails, and throws \c std::logic_error if the window is already claimed.
 	auto claim (Device &device) -> bool;
 
-	/// Remove the claim of the given device to this window.
+	/// Remove the claim of the given device to this window. Waits for the GPU to become idle, then releases the
+	/// depth texture, scene texture and presentation resources. Throws \c std::logic_error if \c device does not
+	/// claim this window.
 	void unclaim (Device &device);
 
 
@@ -243,24 +364,25 @@ private:
 	/// The device currently claiming this window, if any.
 	Device *m_device = nullptr;
 
-	/// Canonical sRGB8 scene storage; sampling decodes to linear space.
+	/// The scene color texture in sRGB-encoded RGBA8 storage; rendering writes and sampling reads linear values.
+	/// Recreated together with the depth texture whenever the swapchain size changes.
 	std::optional<Texture> sceneTexture;
 
-	/// Reusable encoder targeting the UNORM swapchain format.
+	/// Fullscreen pass converting the linear scene to sRGB-encoded values in the UNORM swapchain format.
 	std::optional<FullscreenPass> presentation;
 
-	/// Reusable filtered, clamped presentation sampler.
+	/// Nearest-neighbor, clamp-to-edge sampler used for presentation.
 	std::optional<Sampler> presentationSampler;
 
 	/// A depth buffer suitable for rendering to the swapchain images of this \c Window.
 	SDL_GPUTexture *depthTexture = nullptr;
 
-	/// The size of the current <code>\ref depthTexture</code>, if any. Tracked separately from
-	/// <code>\ref m_viewportSize</code> because the depth buffer only needs to be recreated when the actual swapchain
+	/// The size of the current <tt>\ref depthTexture</tt>, if any. Tracked separately from
+	/// <tt>\ref m_viewportSize</tt> because the depth buffer only needs to be recreated when the actual swapchain
 	/// texture size changes.
 	glm::uvec2 m_depthTextureSize = { 0, 0 };
 
-	/// The current frame in flight, if any
+	/// The current frame in flight, if any.
 	std::optional<Frame> m_frame;
 
 	/// The current dimensions of the viewport of this \c Window.
@@ -272,7 +394,9 @@ private:
 
 
 
-/** @} */
+/// @}
+
+
 
 //////
 //

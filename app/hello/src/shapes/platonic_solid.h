@@ -31,39 +31,78 @@
 // Classes
 //
 
-/// A regular convex polyhedron (platonic solid), flat-shaded.
+/// \brief A flat-shaded regular convex polyhedron (platonic solid) centered at the origin.
 ///
-/// Supports all five platonic solids (tetrahedron, cube, octahedron, dodecahedron, icosahedron), with a
-/// configurable size that can be interpreted as circumradius, inradius or edge length.
+/// All five platonic solids are supported: tetrahedron, cube, octahedron, dodecahedron and icosahedron. The size is
+/// configurable between 0.001 and 100 and can be interpreted as circumradius, inradius or edge length (see
+/// <tt>\ref SizeSemantics "SizeSemantics"</tt>).
+///
+/// Every face has its own copy of its corner vertices, all carrying the outward-pointing face normal. Faces are
+/// triangulated as fans and drawn as a triangle list, with counter-clockwise winding when viewed from outside.
 class PlatonicSolid : public SimpleShape
 {
-
 public:
 
 	////
 	// Types
 
-	/// The five platonic solids.
-	enum class Solid { Tetrahedron, Cube, Octahedron, Dodecahedron, Icosahedron, NUM };
+	/// Identifies one of the five platonic solids.
+	enum class Solid
+	{
+		/// The regular tetrahedron, with 4 triangular faces.
+		Tetrahedron,
 
-	/// The way the <code>\ref size</code> parameter is to be interpreted.
-	enum class SizeSemantics { Circumradius, Inradius, EdgeLength, NUM };
+		/// The cube, with 6 square faces.
+		Cube,
+
+		/// The regular octahedron, with 8 triangular faces.
+		Octahedron,
+
+		/// The regular dodecahedron, with 12 pentagonal faces.
+		Dodecahedron,
+
+		/// The regular icosahedron, with 20 triangular faces.
+		Icosahedron,
+
+		/// The number of solids. Not a valid solid.
+		NUM
+	};
+
+	/// Specifies which measure of the solid the configured size refers to.
+	enum class SizeSemantics
+	{
+		/// The size is the radius of the circumscribed sphere, i.e. the distance from the center to each vertex.
+		Circumradius,
+
+		/// The size is the radius of the inscribed sphere, i.e. the distance from the center to each face.
+		Inradius,
+
+		/// The size is the length of each edge.
+		EdgeLength,
+
+		/// The number of size semantics. Not a valid value.
+		NUM
+	};
 
 
 	////
-	// Construction / destruction
+	// Object construction
 
-	/// Default constructor. Creates a tetrahedron with circumradius 1.
+	/// Constructs a dodecahedron with circumradius 1.
 	PlatonicSolid() = default;
 
 
 	////
 	// Interface: SimpleShape
 
+	/// \brief Returns the display name of this shape.
+	///
+	/// \return The string <tt>"Platonic Solid"</tt>.
 	[[nodiscard]] auto name () const -> const char* override {
 		return "Platonic Solid";
 	}
 
+	/// Shows widgets for selecting the solid, the size semantics and the size, plus buttons for each solid.
 	void gui () override
 	{
 		bool changed = false;
@@ -71,16 +110,17 @@ public:
 		static constexpr const char *solidNames[] = {
 			"Tetrahedron", "Cube", "Octahedron", "Dodecahedron", "Icosahedron"
 		};
-		if (ImGui::BeginCombo("Solid", solidNames[solid])) {
-			for (int i=0; i<(int)Solid::NUM; ++i) {
+		if (ImGui::BeginCombo("Solid", solidNames[solid]))
+		{
+			for (int i=0; i<(int)Solid::NUM; ++i)
+			{
 				const bool isSelected = (i == solid);
 				if (ImGui::Selectable(solidNames[i], isSelected)) {
 					solid = i;
 					changed = true;
 				}
-				if (isSelected) {
+				if (isSelected)
 					ImGui::SetItemDefaultFocus();
-				}
 			}
 			ImGui::EndCombo();
 		}
@@ -88,23 +128,23 @@ public:
 		static constexpr const char *sizeSemanticsNames[] = {
 			"Circumradius", "Inradius", "Edge length"
 		};
-		if (ImGui::BeginCombo("Size as", sizeSemanticsNames[sizeSemantics])) {
-			for (int i=0; i<(int)SizeSemantics::NUM; ++i) {
+		if (ImGui::BeginCombo("Size as", sizeSemanticsNames[sizeSemantics]))
+		{
+			for (int i=0; i<(int)SizeSemantics::NUM; ++i)
+			{
 				const bool isSelected = (i == sizeSemantics);
 				if (ImGui::Selectable(sizeSemanticsNames[i], isSelected)) {
 					sizeSemantics = i;
 					changed = true;
 				}
-				if (isSelected) {
+				if (isSelected)
 					ImGui::SetItemDefaultFocus();
-				}
 			}
 			ImGui::EndCombo();
 		}
 
-		if (ImGui::DragFloat("Size", &size, 0.01f, minSize, maxSize, "%.3f")) {
+		if (ImGui::DragFloat("Size", &size, 0.01f, minSize, maxSize, "%.3f"))
 			changed = true;
-		}
 
 		if (ImGui::Button("Tetra")) {
 			solid = (int)Solid::Tetrahedron;
@@ -131,11 +171,11 @@ public:
 			changed = true;
 		}
 
-		if (changed) {
+		if (changed)
 			markDirty();
-		}
 	}
 
+	/// Generates the solid's flat-shaded vertices and triangle-list indices from the current parameters.
 	void regenerate () override
 	{
 		// Prepare storage
@@ -144,7 +184,7 @@ public:
 
 		const SolidData &data = solidData((Solid)solid);
 
-		// Determine the scale factor so that the chosen size measure equals `size`.
+		// Determine the scale factor so that the chosen size measure equals 'size'.
 		float measurePerUnitCircumradius = 1.0f;
 		switch ((SizeSemantics)sizeSemantics) {
 			case SizeSemantics::Circumradius: measurePerUnitCircumradius = 1.0f; break;
@@ -160,16 +200,14 @@ public:
 			// Scaled corner positions.
 			std::vector<glm::vec3> corners;
 			corners.reserve(face.size());
-			for (auto vi : face) {
+			for (auto vi : face)
 				corners.push_back(data.vertices[vi] * scale);
-			}
 
-			// Compute the face normal and orient it outward (away from the origin).
+			// Compute the face normal and orient it outward (away from the origin), flipping the winding along with it.
 			glm::vec3 normal = glm::normalize(glm::cross(corners[1]-corners[0], corners[2]-corners[0]));
 			glm::vec3 centroid(0.0f);
-			for (const auto &c : corners) {
+			for (const auto &c : corners)
 				centroid += c;
-			}
 			centroid /= float(corners.size());
 			if (glm::dot(normal, centroid) < 0.0f) {
 				normal = -normal;
@@ -178,12 +216,11 @@ public:
 
 			// Emit duplicated vertices for this face.
 			const auto baseIndex = uint32_t(m_vertices.size());
-			for (const auto &c : corners) {
+			for (const auto &c : corners)
 				m_vertices.push_back(Vertex{
 					.position = glm::vec4(c, 1.0f),
 					.normal = glm::vec4(normal, 0.0f)
 				});
-			}
 
 			// Fan-triangulate: (0, i, i+1) for i = 1..n-2.
 			for (uint32_t i=1; i+1<face.size(); ++i) {
@@ -194,14 +231,23 @@ public:
 		}
 	}
 
+	/// \brief Returns the primitive type of the solid's index data.
+	///
+	/// \return Always \c SDL_GPU_PRIMITIVETYPE_TRIANGLELIST.
 	[[nodiscard]] auto primitiveType () const -> SDL_GPUPrimitiveType override {
 		return SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
 	}
 
+	/// \brief Returns the vertices generated by the last call to \c regenerate.
+	///
+	/// \return A view that is valid until the next call to \c regenerate or destruction of the shape.
 	[[nodiscard]] auto vertices () const -> std::span<const Vertex> override {
 		return m_vertices;
 	}
 
+	/// \brief Returns the triangle-list indices generated by the last call to \c regenerate.
+	///
+	/// \return A view that is valid until the next call to \c regenerate or destruction of the shape.
 	[[nodiscard]] auto indices () const -> std::span<const uint32_t> override {
 		return m_indices;
 	}
@@ -212,11 +258,19 @@ private:
 	////
 	// Types
 
-	/// Canonical (unit circumradius) geometry data for one platonic solid.
-	struct SolidData {
+	/// Canonical geometry of one platonic solid with circumradius 1, plus the ratios needed to rescale it.
+	struct SolidData
+	{
+		/// The corner positions, all at distance 1 from the origin.
 		std::vector<glm::vec3> vertices;
+
+		/// The faces, each given as a list of indices into \c vertices in circular order.
 		std::vector<std::vector<uint32_t>> faces;
+
+		/// The ratio of inradius to circumradius.
 		float inradiusOverCircumradius;
+
+		/// The ratio of edge length to circumradius.
 		float edgeOverCircumradius;
 	};
 
@@ -224,21 +278,36 @@ private:
 	////
 	// Constants
 
-	static constexpr float minSize = 0.001f, maxSize = 100.0f;
+	/// The smallest size offered by the GUI.
+	static constexpr float minSize = 0.001f;
+
+	/// The largest size offered by the GUI.
+	static constexpr float maxSize = 100.0f;
 
 
 	////
-	// Static geometry tables
+	// Geometry tables
 
-	/// Normalize a list of raw vertex positions onto the unit sphere (circumradius 1).
+	/// \brief Projects raw vertex positions onto the unit sphere, giving them circumradius 1.
+	///
+	/// \param raw The positions to normalize. None of them may be the zero vector.
+	///
+	/// \return The normalized positions.
 	static auto normalized (std::vector<glm::vec3> raw) -> std::vector<glm::vec3> {
-		for (auto &v : raw) {
+		for (auto &v : raw)
 			v = glm::normalize(v);
-		}
 		return raw;
 	}
 
-	/// Lazily-built, cached canonical geometry for each platonic solid.
+	/// \brief
+	/// 	Returns the canonical geometry of the given solid. The tables are built on first use and kept until program
+	/// 	exit.
+	///
+	/// \param s The solid to look up.
+	///
+	/// \return A reference to the static geometry table of \p s.
+	///
+	/// \throws std::logic_error if \p s is not a valid solid, e.g. <tt>Solid::NUM</tt>.
 	static auto solidData (Solid s) -> const SolidData&
 	{
 		static const SolidData tetrahedron {
@@ -326,19 +395,19 @@ private:
 	////
 	// Fields
 
-	/// The currently selected solid, as an `int` for ImGui interop (see <code>\ref Solid</code>).
+	/// The currently selected <tt>\ref Solid "Solid"</tt>, stored as an \c int for use with Dear ImGui.
 	int solid = (int)Solid::Dodecahedron;
 
-	/// The currently selected size semantics, as an `int` for ImGui interop (see <code>\ref SizeSemantics</code>).
+	/// The currently selected <tt>\ref SizeSemantics "SizeSemantics"</tt>, stored as an \c int for use with Dear ImGui.
 	int sizeSemantics = (int)SizeSemantics::Circumradius;
 
-	/// The configured size, interpreted according to <code>\ref sizeSemantics</code>.
+	/// The configured size, interpreted according to <tt>\ref sizeSemantics "sizeSemantics"</tt>.
 	float size = 1;
 
-	/// CPU-side vertex buffer.
+	/// The CPU-side vertex data.
 	std::vector<Vertex> m_vertices;
 
-	/// CPU-side index buffer.
+	/// The CPU-side triangle-list index data.
 	std::vector<uint32_t> m_indices;
 };
 

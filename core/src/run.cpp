@@ -10,6 +10,7 @@
 #include <vector>
 #include <ranges>
 #include <chrono>
+#include <stdexcept>
 
 // SDL3
 #include <SDL3/SDL.h>
@@ -27,24 +28,18 @@
 
 //////
 //
-// Module namespace open
+// Module-private symbols
 //
 
-/// The library top-level namespace.
-namespace fcg {
-
-
-
-//////
-//
-// Functions
-//
-
-// Local anonymous namespace
+// Anonymous namespace begin
 namespace {
 
-/// Handle a single SDL event for the central framework window.
-void handleEvent (const SDL_Event &event, Window &window, Gui &gui, Player &player, std::vector<std::unique_ptr<Applet>> &applets)
+/// Handle a single SDL event: feed it to the GUI, dispatch main-window input events to the applets unless the GUI
+/// captures them, and react to close requests, Escape and display scale changes.
+void handleEvent (
+	const SDL_Event &event, fcg::Window &window, fcg::Gui &gui, fcg::Player &player,
+	std::vector<std::unique_ptr<fcg::Applet>> &applets
+)
 {
 	// Always feed the GUI so ImGui can react to input
 	gui.processEvent(event);
@@ -62,15 +57,14 @@ void handleEvent (const SDL_Event &event, Window &window, Gui &gui, Player &play
 		mainWindowEvent = event.drop.windowID == window.id();
 	const bool keyboard = event.type >= SDL_EVENT_KEY_DOWN && event.type <= SDL_EVENT_TEXT_EDITING_CANDIDATES;
 	const bool mouse = event.type >= SDL_EVENT_MOUSE_MOTION && event.type <= SDL_EVENT_MOUSE_WHEEL;
-	// - dispatch to the applets
+	// - dispatch to the applets, remembering whether one of them consumed the event
+	bool handledByApplet = false;
 	if (mainWindowEvent && inputEvent && !(keyboard && gui.wantsKeyboard()) && !(mouse && gui.wantsMouse())) {
-		Event normalized = makeEvent(event);
-		EventContext context;
+		fcg::Event normalized = fcg::makeEvent(event);
+		fcg::EventContext context;
 		for (auto &applet : applets)
 			applet->onEvent(normalized, context, player);
-		if (   event.type == SDL_EVENT_KEY_DOWN && event.key.windowID == window.id() && event.key.key == SDLK_ESCAPE
-		    && !context.wasHandled() && !gui.wantsTextInput())
-			player.requestClose();
+		handledByApplet = context.wasHandled();
 	}
 
 	switch (event.type)
@@ -86,10 +80,11 @@ void handleEvent (const SDL_Event &event, Window &window, Gui &gui, Player &play
 				player.requestClose();
 			break;
 
-		// A key was pressed – the escape key closes our window, unless the GUI is currently capturing text input
-		// (in which case the key belongs to the text field being edited)
+		// A key was pressed – the escape key closes our window, unless an applet marked it as handled or the GUI is
+		// currently capturing text input (in which case the key belongs to the text field being edited)
 		case SDL_EVENT_KEY_DOWN:
-			if (event.key.windowID == window.id() && event.key.key == SDLK_ESCAPE && !gui.wantsTextInput())
+			if (   event.key.windowID == window.id() && event.key.key == SDLK_ESCAPE && !handledByApplet
+			    && !gui.wantsTextInput())
 				player.requestClose();
 			break;
 
@@ -106,11 +101,26 @@ void handleEvent (const SDL_Event &event, Window &window, Gui &gui, Player &play
 	}
 }
 
-// Local anonymous namespace close
+// Anonymous namespace end
 }
 
 
-/// Run the given application(s).
+
+//////
+//
+// Module namespace open
+//
+
+// The library top-level namespace.
+namespace fcg {
+
+
+
+//////
+//
+// Function implementations
+//
+
 FCG_FRAMEWORK_EXPORT auto run (
 	std::vector<std::unique_ptr<Applet>> _applets, PlayerSettings &&settings
 ) -> int

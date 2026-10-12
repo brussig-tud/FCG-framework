@@ -23,11 +23,21 @@
 
 //////
 //
-// Implementation details
+// Module namespace open
 //
 
-// Private implementation helpers.
-namespace fcg::detail {
+// The library top-level namespace.
+namespace fcg {
+
+
+
+//////
+//
+// Function implementations
+//
+
+// Private implementation helpers shared within the Image library.
+namespace detail {
 
 auto readImageFile (const std::filesystem::path &path) -> std::expected<EncodedImage, ImageError>
 {
@@ -71,18 +81,8 @@ auto imageSDLError (ImageErrorCode code, const char *operation) -> std::unexpect
 	return std::unexpected(ImageError{code, std::string(operation) + ": " + SDL_GetError()});
 }
 
-// namespace fcg::detail
+// namespace detail
 }
-
-
-
-//////
-//
-// Module namespace open
-//
-
-/// The library top-level namespace.
-namespace fcg {
 
 
 

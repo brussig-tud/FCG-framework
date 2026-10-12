@@ -17,6 +17,8 @@ All C++ sources (including headers `.h`, translation unit source files `.cpp` an
 ```
 
 where `$Section` can be one of the following, typically in this order:
+* `Library documentation` (`.h` files only, only in the header that hosts the library overview)
+* `Module documentation` (`.h` files only, only in a module's principal header)
 * `Includes`
 * `Forward declarations`
 * `Module-private symbols` (`.cpp` and `.inl` files only)
@@ -195,7 +197,7 @@ Whether the opening brace is on the same line as the struct name depends on how 
 
 Always use triple-slash `///` doc comments. Documented items (such as classes, structs, enums, functions, members, etc.) must always be separated by at least one blank line.
 
-Always typeset mentions of types, enum values, functions/methods, globals and inline snippets as code. Use `\c` when possible, fall back to `<tt>`/`</tt>` instead when using `\c` is impractical, e.g. for whitespace-containing snippets or when `\c` would consume punctuation (full stops, commas, colons, semicolons). In free-text documentation such as library and module overviews or inside guides, when such a mention (*except* code snippets, no matter if block or inline) concerns an item from this project, directly link to the corresponding API documentation in addition to typesetting as code. When referring to individual functions or methods, do not add paranthesis `()`. When using an individual function or method in an inline snipped, do add `()` (plus required arguments if any) when the snipped constitutes a function call.
+Always typeset mentions of types, enum values, functions/methods, globals and inline snippets as code. Use `\c` when possible, fall back to `<tt>`/`</tt>` instead when using `\c` is impractical, e.g. for whitespace-containing snippets or when `\c` would consume punctuation (full stops, commas, colons, semicolons). In free-text documentation such as library overviews and module guides, when such a mention (*except* code snippets, no matter if block or inline) concerns an item from this project, directly link to the corresponding API documentation in addition to typesetting as code. When referring to individual functions or methods, do not add paranthesis `()`. When using an individual function or method in an inline snipped, do add `()` (plus required arguments if any) when the snipped constitutes a function call.
 
 Always observe the following ordering of Doxygen paragraph-level commands (skipping those that are not applicable):
 1. `\brief`
@@ -204,7 +206,8 @@ Always observe the following ordering of Doxygen paragraph-level commands (skipp
 4. `\tparam`
 5. `\param`
 6. `\return`
-7. `\todo`
+7. `\throws`
+8. `\todo`
 
 Doxygen paragraph-level commands that are not included in above list can be inserted anywhere in the documentation block at your discretion, with one exception:
 Long descriptions always follow the `\brief` paragraph; no other paragraph-level commands must be inserted between `\brief` and the long description.
@@ -225,3 +228,101 @@ If such a multi-line paragraph-level command takes an argument (e.g., `\param` a
 /// 	The number of elements to allocate. The actual memory allocated in terms of bytes can exceed this to meet
 /// 	alignment requirenments.
 ```
+
+A doc comment consisting of more than one paragraph must always start with an explicit `\brief` paragraph. Always use
+`\return`, never `\returns`. Never use Markdown backticks for code inside doc comments.
+
+
+### API documentation content
+
+API-level doc comments address users of the framework – application developers and students who know C++ and basic GPU
+programming concepts, but were not involved in developing the framework and do not know its internals. Write them in
+full sentences. Each public doc comment answers, as far as applicable:
+* what the item is or does, and when or where to use it (e.g. "Call once per frame from \c Applet::update.");
+* what the caller must guarantee (`\pre`): lifetimes, threading, call order, valid ranges;
+* what is returned, the meaning of each error, and every exception type intentionally thrown (`\throws`);
+* ownership and lifetime of inputs, outputs and borrowed references;
+* units, coordinate conventions, defaults, clamping ranges and tolerances;
+* user-visible side effects (e.g. consuming an event, blocking or not blocking).
+
+Every public function or method documents each parameter with `\param`, each template parameter with `\tparam`, any
+non-void result with `\return` and each intentionally thrown exception type with `\throws`. Trivial accessors may use a
+single sentence if their result is self-evident.
+
+Never put any of the following into public doc comments:
+* development history or versioning ("formerly", "now", "no longer", "renamed", "initial", "yet", "future");
+* design rationale or solved internal problems ("because …", "so that …", "the main reason for …");
+* internal mechanisms, private member or type names, and internal vocabulary not defined by the public API;
+* reviewer-style negative statements ("does not map, submit or synchronize") – unless the negative is a guarantee users
+  rely on, such as never blocking;
+* `\todo` items that are design musings.
+
+A backend quirk is only documented if knowing about it genuinely benefits a user; describe each such quirk in user terms
+in exactly one `\note` paragraph.
+
+Doc comments on private members and module-private symbols are aimed at maintainers and may describe internals, but
+they show up in IDE documentation previews and must therefore still be clear, accurate and useful. Friend declarations
+appear in the generated documentation, so their doc comments must read sensibly to users as well.
+
+
+### Library overviews and module guides
+
+Narrative documentation comes in exactly two kinds:
+
+* A **library overview** is a Doxygen page (`\page fcg_<library>_overview "<Library> library overview"`, one per
+  library) giving a broad overview of the library's purpose and scope, and use-case-driven pointers on where to start
+  reading the module guides.
+* A **module guide** is a Doxygen group (`\defgroup`, essentially one per public header, all belonging to
+  `\ingroup fcg_modules`) containing the actual usage guidance for that module.
+
+These blocks address inexperienced new users of the framework who seek usage guidance and have no knowledge about or
+interest in its internals. Write them on top of, and consistent with, the API documentation content rules above; the
+beginner audience rule is paramount in any conflict.
+
+**Placement and structure.**
+* The overview lives in the library's umbrella header if one exists (e.g. `FCG/Extras/all.h`), otherwise in the
+  library's most principal public header, the one defining its central interface (e.g. `image.h`, `applet.h`). Under a
+  `Library documentation` section banner.
+* The module guide is defined with `\defgroup` in the module's principal header, under a `Module documentation` section
+  banner. It carries `\ingroup fcg_modules` directly after the group line, followed by an explicit `\brief` paragraph.
+* Auxiliary headers that belong to a module join it via a `\addtogroup <group>` / `@{` … `@}` membership block inside
+  the declaration namespace; use explicit `\ingroup` where needed.
+* Strive to keep a 1:1 relationship between modules and headers. Split-off headers that do not concern users directly
+  (e.g. `frame.h`) or are meaningless in isolation may share a module; this should remain the exception.
+* Group IDs (e.g. `fcg_buffers`) and section anchors are stable once published. Rename them only deliberately, and
+  update every `\ref` in the same change.
+
+**Library overview content.**
+* What the library is for and its scope, in user terms.
+* How to use it: the CMake link target (`FCG-Framework::<Library>`) and the include line.
+* "Where to start": use-case-driven pointers into the module guides (e.g. "To draw many textured quads, start with
+  \ref fcg_primitives").
+* Optionally short task-oriented subsections (e.g. enabling additional image formats). Full build-system and dependency
+  reference belongs to the maintainer documentation, not the overview.
+
+**Module guide skeleton** (section anchor IDs use the full group ID):
+1. `\brief` one-liner.
+2. Intro paragraph: what the module is for, when you need it, and its principal types with links.
+3. `\section <group>_usage` "Getting started": mandatory. A minimal compiled snippet whenever users write code with the
+   module.
+4. `\section <group>_workflows` "Common tasks": mandatory.
+5. `\section <group>_lifetime` "Ownership and lifetime": optional. Only for genuinely module-wide rules; individual
+   contracts belong into the class or method documentation.
+6. `\section <group>_errors` "Handling errors": optional.
+7. `\section <group>_examples` "More examples": optional.
+
+`\subsection`s within sections are free. Explain concepts before details and show the typical call sequence in the
+order a user writes it.
+
+**Never put any of the following into overviews or guides:**
+* development history or versioning ("former", "renamed", "this version", "future", "initial", "source compatibility");
+* design rationale or solved internal problems;
+* internal mechanisms and vocabulary (e.g. tickets, staging pages, tokens, snapshots, fence retirement, registration
+  internals);
+* reviewer-style negative statements (e.g. "no logger, no cache, no background task is introduced");
+* build-tree or source-layout paths (e.g. "Core lives in `core/`");
+* backend details, unless knowing them genuinely benefits a user, then as exactly one `\note` paragraph in user terms.
+
+**Snippets.** C++ examples are `\snippet`s from compiled example sources registered via `EXAMPLE_DIRS` in
+`fcg_register_documentation`; never uncompiled `\code` blocks. CMake snippets in `\code{.cmake}` are allowed. The
+normal build compiles all example sources.

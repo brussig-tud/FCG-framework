@@ -31,32 +31,43 @@ namespace {
 /// Local shorthand for texture failure categories.
 using Code = fcg::TextureErrorCode;
 
-/// Construct an owned validation diagnostic.
+/// Construct an error result with the given category and message.
 auto error (Code code, std::string message) -> std::unexpected<fcg::TextureError> {
 	return std::unexpected(fcg::TextureError{code, std::move(message)});
 }
 
-/// Capture SDL errors before cleanup.
+/// Construct an \c SDLFailure error, capturing SDL's current error message before cleanup calls overwrite it.
 auto sdlError (const char *operation) -> std::unexpected<fcg::TextureError> {
 	return error(Code::SDLFailure, std::string(operation) + ": " + SDL_GetError());
 }
 
-/// Translate the staging facility's owned error.
-auto transferError (const fcg::BufferError &source) -> std::unexpected<fcg::TextureError> {
-	return error(source.code == fcg::BufferErrorCode::SDLFailure ? Code::SDLFailure : Code::InvalidState, source.message);
+/// Translate a buffer error from the staging facility into the texture error with the same category.
+auto transferError (const fcg::BufferError &source) -> std::unexpected<fcg::TextureError>
+{
+	switch (source.code)
+	{
+		case fcg::BufferErrorCode::InvalidArgument: return error(Code::InvalidArgument, source.message);
+		case fcg::BufferErrorCode::NotReady: return error(Code::NotReady, source.message);
+		case fcg::BufferErrorCode::SDLFailure: return error(Code::SDLFailure, source.message);
+		case fcg::BufferErrorCode::InvalidState: break;
+	}
+	return error(Code::InvalidState, source.message);
 }
 
-/// Effective byte geometry bounded by SDL's 32-bit allocation size.
+/// A resolved byte layout of a texel region, bounded by SDL's 32-bit allocation size.
 struct Layout {
 
-	/// Effective pitches.
+	/// The layout with zero pitches replaced by tightly packed values.
 	fcg::TextureTransferLayout bytes;
 
-	/// Last exclusive byte of the texel region.
+	/// The number of bytes from the start of the allocation to the end of the last texel row (exclusive).
 	std::size_t size;
 };
 
-/// Resolve pitches, validate divisibility and capacity, and reject all arithmetic overflow.
+/// Resolve zero pitches to tight packing and validate the layout against the texel size, \p capacity and SDL's
+/// 32-bit byte limit, rejecting any arithmetic overflow. With \p gpuLayout, additionally require the offset and row
+/// pitch to be multiples of the texel size and the slice pitch to be a multiple of the row pitch, as SDL's
+/// texture transfer descriptors express pitches in texels and rows.
 auto layoutFor (
 	SDL_GPUTextureFormat format,
 	glm::uvec3 extent,
@@ -91,7 +102,7 @@ auto layoutFor (
 	return Layout{layout, (std::size_t)end};
 }
 
-/// Select 256-byte-aligned automatic staging rows.
+/// Compute the layout used for automatically allocated staging storage, with rows padded to multiples of 256 bytes.
 auto alignedLayout (SDL_GPUTextureFormat format, glm::uvec3 extent) -> std::expected<Layout, fcg::TextureError> {
 	auto texel = fcg::textureTexelSize(format);
 	if (!texel)
@@ -100,7 +111,7 @@ auto alignedLayout (SDL_GPUTextureFormat format, glm::uvec3 extent) -> std::expe
 	return layoutFor(format, extent, {0, (std::size_t)row, 0});
 }
 
-/// SDL descriptor with already validated byte pitches.
+/// Build the SDL transfer descriptor for a validated layout, converting byte pitches into texels and rows.
 auto transferInfo (const fcg::TransferBuffer &storage, const Layout &layout, std::size_t texel)
 	-> SDL_GPUTextureTransferInfo
 {
@@ -108,13 +119,13 @@ auto transferInfo (const fcg::TransferBuffer &storage, const Layout &layout, std
 		(Uint32)(layout.bytes.slicePitch / layout.bytes.rowPitch)};
 }
 
-/// Borrow one validated texture region for SDL.
+/// Build the SDL region descriptor for a validated region of the given texture.
 auto regionInfo (SDL_GPUTexture *handle, const fcg::TextureRegion &region) -> SDL_GPUTextureRegion {
 	return {handle, region.mipLevel, region.layer, region.offset.x, region.offset.y, region.offset.z,
 		region.extent.x, region.extent.y, region.extent.z};
 }
 
-/// Validate staging state before encoding any command.
+/// Check that transfer storage is live, unmapped, on the texture's device and of the given direction.
 auto staging (const fcg::Texture &texture, const fcg::TransferBuffer &storage, SDL_GPUTransferBufferUsage usage)
 	-> std::expected<void, fcg::TextureError>
 {
@@ -135,6 +146,7 @@ auto staging (const fcg::Texture &texture, const fcg::TransferBuffer &storage, S
 // Module namespace open
 //
 
+// The library top-level namespace.
 namespace fcg {
 
 

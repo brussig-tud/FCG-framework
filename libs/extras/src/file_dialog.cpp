@@ -39,7 +39,7 @@ namespace {
 // Convenience for our own namespace
 using namespace fcg::extra;
 
-/// Private per-launch SDL glue
+/// SDL entry points used for one dialog launch, copied into the launch state for deferred dispatch.
 struct FileDialogBackend
 {
 	/// Native launch function.
@@ -286,6 +286,7 @@ void launch (SDL_FileDialogType type, const StateToken &state)
 	state->backend.show(type, nativeCompletion, new StateToken(state), props);
 }
 
+/// Launch a dialog of the given type whose result is delivered through the returned future.
 auto showFileDialog (SDL_FileDialogType type, FileDialogOptions &&options, FileDialogBackend backend={})
 	-> std::future<FileDialogResult>
 {
@@ -298,6 +299,10 @@ auto showFileDialog (SDL_FileDialogType type, FileDialogOptions &&options, FileD
 	return future;
 }
 
+/// \brief
+/// 	Launch a dialog of the given type whose result is delivered to \c callback on the requested thread.
+///
+/// Throws \c std::invalid_argument for an empty callback before any launch state is created.
 void showFileDialog (
 	SDL_FileDialogType type, FileDialogOptions &&options, std::move_only_function<void(FileDialogResult)> callback,
 	FileDialogCallbackThread thread, FileDialogBackend backend={}
@@ -312,12 +317,12 @@ void showFileDialog (
 	launch(type, state);
 }
 
-/// Drive the event loop while the file dialog waits for completion
+/// Wait for the dialog result, pumping SDL events in between so that the native dialog can complete.
 [[nodiscard]] auto runToCompletion (std::future<FileDialogResult> &&future) -> FileDialogResult {
-	// Need to spin the event loop unfortunately :(
+	// Some platforms only complete native dialogs while SDL events are pumped on the main thread.
 	while (future.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready)
 		SDL_PumpEvents();
-	return std::move(*future.get());
+	return future.get();
 }
 
 // Anonymous namespace end

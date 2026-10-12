@@ -51,7 +51,19 @@ namespace fcg {
 // Classes
 //
 
-/// Indexed box with 24 face vertices, 36 indices, flat outward normals, and independent UV seams.
+/// \brief
+/// 	Draws one filled box per instance of a \c PrimitiveAttributes collection.
+///
+/// Each box is centered at the instance's \c Attribute::Position and rotated by its <tt>Attribute::Orientation</tt>.
+/// Along each local axis it extends by the corresponding component of \c Attribute::Extent in both directions, so
+/// the extent is the half size of the box. Each face has a flat outward normal for lighting and is textured with the
+/// full texture coordinate range from (0,0) to (1,1). The local axes along which U and V increase are -Z and +Y on the
+/// +X face, +Z and +Y on the -X face, +X and -Z on the +Y face, +X and +Z on the -Y face, +X and +Y on the +Z face,
+/// and -X and +Y on the -Z face. Back faces are culled unless \c RendererOptions::cullMode specifies otherwise.
+///
+/// Create the renderer once, for example in <tt>Applet::init</tt>, and call \c draw inside an active render pass. A
+/// moved-from renderer is empty: only assignment and destruction are valid, and \c draw returns
+/// <tt>RenderErrorCode::InvalidState</tt>.
 class FCG_RENDER_EXPORT BoxRenderer final : public PrimitiveRenderer
 {
 public:
@@ -59,49 +71,99 @@ public:
 	////
 	// Object construction/destruction
 
-	/// Create both texture pipelines and immutable geometry for an explicitly described target.
+	/// \brief
+	/// 	Creates a box renderer for render passes with the given attachment formats and sample count.
 	///
-	/// \param device Borrowed device that outlives this renderer.
-	/// \param target Pipeline attachment formats and sample count.
-	/// \param options Depth, culling, and blending settings.
+	/// The renderer can draw into any render pass whose attachments match \p target, regardless of the pass size. To
+	/// draw into passes with other formats or another sample count, create another renderer.
 	///
-	/// \return A complete renderer or an owned diagnostic.
+	/// \param device
+	/// 	The device to create the renderer on. It must outlive the renderer.
+	/// \param target
+	/// 	Color format, depth format and sample count of the render passes to draw into. A depth format of
+	/// 	\c SDL_GPU_TEXTUREFORMAT_INVALID means the passes have no depth attachment, which disables depth testing and
+	/// 	depth writes.
+	/// \param options
+	/// 	Depth, culling and blending settings.
+	///
+	/// \return
+	/// 	The renderer, or an error. The error is <tt>RenderErrorCode::InvalidArgument</tt> if the device does not
+	/// 	support a format or the sample count of \p target, or if \p options holds an invalid culling mode or depth
+	/// 	comparison. It is <tt>RenderErrorCode::InvalidState</tt> if \p device has been moved from, and
+	/// 	<tt>RenderErrorCode::SDLFailure</tt> if creating the GPU resources failed.
 	[[nodiscard]] static auto create (
 		Device &device, const RenderTargetInfo &target, const RendererOptions &options={}
 	) -> std::expected<BoxRenderer, RenderError>;
 
-	/// Snapshot the player's main-pass target before the first frame or while minimized.
+	/// \brief
+	/// 	Creates a box renderer for the main render pass of \p player.
 	///
-	/// \param player Source of the borrowed device and target description; never retained.
-	/// \param options Depth, culling, and blending settings.
+	/// Uses the device of \p player and the target described by <tt>Player::mainRenderTargetInfo</tt>. Call it from
+	/// \c Applet::init or later; it also succeeds while the main window is minimized. The renderer keeps no reference
+	/// to \p player. If the formats of the main render target change, create a new renderer.
 	///
-	/// \return A renderer, or \c RenderErrorCode::InvalidState without a valid main-window target.
+	/// \param player
+	/// 	The player whose device and main render target are used. Its device must outlive the renderer.
+	/// \param options
+	/// 	Depth, culling and blending settings.
+	///
+	/// \return
+	/// 	The renderer, or an error. The error is <tt>RenderErrorCode::InvalidState</tt> if \p player has no main
+	/// 	window or the main window is not claimed by its device. Otherwise the errors are those of the overload
+	/// 	taking a \c Device and a <tt>RenderTargetInfo</tt>.
 	[[nodiscard]] static auto create (Player &player, const RendererOptions &options={})
 		-> std::expected<BoxRenderer, RenderError>;
 
-	/// Release geometry and pipelines without waiting for GPU idle.
+	/// Destroys the renderer without waiting for the GPU. Draws that were already submitted still complete.
 	~BoxRenderer() override;
 
-	/// Renderers cannot be copied.
+	/// Not copyable.
 	BoxRenderer(const BoxRenderer&) = delete;
 
-	/// Renderers cannot be copy-assigned.
+	/// Not copy-assignable.
 	auto operator= (const BoxRenderer&) -> BoxRenderer& = delete;
 
-	/// Transfer ownership, leaving an inert source.
-	BoxRenderer(BoxRenderer&&) noexcept;
+	/// \brief
+	/// 	Moves the renderer, leaving \p other empty.
+	///
+	/// \param other
+	/// 	The renderer to move from.
+	BoxRenderer(BoxRenderer &&other) noexcept;
 
-	/// Release previous resources and transfer ownership.
-	auto operator= (BoxRenderer&&) noexcept -> BoxRenderer&;
+	/// \brief
+	/// 	Releases the resources of this renderer and moves \p other into this renderer, leaving \p other empty.
+	///
+	/// \param other
+	/// 	The renderer to move from.
+	///
+	/// \return This renderer.
+	auto operator= (BoxRenderer &&other) noexcept -> BoxRenderer&;
 
 
 	////
 	// Interface: PrimitiveRenderer
 
-	/// Position, extent, orientation, and color; normal and radius are ignored.
+	/// Returns the attributes used by boxes: <tt>Attribute::Position</tt>, <tt>Attribute::Extent</tt>,
+	/// \c Attribute::Orientation and <tt>Attribute::Color</tt>.
 	[[nodiscard]] auto supportedAttributes () const -> std::span<const Attribute> override;
 
-	/// Encode an instanced draw; see \c PrimitiveRenderer::draw for parameter and lifetime contracts.
+	/// \brief
+	/// 	Draws the boxes of the selected instances; see \c PrimitiveRenderer::draw for the full contract.
+	///
+	/// \param attributes
+	/// 	The instance attributes. Must belong to the renderer's device.
+	/// \param state
+	/// 	Supplies the current viewing matrices.
+	/// \param commandBuffer
+	/// 	The command buffer that contains \p renderPass.
+	/// \param renderPass
+	/// 	The active render pass to draw into.
+	/// \param options
+	/// 	Texture and lighting settings for this draw.
+	/// \param range
+	/// 	The instances to draw. The default draws all instances.
+	///
+	/// \return Success, or an error as described for <tt>PrimitiveRenderer::draw</tt>.
 	[[nodiscard]] auto draw (
 		const PrimitiveAttributes &attributes, RenderState &state, SDL_GPUCommandBuffer *commandBuffer,
 		SDL_GPURenderPass *renderPass, const DrawOptions &options={}, InstanceRange range={}
@@ -113,14 +175,18 @@ private:
 	////
 	// Object construction/destruction
 
-	/// Adopt fully initialized private resources.
+	/// \brief
+	/// 	Takes ownership of completely created resources; used by <tt>create</tt>.
+	///
+	/// \param resources
+	/// 	The created geometry and pipelines.
 	explicit BoxRenderer(std::unique_ptr<detail::PrimitiveResources> resources) noexcept;
 
 
 	////
 	// Fields
 
-	/// Shared implementation of indexed and unindexed geometry and pipeline resources.
+	/// Geometry and pipelines, using the implementation shared with <tt>QuadRenderer</tt>. Null when moved from.
 	std::unique_ptr<detail::PrimitiveResources> resources;
 };
 

@@ -25,7 +25,7 @@
 // Anonymous namespace begin
 namespace {
 
-/// Erased layout for validation without assumptions about GLM padding or quaternion order.
+/// Type-erased value layout, used for validation without assumptions about GLM padding or quaternion order.
 struct Layout
 {
 	////
@@ -38,12 +38,12 @@ struct Layout
 	std::span<const std::size_t> offsets;
 };
 
-/// Obtain an attribute's fixed object representation.
+/// Returns the value layout of an attribute.
 template <fcg::Attribute A> auto layout () -> Layout {
 	return {sizeof(typename fcg::AttributeTraits<A>::Value), fcg::AttributeTraits<A>::componentOffsets};
 }
 
-/// Validate semantic transform components; normal, radius, and color are unrestricted.
+/// Checks position, extent and orientation values against their requirements; other attributes always pass.
 auto validValue (fcg::Attribute attribute, const glm::vec4 &value) -> bool
 {
 	if (attribute != fcg::Attribute::Position && attribute != fcg::Attribute::Extent
@@ -60,7 +60,7 @@ auto validValue (fcg::Attribute attribute, const glm::vec4 &value) -> bool
 	return value != glm::vec4(0.f);
 }
 
-/// Translate Core failures with update context.
+/// Translates a Core buffer error into a Render error, prefixing the message with context.
 auto translate (const fcg::BufferError &error) -> fcg::RenderError {
 	const auto code = error.code == fcg::BufferErrorCode::SDLFailure
 		? fcg::RenderErrorCode::SDLFailure : error.code == fcg::BufferErrorCode::InvalidState
@@ -88,13 +88,13 @@ namespace fcg {
 // Structs and enums
 //
 
-/// Persistent GPU state; sources never retain uploaded CPU spans.
+/// Implementation state of a collection; committed sources never reference CPU memory.
 struct PrimitiveAttributes::State
 {
 	////
 	// Object construction/destruction
 
-	/// Construct without GPU allocations.
+	/// Constructs the state with all attributes absent and usable, without allocating GPU memory.
 	explicit State(Device &device) : device(device), uploads(device) {
 		for (auto &source : sources)
 			source.kind = Kind::Absent;
@@ -105,22 +105,23 @@ struct PrimitiveAttributes::State
 	////
 	// Fields
 
-	/// Borrowed device.
+	/// The device of the collection; not owned.
 	Device &device;
 
-	/// Stable owning buffer slots, retaining capacity even when not currently used.
+	/// Collection-owned buffers for arrays, one per attribute. Kept for reuse even while the attribute has another
+	/// source.
 	std::array<std::unique_ptr<Buffer>, (std::size_t)Attribute::Count> buffers;
 
-	/// Committed metadata; host-byte spans are always empty.
+	/// Committed sources; their \c bytes spans are always empty.
 	std::array<Descriptor, (std::size_t)Attribute::Count> sources;
 
-	/// Submission usability for committed sources.
+	/// Per attribute, whether the committed source can be drawn; cleared after a failed automatic submission.
 	std::array<bool, (std::size_t)Attribute::Count> usable;
 
-	/// Retained direct staging pages.
+	/// Upload batch whose staging memory is reused across updates.
 	UploadBatch uploads;
 
-	/// Recursion guard, externally serialized.
+	/// Whether an update is running; used to reject recursive updates.
 	bool updating = false;
 };
 
@@ -259,9 +260,11 @@ auto PrimitiveAttributes::finishUpdate (SDL_GPUCopyPass *pass, const Update &upd
 	// Automatic submission uses one command buffer. A failed submission invalidates changed arrays conservatively.
 	bool recorded = false;
 	std::expected<void, BufferError> result;
-	const bool hasArrays = std::any_of(update.descriptors.begin(), update.descriptors.end(), [] (const Descriptor &data) {
-		return data.kind == Kind::Array && !data.bytes.empty();
-	});
+	const bool hasArrays = std::any_of(
+		update.descriptors.begin(), update.descriptors.end(), [] (const Descriptor &data) {
+			return data.kind == Kind::Array && !data.bytes.empty();
+		}
+	);
 	if (pass)
 		result = state->uploads.record(pass);
 	else if (hasArrays)

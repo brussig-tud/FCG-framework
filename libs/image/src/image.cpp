@@ -26,8 +26,21 @@
 // Anonymous namespace begin
 namespace {
 
-/// Bake an indexed or packed color key into the converted alpha channel, preserving original texel precision.
-/// The source is an independent duplicate with its key disabled; both surfaces outlive this operation.
+/// \brief
+/// 	Sets alpha to zero in \c destination for every pixel whose color in \c source matches the color key.
+///
+/// The key is compared in the original (indexed or packed) representation of \c source, so palette indices and
+/// high-bit RGB values are matched exactly. \c source must be an independent duplicate of the image with its key
+/// disabled, and \c destination its converted counterpart in \c RGBA32, \c BGRA32 or \c RGBA128_FLOAT format.
+///
+/// \param source
+/// 	The unconverted pixels, with at most 32 bits per pixel.
+/// \param destination
+/// 	The converted pixels, of the same size as \c source.
+/// \param key
+/// 	The color key value of the original image.
+///
+/// \return Nothing on success, or \c fcg::ImageErrorCode::SDLFailure if \c source could not be locked.
 auto bakeColorKey (SDL_Surface &source, SDL_Surface &destination, Uint32 key) -> std::expected<void, fcg::ImageError>
 {
 	// Bake keys using original representations, preserving palette-index identity and high-bit RGB precision.
@@ -35,8 +48,12 @@ auto bakeColorKey (SDL_Surface &source, SDL_Surface &destination, Uint32 key) ->
 	// apply alpha separately after color conversion.
 	const bool copyLock = SDL_MUSTLOCK(&source);
 	if (copyLock && !SDL_LockSurface(&source))
-		return std::unexpected(fcg::ImageError{fcg::ImageErrorCode::SDLFailure, std::string("Locking color-key source: ") + SDL_GetError()});
-	const std::unique_ptr<SDL_Surface, decltype(&SDL_UnlockSurface)> copyUnlock(copyLock ? &source : nullptr, SDL_UnlockSurface);
+		return std::unexpected(fcg::ImageError{
+			fcg::ImageErrorCode::SDLFailure, std::string("Locking color-key source: ") + SDL_GetError()
+		});
+	const std::unique_ptr<SDL_Surface, decltype(&SDL_UnlockSurface)> copyUnlock(
+		copyLock ? &source : nullptr, SDL_UnlockSurface
+	);
 	const auto *details = SDL_GetPixelFormatDetails(source.format);
 	const auto bits = SDL_BITSPERPIXEL(source.format);
 	const auto mask = SDL_ISPIXELFORMAT_INDEXED(source.format) ? (1u << bits) - 1
@@ -47,8 +64,9 @@ auto bakeColorKey (SDL_Surface &source, SDL_Surface &destination, Uint32 key) ->
 			const auto *row = (const Uint8*)source.pixels + y * source.pitch;
 			Uint32 pixel = 0;
 			if (bits < 8) {
+				// LSB formats (4321) store the first pixel in the lowest bits, MSB formats (1234) in the highest
 				const auto shift = SDL_PIXELORDER(source.format) == SDL_BITMAPORDER_4321
-					? 8 - bits - ((x * bits) % 8) : (x * bits) % 8;
+					? (x * bits) % 8 : 8 - bits - ((x * bits) % 8);
 				pixel = (row[x * bits / 8] >> shift) & mask;
 			}
 			else if (details->bytes_per_pixel == 1)
@@ -90,7 +108,7 @@ auto bakeColorKey (SDL_Surface &source, SDL_Surface &destination, Uint32 key) ->
 // Module namespace open
 //
 
-/// The library top-level namespace.
+// The library top-level namespace.
 namespace fcg {
 
 
@@ -157,7 +175,9 @@ auto Image::upload (Device &device) const -> std::expected<Texture, ImageError>
 		&& !SDL_ISPIXELFORMAT_FLOAT(surface->format) && !SDL_ISPIXELFORMAT_FOURCC(surface->format)
 		&& details->Rbits <= 8 && details->Gbits <= 8 && details->Bbits <= 8 && details->Abits <= 8;
 	if (SDL_SurfaceHasColorKey(surface) && (!details || details->bytes_per_pixel > 4))
-		return std::unexpected(ImageError{ImageErrorCode::UnsupportedFormat, "Color keys require an indexed or at most 32-bit pixel representation"});
+		return std::unexpected(ImageError{
+			ImageErrorCode::UnsupportedFormat, "Color keys require an indexed or at most 32-bit pixel representation"
+		});
 	SDL_GPUTextureFormat gpuFormat = SDL_GPU_TEXTUREFORMAT_INVALID;
 	SDL_PixelFormat cpuFormat = surface->format;
 	SDL_Colorspace outputColorspace = colorspace;
@@ -175,30 +195,44 @@ auto Image::upload (Device &device) const -> std::expected<Texture, ImageError>
 		else if (cpuFormat == SDL_PIXELFORMAT_RGBA128_FLOAT) gpuFormat = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
 	}
 	if (gpuFormat == SDL_GPU_TEXTUREFORMAT_INVALID
-		|| !SDL_GPUTextureSupportsFormat(device.handle(), gpuFormat, SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_SAMPLER)) {
+		|| !SDL_GPUTextureSupportsFormat(
+			device.handle(), gpuFormat, SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_SAMPLER
+		)) {
 		gpuFormat = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
 		cpuFormat = SDL_PIXELFORMAT_RGBA128_FLOAT;
 		outputColorspace = SDL_COLORSPACE_SRGB_LINEAR;
 	}
 	if (!SDL_GPUTextureSupportsFormat(device.handle(), gpuFormat, SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_SAMPLER))
-		return std::unexpected(ImageError{ImageErrorCode::GPUFailure, "No precision-preserving sampled texture format is supported"});
+		return std::unexpected(ImageError{
+			ImageErrorCode::GPUFailure, "No precision-preserving sampled texture format is supported"
+		});
 	std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> converted(nullptr, SDL_DestroySurface);
 	if (cpuFormat != surface->format || outputColorspace != colorspace || SDL_SurfaceHasColorKey(surface))
 	{
 		// Conversion can temporarily change source blit state. Perform it on an independent duplicate and disable
 		// its tone mapping, so HDR headroom and any source tone-map preference cannot clip uploaded values.
-		std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> copy(SDL_DuplicateSurface(surface), SDL_DestroySurface);
-		if (!copy || !SDL_SetStringProperty(SDL_GetSurfaceProperties(copy.get()), SDL_PROP_SURFACE_TONEMAP_OPERATOR_STRING, "none"))
-			return std::unexpected(ImageError{ImageErrorCode::SDLFailure, std::string("Preparing image conversion: ") + SDL_GetError()});
+		std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> copy(
+			SDL_DuplicateSurface(surface), SDL_DestroySurface
+		);
+		if (!copy || !SDL_SetStringProperty(
+			SDL_GetSurfaceProperties(copy.get()), SDL_PROP_SURFACE_TONEMAP_OPERATOR_STRING, "none"
+		))
+			return std::unexpected(ImageError{
+				ImageErrorCode::SDLFailure, std::string("Preparing image conversion: ") + SDL_GetError()
+			});
 		Uint32 key = 0;
 		const bool keyed = SDL_SurfaceHasColorKey(surface);
 		if (keyed) {
 			if (!SDL_GetSurfaceColorKey(surface, &key) || !SDL_SetSurfaceColorKey(copy.get(), false, 0))
-				return std::unexpected(ImageError{ImageErrorCode::SDLFailure, std::string("Preparing color key: ") + SDL_GetError()});
+				return std::unexpected(ImageError{
+					ImageErrorCode::SDLFailure, std::string("Preparing color key: ") + SDL_GetError()
+				});
 		}
 		converted.reset(SDL_ConvertSurfaceAndColorspace(copy.get(), cpuFormat, nullptr, outputColorspace, 0));
 		if (!converted)
-			return std::unexpected(ImageError{ImageErrorCode::SDLFailure, std::string("Converting image for upload: ") + SDL_GetError()});
+			return std::unexpected(ImageError{
+				ImageErrorCode::SDLFailure, std::string("Converting image for upload: ") + SDL_GetError()
+			});
 		if (keyed)
 			if (auto result = bakeColorKey(*copy, *converted, key); !result)
 				return std::unexpected(result.error());
@@ -218,8 +252,12 @@ auto Image::upload (Device &device) const -> std::expected<Texture, ImageError>
 	const bool lock = SDL_MUSTLOCK(surface);
 	if (lock && !SDL_LockSurface(surface))
 		return std::unexpected(ImageError{ImageErrorCode::SDLFailure, std::string("Locking image: ") + SDL_GetError()});
-	const std::unique_ptr<SDL_Surface, decltype(&SDL_UnlockSurface)> unlock(lock ? surface : nullptr, SDL_UnlockSurface);
-	const auto bytes = std::span<const std::byte>((const std::byte*)surface->pixels, (std::size_t)surface->pitch * surface->h);
+	const std::unique_ptr<SDL_Surface, decltype(&SDL_UnlockSurface)> unlock(
+		lock ? surface : nullptr, SDL_UnlockSurface
+	);
+	const auto bytes = std::span<const std::byte>(
+		(const std::byte*)surface->pixels, (std::size_t)surface->pitch * surface->h
+	);
 	auto uploaded = texture->upload(bytes, TextureTransferLayout{0, (std::size_t)surface->pitch, 0});
 	if (!uploaded)
 		return std::unexpected(ImageError{ImageErrorCode::GPUFailure, uploaded.error().message});

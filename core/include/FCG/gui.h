@@ -1,31 +1,44 @@
-/**
- * \defgroup fcg_gui GUI
- * \ingroup fcg_components
- *
- * <code>\ref fcg::Gui</code> integrates Dear ImGui with the framework runtime and SDL backends. Applets contribute GUI
- * content through <code>\ref fcg::Applet::gui</code>.
- *
- * \par Guide incomplete
- * This guide is a stub. Consult the API declarations below for currently documented behavior.
- *
- * \section fcg_gui_workflows Common workflows
- * Guide incomplete: workflow descriptions remain to be investigated and written.
- *
- * \section fcg_gui_lifetime Ownership and lifetime
- * Guide incomplete: consult individual type and member contracts.
- *
- * \section fcg_gui_errors Errors
- * Guide incomplete: error handling remains to be investigated and written.
- *
- * \section fcg_gui_examples Examples
- * Guide incomplete: worked examples remain to be added and compiled.
- *
- * \see \ref fcg_runtime, \ref fcg_applets, \ref fcg_windows
- */
-
 
 #ifndef __FCG_GUI_H__
 #define __FCG_GUI_H__
+
+
+//////
+//
+// Module documentation
+//
+
+/// \defgroup fcg_gui GUI
+/// \ingroup fcg_modules
+/// \brief Dear ImGui widgets drawn on top of the scene, defined in the applets' \c gui callbacks.
+///
+/// The framework integrates <em>Dear ImGui</em>: every main-loop iteration, each applet defines its widgets in
+/// <tt>\ref fcg::Applet::gui "Applet::gui"</tt>, and the framework renders the combined widgets on top of the presented
+/// scene. The <tt>\ref fcg::Gui "Gui"</tt> class drives this integration; it is created and owned by
+/// <tt>\ref fcg::run "run"</tt>, and applications normally do not interact with it directly.
+///
+/// \section fcg_gui_usage Getting started
+/// Issue \c ImGui:: calls in <tt>\ref fcg::Applet::gui "Applet::gui"</tt>; the ImGui context is current during that
+/// callback:
+/// \snippet gui_examples.cpp gui_widgets
+/// Do not call <tt>ImGui::Render()</tt> or <tt>ImGui::NewFrame()</tt> yourself; the framework does.
+///
+/// \section fcg_gui_workflows Common tasks
+/// \subsection fcg_gui_workflows_input Input capture
+/// While the GUI uses the keyboard, keyboard events are withheld from the applets; the same applies to mouse events
+/// while the GUI uses the mouse. In particular, pressing Escape does not close the application while a text field is
+/// being edited.
+///
+/// \subsection fcg_gui_workflows_scaling Display scaling
+/// The GUI style is adapted automatically when the display's content scale changes.
+///
+/// \section fcg_gui_lifetime Ownership and lifetime
+/// The <tt>\ref fcg::Gui "Gui"</tt> instance is created by <tt>\ref fcg::run "run"</tt> after the main window has been
+/// claimed by the GPU device, and is destroyed after the applets, which therefore can use ImGui until their
+/// destructors run. Applications never create a GUI themselves.
+///
+/// \see \ref fcg_applets, \ref fcg_events, \ref fcg_runtime
+
 
 
 //////
@@ -38,6 +51,7 @@
 
 // Local includes
 #include "FCG/export.h"
+
 
 
 //////
@@ -60,7 +74,6 @@ namespace fcg {
 
 
 
-
 //////
 //
 // Namespaces open
@@ -69,9 +82,8 @@ namespace fcg {
 /// The library top-level namespace.
 namespace fcg {
 
-/** \addtogroup fcg_gui
- * @{
- */
+/// \addtogroup fcg_gui
+/// @{
 
 
 
@@ -80,11 +92,18 @@ namespace fcg {
 // Classes
 //
 
-/// Encapsulates the framework-wide \em Dear \em ImGui context and its SDL3 backends.
+/// \brief
+/// 	The framework's <em>Dear ImGui</em> integration: owns the ImGui context and connects it to the main window's
+/// 	input events and to the GPU device for rendering.
 ///
-/// An instance of this class is created by <code>\ref fcg::run</code> after the main window has been claimed for the
-/// GPU device, and is destroyed before the window is unclaimed. While it is alive, applet <code>\ref Applet::gui</code>
-/// callbacks are invoked with the framework *ImGui* context current, so applets can issue *ImGui* calls directly.
+/// <tt>\ref fcg::run "run"</tt> creates one instance after setting up the main window and drives it every
+/// main-loop iteration: it feeds all SDL events to <tt>\ref processEvent "processEvent"</tt>, starts a new ImGui frame
+/// with <tt>\ref newFrame "newFrame"</tt> before the applets' <tt>\ref fcg::Applet::gui "Applet::gui"</tt> callbacks,
+/// and renders the result on top of the presented scene. While an instance exists, its ImGui context is the current
+/// one, so applets can issue ImGui calls directly. Applications normally don't use this class themselves.
+///
+/// Because ImGui has a single current context, at most one instance may exist at a time. In particular, applications
+/// run by \c fcg::run must not create another one.
 class FCG_FRAMEWORK_EXPORT Gui
 {
 public:
@@ -92,80 +111,129 @@ public:
 	////
 	// Constants
 
-	/// The interval, in milliseconds, after which <code>\ref fcg::run</code> redraws while
-	/// <code>\ref needsPeriodicRedraw</code> is `true`. Chosen to match the shortest visible/hidden transition gap of the
-	/// blinking *ImGui* text caret.
+	/// The interval, in milliseconds, at which \c fcg::run redraws while
+	/// <tt>\ref needsPeriodicRedraw "needsPeriodicRedraw"</tt> returns \c true, even if no input arrives.
 	static constexpr int periodicRedrawIntervalMs = 400;
 
 
 	////
 	// Object construction/destruction
 
-	/// Create the framework GUI for the given main window. The window must already be claimed for the device.
+	/// \brief
+	/// 	Creates the GUI for the given main window. Called by \c fcg::run; applications normally don't call this.
 	///
-	/// \param device The shared GPU device.
-	/// \param mainWindow The main window the GUI will be rendered into.
+	/// The GUI is set up for the dark ImGui style with keyboard navigation enabled, scaled to the display content
+	/// scale of the window (see <tt>\ref updateContentScale "updateContentScale"</tt>).
 	///
-	/// \returns The new GUI, or `nullptr` if initialization failed.
+	/// \pre
+	/// 	\p mainWindow is claimed by \p device (see <tt>\ref fcg::Device::claimWindow "Device::claimWindow"</tt>). No
+	/// 	other \c Gui instance exists.
+	///
+	/// \param device The GPU device used for rendering the GUI. It must outlive the returned object.
+	/// \param mainWindow The window whose input the GUI processes and into which it is rendered.
+	///
+	/// \return The new GUI, or \c nullptr if initialization failed. The reason is logged to the SDL log.
 	[[nodiscard]] static auto create (Device &device, Window &mainWindow) -> std::unique_ptr<Gui>;
 
-	/// The destructor. Waits for the GPU to go idle, then shuts down the *ImGui* backends and destroys the
-	/// framework *ImGui* context.
+	/// \brief
+	/// 	Waits until the GPU is idle, then shuts down the GUI and destroys its ImGui context.
+	///
+	/// \pre
+	/// 	The GPU device passed to <tt>\ref create "create"</tt> is still alive.
 	~Gui();
 
-	/// \c Gui is not copyable.
+	/// Not copyable.
 	Gui(const Gui&) = delete;
 
-	/// \c Gui is not copy-assignable.
+	/// Not copy-assignable.
 	auto operator= (const Gui&) -> Gui& = delete;
+
+
+	////
+	// Accessors
+
+	/// \brief
+	/// 	Whether a GUI text field is currently being edited. While this is \c true, key presses belong to the text
+	/// 	field; in particular, Escape does not close the application.
+	///
+	/// \return \c true while the GUI wants text input.
+	[[nodiscard]] auto wantsTextInput () const -> bool;
+
+	/// \brief
+	/// 	Whether the GUI currently captures keyboard input, for example while a widget has keyboard focus.
+	///
+	/// While this is \c true, \c fcg::run does not deliver keyboard events to
+	/// <tt>\ref fcg::Applet::onEvent "Applet::onEvent"</tt>.
+	///
+	/// \return \c true while the GUI captures the keyboard.
+	[[nodiscard]] auto wantsKeyboard () const -> bool;
+
+	/// \brief
+	/// 	Whether the GUI currently captures mouse input, for example while the cursor is over a GUI window or a
+	/// 	widget is being dragged.
+	///
+	/// While this is \c true, \c fcg::run does not deliver mouse motion, button and wheel events to
+	/// <tt>\ref fcg::Applet::onEvent "Applet::onEvent"</tt>.
+	///
+	/// \return \c true while the GUI captures the mouse.
+	[[nodiscard]] auto wantsMouse () const -> bool;
+
+	/// \brief
+	/// 	Whether the GUI needs to be redrawn periodically even without input, which is the case while a text field
+	/// 	with a blinking caret is being edited.
+	///
+	/// While this is \c true, \c fcg::run redraws at least every
+	/// <tt>\ref periodicRedrawIntervalMs "periodicRedrawIntervalMs"</tt> milliseconds.
+	///
+	/// \return \c true while periodic redraws are needed.
+	[[nodiscard]] auto needsPeriodicRedraw () const -> bool;
 
 
 	////
 	// Methods
 
-	/// Feed an SDL event to the *ImGui* SDL3 platform backend. Must be called for every event that the main loop
-	/// dispatches, so the GUI can react to input.
+	/// Passes an SDL event to the GUI so it can react to input. Called by \c fcg::run for every SDL event;
+	/// applications normally don't call this.
 	///
 	/// \param event The SDL event to process.
 	void processEvent (const SDL_Event &event);
 
-	/// Apply the display content scale of the given window's monitor to the *ImGui* style, so widgets are sized
-	/// according to the system DPI scaling. Queries the current scale and only touches the *ImGui* style when it
-	/// changed since the last call, so it is cheap to call in reaction to every event that might indicate a
-	/// change (e.g. \c SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED or the window being moved to another monitor).
-	/// Called once during <code>\ref create</code> to establish the initial scale.
+	/// \brief
+	/// 	Scales the GUI fonts and style sizes to the display content scale of the monitor the window is currently on.
+	/// 	Called by \c fcg::run whenever the display or its scale changes; applications normally don't call this.
 	///
-	/// \param window The window whose current display content scale should be applied.
+	/// Does nothing if the scale has not changed since the last call. If the scale cannot be determined, a scale of 1
+	/// is used.
+	///
+	/// \param window The window whose display content scale to apply.
 	void updateContentScale (const Window &window);
 
-	/// Begin a new *ImGui* frame. Called by <code>\ref fcg::run</code> once per main loop iteration, before the applet
-	/// <code>\ref Applet::gui</code> callbacks are invoked.
+	/// Begins a new ImGui frame. Called by \c fcg::run once per main-loop iteration, before the applets'
+	/// <tt>\ref fcg::Applet::gui "Applet::gui"</tt> callbacks; applications normally don't call this.
 	void newFrame ();
 
-	/// Finalize the *ImGui* frame and prepare the draw data for rendering on the given frame's command buffer. Called by
-	/// <code>\ref fcg::run</code> after all applets had their <code>\ref Applet::gui</code> turn. Safe to call with a
-	/// `nullptr` frame (e.g. when the window is minimized), in which case no GPU preparation is performed.
+	/// \brief
+	/// 	Ends the current ImGui frame and prepares its draw data for rendering. Called by \c fcg::run after all
+	/// 	applets had their <tt>\ref fcg::Applet::gui "Applet::gui"</tt> turn; applications normally don't call this.
 	///
-	/// \param frame The current frame, or `nullptr` if no frame could be started.
+	/// Must be called once for every <tt>\ref newFrame "newFrame"</tt>, also when no frame could be started. If
+	/// \p frame is not \c nullptr, the draw data is uploaded using the frame's command buffer, so the call must be made
+	/// while no render pass of that frame is active and before <tt>\ref renderDrawData "renderDrawData"</tt>.
+	///
+	/// \param frame The current frame, or \c nullptr if no frame could be started (e.g. while the window is minimized).
 	void prepareRender (Frame *frame);
 
-	/// Record the *ImGui* draw data into the given render pass. Must be called after the applet
-	/// <code>\ref Applet::render</code> callbacks so the GUI is drawn on top, and only if a frame is actually in flight.
+	/// \brief
+	/// 	Records the GUI draw calls into the given render pass. Called by \c fcg::run after the scene has been
+	/// 	presented; applications normally don't call this.
+	///
+	/// \pre
+	/// 	<tt>\ref prepareRender "prepareRender"</tt> was called with the same frame, and \p renderPass is that frame's
+	/// 	overlay pass obtained from <tt>\ref fcg::Frame::beginOverlayRenderPass "Frame::beginOverlayRenderPass"</tt>.
 	///
 	/// \param commandBuffer The command buffer of the current frame.
-	/// \param renderPass The render pass targeting the main window swapchain texture.
+	/// \param renderPass The overlay render pass of the current frame.
 	void renderDrawData (SDL_GPUCommandBuffer *commandBuffer, SDL_GPURenderPass *renderPass);
-
-	/// Whether the GUI currently wants text input. While this is `true`, key presses should be considered
-	/// consumed by the GUI (e.g. *Escape* should not close the window while a text field is being edited).
-	[[nodiscard]] auto wantsTextInput () const -> bool;
-	[[nodiscard]] auto wantsKeyboard () const -> bool;
-	[[nodiscard]] auto wantsMouse () const -> bool;
-
-	/// Whether the GUI currently needs periodic redraws even without any input events. This is the case while a
-	/// text field with a blinking caret is active. A blocking main loop should wake up after
-	/// <code>\ref periodicRedrawIntervalMs</code> at the latest in this situation.
-	[[nodiscard]] auto needsPeriodicRedraw () const -> bool;
 
 
 private:
@@ -173,25 +241,28 @@ private:
 	////
 	// Object construction
 
-	/// Private default constructor. GUIs are created via <code>\ref create</code>.
+	/// Private default constructor. GUIs are created via <tt>\ref create "create"</tt>.
 	Gui() = default;
 
 
 	////
 	// Fields
 
-	/// The GPU device the renderer backend was initialized with. Referenced, not owned – the device is owned by
-	/// <code>\ref fcg::run</code> and outlives the GUI.
+	/// The GPU device the renderer backend was initialized with. Referenced, not owned; the device must outlive the
+	/// GUI.
 	SDL_GPUDevice *m_device = nullptr;
 
-	/// The display content scale most recently applied to the *ImGui* style. Used by <code>\ref updateContentScale</code>
-	/// to detect changes and to rescale style sizes by the correct ratio.
+	/// The display content scale most recently applied to the ImGui style. Used by
+	/// <tt>\ref updateContentScale "updateContentScale"</tt> to detect changes and to rescale style sizes by the
+	/// correct ratio.
 	float m_contentScale = 1.0f;
 };
 
 
 
-/** @} */
+/// @}
+
+
 
 //////
 //

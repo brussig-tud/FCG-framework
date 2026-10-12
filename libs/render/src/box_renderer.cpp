@@ -75,10 +75,13 @@ auto BoxRenderer::create (Device &device, const RenderTargetInfo &target, const 
 	return BoxRenderer(std::move(*resources));
 }
 
-auto BoxRenderer::create (Player &player, const RendererOptions &options) -> std::expected<BoxRenderer, RenderError> {
+auto BoxRenderer::create (Player &player, const RendererOptions &options) -> std::expected<BoxRenderer, RenderError>
+{
 	const auto target = player.mainRenderTargetInfo();
 	if (!target)
-		return std::unexpected(RenderError{RenderErrorCode::InvalidState, "Player has no valid main-window render target"});
+		return std::unexpected(RenderError{
+			RenderErrorCode::InvalidState, "Player has no valid main-window render target"
+		});
 	return create(player.device(), *target, options);
 }
 

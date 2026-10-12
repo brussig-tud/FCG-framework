@@ -5,6 +5,90 @@
 
 //////
 //
+// Library documentation
+//
+
+/// \page fcg_render_overview Render library overview
+///
+/// The Render library draws instanced primitives — textured quads and shaded 3D boxes — that share one set of
+/// per-instance attributes on the GPU. It is the quickest way to put many simple objects on the screen without writing
+/// your own pipelines and shaders.
+///
+/// Link your application against \verbatim FCG-Framework::Render \endverbatim and include the renderer headers under
+/// \c FCG/Render/:
+/// \snippet render_examples.cpp includes
+///
+/// \section fcg_render_start Where to start
+/// Start with the \ref fcg_primitives guide: it explains the shared attribute collection, the two supplied
+/// renderers, and how to create, update, and draw them.
+
+
+
+//////
+//
+// Module documentation
+//
+
+/// \defgroup fcg_primitives Instanced primitives
+/// \ingroup fcg_modules
+/// \brief Drawing many textured quads and shaded boxes that share per-instance attributes.
+///
+/// A <tt>\ref fcg::PrimitiveAttributes "PrimitiveAttributes"</tt> collection holds the per-instance data — position,
+/// extent, orientation, and color — on the GPU, and also offers optional normal and radius sources, which the
+/// supplied renderers do not use. The renderers <tt>\ref fcg::QuadRenderer "QuadRenderer"</tt> and
+/// <tt>\ref fcg::BoxRenderer "BoxRenderer"</tt> draw the collection with one instanced draw call each: quads are
+/// textured or shaded rectangles, boxes are lit 3D cuboids. Missing optional attributes fall back to sensible
+/// defaults (unit extent, identity orientation, opaque white); position determines the instance count.
+/// \snippet render_examples.cpp attributes
+///
+/// \section fcg_primitives_usage Getting started
+/// Create the attribute collection and a renderer bound to the main render pass, then draw into an active render
+/// pass:
+/// \snippet render_examples.cpp player
+/// \snippet render_examples.cpp draw
+///
+/// \section fcg_primitives_workflows Common tasks
+/// \subsection fcg_primitives_workflows_attributes Updating attributes
+/// Change attributes with <tt>\ref fcg::PrimitiveAttributes::setAttributes "setAttributes"</tt>: inside its update
+/// scope, assign whole arrays per <tt>\ref fcg::Attribute "attribute"</tt>. Changes are uploaded together when the
+/// scope ends; a failed update leaves the previously uploaded data in place.
+/// Typed attribute bytes are copied directly; <tt>\ref fcg::AttributeTraits</tt> describes the component layout,
+/// including padded vector types and the quaternion ordering of <tt>\ref fcg::Attribute::Orientation
+/// "Orientation"</tt>. Interleaved, borrowed GPU buffers are supported through
+/// <tt>\ref fcg::AttributeBufferView "AttributeBufferView"</tt>.
+///
+/// \subsection fcg_primitives_workflows_renderers Creating renderers
+/// Besides creating from a <tt>\ref fcg::Player "Player"</tt> as shown above, the explicit factory variant takes a
+/// borrowed <tt>\ref fcg::Device "Device"</tt> and <tt>\ref fcg::RenderTargetInfo "RenderTargetInfo"</tt>, e.g. for
+/// off-screen targets. A renderer keeps no reference to the player, so it keeps working while the window is
+/// minimized. Pipeline settings such as culling, blending, and depth behavior are fixed at creation via
+/// <tt>\ref fcg::RendererOptions "RendererOptions"</tt>; recreate the renderer to change them. Resizing needs no
+/// recreation; a change of the render target's formats or sample count does.
+///
+/// \subsection fcg_primitives_workflows_drawing Drawing and appearance
+/// <tt>\ref fcg::DrawOptions "DrawOptions"</tt> optionally binds one caller-created 2D texture and sampler; its RGBA
+/// values multiply the instance colors. Both renderers apply one directional light in eye space; boxes shade with
+/// their flat face normals, quads shade with their plane normal and flip it on the back side. The light direction,
+/// ambient, and diffuse strengths are configurable. <tt>\ref fcg::InstanceRange "InstanceRange"</tt> selects a
+/// contiguous subrange of the instances; an empty range draws nothing.
+///
+/// \section fcg_primitives_lifetime Ownership and lifetime
+/// The device must outlive the attribute collection and the renderers. The collection is not thread-safe; use it from
+/// one thread at a time. Borrowed buffers passed to attribute updates must stay alive and unmoved while they are used.
+/// Updates and draws never wait for GPU idle.
+///
+/// \section fcg_primitives_errors Handling errors
+/// Factories and operations return <tt>std::expected&lt;T, \ref fcg::RenderError "RenderError"&gt;</tt>. Failed
+/// updates keep the previous attribute data; a failed automatic submission makes the changed arrays unusable until
+/// they are replaced successfully. Callback exceptions propagate after cleanup and record nothing. Errors carry a
+/// human-readable message and never log.
+///
+/// \see \ref fcg_buffers, \ref fcg_textures, \ref fcg_applets, \ref fcg_render_state
+
+
+
+//////
+//
 // Includes
 //
 
@@ -28,65 +112,6 @@
 /// The library top-level namespace.
 namespace fcg {
 
-/// \page fcg_render_guide Render library guide
-///
-/// Link against <tt>FCG-Framework\::Render</tt>, which publicly links Core. Include the concrete renderer headers
-/// below.
-/// \snippet render_examples.cpp includes
-///
-/// A <tt>\ref fcg::PrimitiveAttributes</tt> collection shares GPU instance data between <tt>\ref fcg::QuadRenderer</tt>
-/// and <tt>\ref fcg::BoxRenderer</tt>. Position determines the instance count; extent is a local half size, orientation
-/// is a quaternion, and color is RGBA. Missing optional sources default to unit extent, identity orientation, and
-/// white. The initial renderers ignore normal and radius.
-/// \snippet render_examples.cpp attributes
-///
-/// <tt>\ref fcg::PrimitiveAttributes::setAttributes</tt> invokes a scoped
-/// <tt>\ref fcg::PrimitiveAttributes::Update</tt> proxy, then validates final assignments and uploads changed arrays
-/// together. The last assignment wins; omitted sources remain. Input arrays must stay valid and unchanged until the
-/// call returns. No CPU array mirror is retained. GPU capacity and staging are reused across updates. Typed object
-/// bytes are copied directly; <tt>\ref fcg::AttributeTraits</tt> describes component offsets, including padded vector
-/// types and quaternion ordering. <tt>\ref fcg::AttributeBufferView</tt> supports interleaved borrowed buffers with
-/// word-aligned offsets and strides; owners must remain alive and unmoved.
-///
-/// Create a renderer from a <tt>\ref fcg::Player</tt> during initialization, before the first frame.
-/// <tt>\ref fcg::Player::mainRenderTargetInfo</tt> returns the main-pass attachments even while minimized. Missing or
-/// unclaimed windows produce <tt>\ref fcg::RenderErrorCode::InvalidState</tt>.
-/// \snippet render_examples.cpp player
-///
-/// Alternatively use the explicit factory with a borrowed <tt>\ref fcg::Device</tt> and
-/// <tt>\ref fcg::RenderTargetInfo</tt>. An invalid depth format means no depth attachment and disables depth
-/// tests and writes. Defaults are depth testing and writing with LESS, back-face culling for boxes, no culling for
-/// quads, and disabled blending. <tt>\ref fcg::RendererOptions</tt> can override culling or enable straight-alpha
-/// blending. Renderer resources retain no player. Resize needs no recreation; formats or sample-count changes do.
-///
-/// Draw in an active compatible render pass with <tt>\ref fcg::RenderState</tt> viewing matrices.
-/// The nonempty draw issues one instanced draw; <tt>\ref fcg::InstanceRange</tt> selects a contiguous subrange.
-/// Draws allocate no resources or array uploads. Arrays for consumed sources must cover the requested range.
-/// \snippet render_examples.cpp draw
-///
-/// <tt>\ref fcg::DrawOptions</tt> optionally borrows one caller-created 2D texture and sampler. Texture RGBA multiplies
-/// instance RGBA. Quads use UV (0,0) at local (-1,-1) and (1,1) at (+1,+1). Each box face has independent UVs: +X uses
-/// -Z/+Y, -X +Z/+Y, +Y +X/-Z, -Y +X/+Z, +Z +X/+Y, -Z -X/+Y. Lighting uses oriented flat normals transformed by Core's
-/// normal matrix; quad back faces flip their normal. The light direction points toward the light in eye space. RGB is
-/// multiplied by ambient plus diffuse times the clamped normal/light dot product; base alpha is preserved. Defaults are
-/// +Z, ambient 0.2, and diffuse 0.8.
-///
-/// Transforms require finite homogeneous positions with nonzero W, finite nonnegative extents, and finite nonzero
-/// orientations. CPU replacements are validated; borrowed GPU arrays have the same caller-owned preconditions.
-/// Degenerate zero extents are allowed. Geometry is scaled by extent, rotated by normalized orientation, and translated
-/// to the homogeneous center.
-///
-/// Devices outlive resources. Access is externally serialized; recursive updates fail. Callback exceptions propagate
-/// after cleanup and record nothing. Validation, allocation, and staging failure preserve previous metadata and clear
-/// pending staging. Already recorded writes cannot be rolled back. Failed automatic submission makes changed arrays
-/// unusable until successfully replaced. The supplied-copy-pass overload reports recording success only: end the pass,
-/// submit the command buffer, and resupply changed arrays after cancellation or failed submission. Standard C++
-/// allocation exceptions may propagate after cleanup. <tt>\ref fcg::RenderError</tt> owns its diagnostic. Updates and
-/// draws never wait for GPU idle.
-///
-/// This version supports filled primitives, one color target, and one texture per draw. Custom shaders, per-face
-/// materials, transparent-instance sorting, and interpretation of radius or user normals are future capabilities.
-
 /// \addtogroup fcg_primitives
 /// @{
 
@@ -97,65 +122,92 @@ namespace fcg {
 // Structs and enums
 //
 
-/// Pipeline settings resolved when a renderer is created.
+/// \brief
+/// 	Pipeline settings of a primitive renderer.
+///
+/// The settings are fixed when the renderer is created. To change them, create a new renderer.
 struct RendererOptions
 {
-	/// Enable depth comparisons when the target has depth.
+	/// Whether depth testing is enabled. Has no effect if the target has no depth attachment.
 	bool depthTest = true;
 
-	/// Enable depth writes when the target has depth.
+	/// Whether depth writing is enabled. Has no effect if the target has no depth attachment.
 	bool depthWrite = true;
 
-	/// Depth comparison function.
+	/// The comparison used for depth testing.
 	SDL_GPUCompareOp depthCompare = SDL_GPU_COMPAREOP_LESS;
 
-	/// Explicit culling; absence chooses back-face culling for boxes and no culling for quads.
+	/// \brief
+	/// 	The face culling mode.
+	///
+	/// If empty, \c BoxRenderer culls back faces and \c QuadRenderer culls nothing. The outward sides of boxes and the
+	/// +Z sides of quads are their front faces.
 	std::optional<SDL_GPUCullMode> cullMode;
 
-	/// Enable straight-alpha blending; instances are drawn in array order.
+	/// \brief
+	/// 	Whether colors are blended using straight (not premultiplied) alpha.
+	///
+	/// When enabled, the output RGB is <tt>src.rgb * src.a + dst.rgb * (1 - src.a)</tt> and the output alpha is
+	/// <tt>src.a + dst.a * (1 - src.a)</tt>. Instances are drawn in the order of the collection and are not sorted by
+	/// depth.
 	bool alphaBlending = false;
 };
 
-/// Optional borrowed texture and sampler; caller creates, uploads, and retains both resources.
-struct PrimitiveTexture {
-	/// Sampled two-dimensional color texture on the renderer's device.
+/// \brief
+/// 	A texture and a sampler for drawing primitives textured, set via <tt>DrawOptions::texture</tt>.
+///
+/// You create both resources, and they must stay alive at least until the command buffer containing the draw has
+/// been submitted.
+struct PrimitiveTexture
+{
+	/// The texture, sampled at the texture coordinates of the primitive. Must be a 2D texture with sampler usage,
+	/// created on the renderer's device. Must not be null.
 	SDL_GPUTexture *texture = nullptr;
 
-	/// Sampler on the renderer's device.
+	/// The sampler used to sample <tt>texture</tt>. Must be created on the renderer's device. Must not be null.
 	SDL_GPUSampler *sampler = nullptr;
 };
 
-/// Eye-space directional lighting, preserving the base alpha.
+/// \brief
+/// 	A directional light for simple diffuse lighting of primitives, set via <tt>DrawOptions::lighting</tt>.
+///
+/// With lighting enabled, the RGB part of each fragment color is multiplied by
+/// <tt>ambient + diffuse * max(dot(n, l), 0)</tt>, where \c n is the unit normal of the surface in eye space and
+/// \c l is the normalized <tt>direction</tt>. The alpha is unchanged. Boxes use the flat outward normal of each face.
+/// Quads use their +Z normal on the front side and the flipped normal on the back side.
 struct DirectionalLight
 {
-	/// Enable generated geometry normals and directional lighting.
+	/// Whether lighting is applied. If <tt>false</tt>, the other fields are ignored and colors are drawn unlit.
 	bool enabled = false;
 
-	/// Finite, nonzero direction toward the light, normalized when drawing.
+	/// Direction from the surface toward the light, in eye space. Must be finite and nonzero when lighting is enabled;
+	/// its length does not matter. The default (0, 0, 1) points toward the viewer.
 	glm::vec3 direction{0.f, 0.f, 1.f};
 
-	/// Finite RGB ambient intensity.
+	/// RGB intensity of the ambient term. Must be finite when lighting is enabled.
 	glm::vec3 ambient{.2f};
 
-	/// Finite RGB diffuse intensity.
+	/// RGB intensity of the diffuse term. Must be finite when lighting is enabled.
 	glm::vec3 diffuse{.8f};
 };
 
-/// Per-draw texture and lighting choices; no uploads or pipeline creation occur during drawing.
-struct DrawOptions {
-	/// Optional borrowed texture/sampler pair; multiplies RGBA instance color.
+/// Texture and lighting settings for a single <tt>PrimitiveRenderer::draw</tt> call.
+struct DrawOptions
+{
+	/// Optional texture. If set, the instance color is multiplied by the texture color.
 	std::optional<PrimitiveTexture> texture;
 
-	/// Disabled by default; quads flip back-face normals for two-sided lighting.
+	/// Lighting settings. Lighting is disabled by default.
 	DirectionalLight lighting;
 };
 
-/// Contiguous instance range; counts are validated only for attributes consumed by the renderer.
-struct InstanceRange {
-	/// First instance in the shared collection.
+/// A contiguous range of instances to draw.
+struct InstanceRange
+{
+	/// Index of the first instance to draw.
 	std::size_t first = 0;
 
-	/// Number of instances; \c std::dynamic_extent means all remaining instances.
+	/// Number of instances to draw. \c std::dynamic_extent draws all instances from \c first to the end.
 	std::size_t count = std::dynamic_extent;
 };
 
@@ -166,11 +218,17 @@ struct InstanceRange {
 // Classes
 //
 
-/// Common interface for instanced primitive renderers.
+/// \brief
+/// 	Common interface of the instanced primitive renderers \c QuadRenderer and <tt>BoxRenderer</tt>.
 ///
-/// Renderers borrow a device and retain pipelines. Resize alone requires no recreation; changed target formats or
-/// sample count require recreating the renderer. Devices outlive all resources. Attribute buffers remain stable and
-/// alive during use. Access must be externally serialized.
+/// A renderer draws one primitive per instance of a \c PrimitiveAttributes collection, using the attributes listed by
+/// <tt>supportedAttributes</tt>. It draws into render passes whose attachments match the target it was created for,
+/// at any size. When the formats or the sample count of the target change, you must create a new renderer.
+///
+/// The device must outlive the renderer. Every buffer bound to a drawn collection with
+/// <tt>PrimitiveAttributes::Update::bind</tt> must stay alive while it is bound. Renderers are not thread-safe: calls
+/// must not run concurrently with each other or with updates of the drawn collection. Drawing never waits for the
+/// GPU.
 class FCG_RENDER_EXPORT PrimitiveRenderer
 {
 public:
@@ -178,41 +236,69 @@ public:
 	////
 	// Object construction/destruction
 
-	/// Release concrete resources through the interface without waiting for idle.
+	/// Destroys the renderer without waiting for the GPU. Draws that were already submitted still complete.
 	virtual ~PrimitiveRenderer();
 
 
 	////
 	// Accessors
 
-	/// Logical attributes consumed by this renderer; other collection sources are ignored.
+	/// \brief
+	/// 	Returns the attributes this renderer uses when drawing.
+	///
+	/// The sources of all other attributes in a drawn collection are ignored and need not cover the drawn range.
+	///
+	/// \return The used attributes.
 	[[nodiscard]] virtual auto supportedAttributes () const -> std::span<const Attribute> = 0;
 
-	/// Test whether a logical attribute is consumed.
+	/// \brief
+	/// 	Returns whether this renderer uses an attribute when drawing.
 	///
-	/// \param attribute The logical attribute to query.
+	/// \param attribute
+	/// 	The attribute to query.
 	///
-	/// \return Whether the supported list contains the attribute.
+	/// \return Whether \p attribute is one of the attributes returned by <tt>supportedAttributes</tt>.
 	[[nodiscard]] auto supports (Attribute attribute) const -> bool;
 
 
 	////
 	// Methods
 
-	/// Encode one instanced draw for a nonempty range into an active compatible render pass.
+	/// \brief
+	/// 	Draws one primitive for each instance in \p range into an active render pass.
+	///
+	/// Records a single instanced draw into \p renderPass. The renderer binds its own pipeline, vertex buffer, storage
+	/// buffers and, when texturing, sampler on \p renderPass, and pushes its own vertex and fragment uniform data to
+	/// \p commandBuffer, replacing what was bound or pushed before. If \p range is valid but selects no instances, the
+	/// call succeeds and records nothing. On error, nothing is recorded.
 	///
 	/// \pre
-	/// 	The command buffer and render pass belong to the renderer's device. The pass matches its target.
-	/// 	GPU-supplied transforms satisfy the \c Attribute value contracts. The state describes valid viewing matrices.
+	/// 	\p commandBuffer and \p renderPass belong to the renderer's device, \p renderPass is active, and its
+	/// 	attachments match the target the renderer was created for. Values in buffers bound to used attributes with
+	/// 	<tt>PrimitiveAttributes::Update::bind</tt> meet the requirements of the respective <tt>Attribute</tt>.
 	///
-	/// \param attributes Shared collection on the renderer's device.
-	/// \param state Core viewing state; lazy viewing matrices may be evaluated.
-	/// \param commandBuffer Command buffer owning the render pass.
-	/// \param renderPass Active render pass with matching attachments.
-	/// \param options Borrowed texture and lighting settings.
-	/// \param range Requested contiguous instance range; the default draws all instances.
+	/// \param attributes
+	/// 	The instance attributes. Must belong to the renderer's device.
+	/// \param state
+	/// 	Supplies the current viewing matrices.
+	/// \param commandBuffer
+	/// 	The command buffer that contains \p renderPass.
+	/// \param renderPass
+	/// 	The active render pass to draw into.
+	/// \param options
+	/// 	Texture and lighting settings for this draw.
+	/// \param range
+	/// 	The instances to draw. The default draws all instances.
 	///
-	/// \return Encoding success or a recoverable validation/state error.
+	/// \return
+	/// 	Success, or an error. The error is <tt>RenderErrorCode::InvalidArgument</tt> if \p attributes belongs to
+	/// 	another device, if \p commandBuffer or \p renderPass is null, if \p range extends beyond the instance count
+	/// 	of \p attributes or selects more than 2^32 - 1 instances, if an array of a used attribute has fewer
+	/// 	elements than the end of \p range, if \p options holds a texture or sampler that is null, or if enabled
+	/// 	lighting has a nonfinite or zero direction or nonfinite intensities. The error is
+	/// 	<tt>RenderErrorCode::InvalidState</tt> if the renderer has been moved from, if a used attribute is not
+	/// 	usable (see <tt>PrimitiveAttributes::usable</tt>), or if a buffer bound to a used attribute has been moved
+	/// 	from or no longer meets the requirements of <tt>AttributeBufferView</tt>.
 	[[nodiscard]] virtual auto draw (
 		const PrimitiveAttributes &attributes, RenderState &state, SDL_GPUCommandBuffer *commandBuffer,
 		SDL_GPURenderPass *renderPass, const DrawOptions &options={}, InstanceRange range={}

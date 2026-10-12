@@ -31,6 +31,14 @@
 // Anonymous namespace begin
 namespace {
 
+/// \brief Wrap an angle in degrees to the half-open range [-180, 180).
+///
+/// Computed in double precision to limit rounding errors for large inputs.
+///
+/// \param angle
+/// 	The angle in degrees; must be finite.
+///
+/// \return The equivalent angle in [-180, 180).
 [[nodiscard]] auto wrappedAngle (float angle) -> float {
 	return (float)(std::fmod(std::fmod((double)angle + 180., 360.) + 360., 360.) - 180.);
 }
@@ -45,6 +53,7 @@ namespace {
 // Module namespace open
 //
 
+// The library's namespace for ready-to-use applets.
 namespace fcg::applet {
 
 
@@ -196,7 +205,8 @@ void Camera2D::onEvent (const Event &event, EventContext &context, Player &playe
 			return;
 		const auto modifiers = SDL_GetModState();
 		const bool shift = (modifiers & SDL_KMOD_SHIFT) != 0;
-		if (mouse->button == MouseButton::Left && !(modifiers & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI)))
+		const bool anyModifier = (modifiers & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI)) != 0;
+		if (mouse->button == MouseButton::Left && !anyModifier)
 		{
 			const auto now = std::chrono::steady_clock::now();
 			const bool doubleClick = mouse->clicks == 2
@@ -250,7 +260,9 @@ void Camera2D::onEvent (const Event &event, EventContext &context, Player &playe
 			setEye(m_params.extrinsics.eye + (-dx * xScale * right + dy * yScale * up) * speedFactor);
 		}
 		else if (activeDragButton == MouseButton::Middle)
-			setViewHeight((float)std::clamp((double)frustumDiameterAtFocus() * std::exp(.005 * dy * speedFactor), .001, 100000.));
+			setViewHeight((float)std::clamp(
+				(double)frustumDiameterAtFocus() * std::exp(.005 * dy * speedFactor), .001, 100000.
+			));
 		context.markHandled();
 		return;
 	}

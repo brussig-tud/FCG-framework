@@ -42,17 +42,17 @@
 // Anonymous namespace begin
 namespace {
 
-/// Recoverable failure with owned text.
+/// Creates an unexpected \c fcg::RenderError with the given code and message.
 auto failure (fcg::RenderErrorCode code, std::string message) -> std::unexpected<fcg::RenderError> {
 	return std::unexpected(fcg::RenderError{code, std::move(message)});
 }
 
-/// Capture SDL's current diagnostic immediately.
+/// Creates an \c SDLFailure error from \p context and SDL's current error message.
 auto sdlFailure (const char *context) -> std::unexpected<fcg::RenderError> {
 	return failure(fcg::RenderErrorCode::SDLFailure, std::string(context) + ": " + SDL_GetError());
 }
 
-/// Translate Core resource failures with context.
+/// Translates a Core buffer error into a Render error, prefixing the message with context.
 auto bufferFailure (const fcg::BufferError &error) -> std::unexpected<fcg::RenderError> {
 	const auto code = error.code == fcg::BufferErrorCode::SDLFailure
 		? fcg::RenderErrorCode::SDLFailure : error.code == fcg::BufferErrorCode::InvalidState
@@ -60,38 +60,39 @@ auto bufferFailure (const fcg::BufferError &error) -> std::unexpected<fcg::Rende
 	return failure(code, "Primitive renderer: " + error.message);
 }
 
-/// Immutable local geometry, with offsets described explicitly in the pipeline.
+/// Vertex of the immutable unit geometry; the pipeline describes its field offsets explicitly.
 struct Vertex
 {
 	////
 	// Fields
 
-	/// Local position in the unit primitive.
+	/// Local position; the unit primitive spans -1 to 1 along each used axis.
 	glm::vec3 position;
 
 	/// Flat outward local normal.
 	glm::vec3 normal;
 
-	/// Face-local UV coordinates.
+	/// Texture coordinates within the face.
 	glm::vec2 uv;
 };
 
-/// Shader-compatible uniform layout for storage addressing and constants.
+/// Uniform block describing where the vertex shader reads each used attribute; matches \c Attributes in
+/// primitive.vert.glsl.
 struct alignas(16) AttributeUniforms
 {
 	////
 	// Fields
 
-	/// Word offset, word stride, buffer-source flag, reserved.
+	/// Per slot: word offset, word stride, whether a buffer is bound, and a reserved component.
 	glm::uvec4 layouts[4]{};
 
-	/// Trait component offsets in words.
+	/// Per slot: \c fcg::AttributeTraits component offsets in words.
 	glm::uvec4 components[4]{};
 
-	/// Constant or default values in shader component order.
+	/// Per slot: constant or default value in shader component order; used when no buffer is bound.
 	glm::vec4 constants[4]{{0, 0, 0, 1}, {1, 1, 1, 0}, {0, 0, 0, 1}, {1, 1, 1, 1}};
 
-	/// Starting logical instance, with zero SDL first-instance offset.
+	/// First instance of the draw in X; SDL's first-instance parameter is always zero.
 	glm::uvec4 drawInfo{};
 };
 static_assert(sizeof(AttributeUniforms) == 13 * 16);
@@ -99,41 +100,46 @@ static_assert(offsetof(AttributeUniforms, components) == 4 * 16);
 static_assert(offsetof(AttributeUniforms, constants) == 8 * 16);
 static_assert(offsetof(AttributeUniforms, drawInfo) == 12 * 16);
 
-/// Shader-compatible lighting data.
+/// Uniform block with lighting data; matches \c Lighting in the fragment shaders.
 struct alignas(16) LightUniforms
 {
 	////
 	// Fields
 
-	/// Normalized light direction and lighting-enable flag.
+	/// Normalized direction toward the light; W is nonzero if lighting is enabled.
 	glm::vec4 direction{};
 
-	/// Ambient RGB and two-sided quad flag.
+	/// Ambient RGB intensity; W is nonzero for two-sided quad lighting.
 	glm::vec4 ambient{};
 
-	/// Diffuse RGB, unused W.
+	/// Diffuse RGB intensity; W is unused.
 	glm::vec4 diffuse{};
 };
 static_assert(sizeof(LightUniforms) == 3 * 16);
 
-/// Test finite lighting components.
+/// Returns whether all components of \p value are finite.
 auto finite (const glm::vec3 &value) -> bool {
 	return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 }
 
-/// Resolve one consumed source without touching ignored attributes.
+/// Validates the source of one used attribute for the instances before \p end and writes its storage binding and
+/// uniform layout into \p bindings and \p uniforms at \p slot.
 template <fcg::Attribute A> auto prepareSource (
 	const fcg::PrimitiveAttributes &attributes, std::size_t slot, std::size_t end,
 	AttributeUniforms &uniforms, std::array<SDL_GPUBuffer*, 4> &bindings
 ) -> std::expected<void, fcg::RenderError>
 {
 	if (!attributes.usable<A>())
-		return failure(fcg::RenderErrorCode::InvalidState, "Changed attribute array requires a successful replacement");
+		return failure(
+			fcg::RenderErrorCode::InvalidState, "Changed attribute array requires a successful replacement"
+		);
 	const auto source = attributes.source<A>();
 	if (const auto *view = std::get_if<fcg::AttributeBufferView<A>>(&source))
 	{
 		if (end > view->count)
-			return failure(fcg::RenderErrorCode::InvalidArgument, "Consumed attribute array does not cover the draw range");
+			return failure(
+				fcg::RenderErrorCode::InvalidArgument, "Consumed attribute array does not cover the draw range"
+			);
 		if (!view->buffer || !view->buffer->handle() || view->buffer->device() != &attributes.device()
 			|| !(view->buffer->usage() & SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ))
 			return failure(fcg::RenderErrorCode::InvalidState, "Attribute buffer owner is no longer usable");
@@ -149,7 +155,9 @@ template <fcg::Attribute A> auto prepareSource (
 	{
 		const auto *bytes = (const std::byte*)value;
 		for (std::size_t i = 0; i < fcg::AttributeTraits<A>::componentOffsets.size(); ++i)
-			std::memcpy(&uniforms.constants[slot][(int)i], bytes + fcg::AttributeTraits<A>::componentOffsets[i], sizeof(float));
+			std::memcpy(
+				&uniforms.constants[slot][(int)i], bytes + fcg::AttributeTraits<A>::componentOffsets[i], sizeof(float)
+			);
 	}
 	for (std::size_t i = 0; i < fcg::AttributeTraits<A>::componentOffsets.size(); ++i)
 		uniforms.components[slot][(int)i] = (Uint32)(fcg::AttributeTraits<A>::componentOffsets[i] / 4);
@@ -323,7 +331,9 @@ auto detail::PrimitiveResources::draw (
 ) const -> std::expected<void, RenderError>
 {
 	if (&attributes.device() != &device || !command || !pass)
-		return failure(RenderErrorCode::InvalidArgument, "Draw requires attributes, commands, and pass on the renderer's device");
+		return failure(
+			RenderErrorCode::InvalidArgument, "Draw requires attributes, commands, and pass on the renderer's device"
+		);
 	const auto total = attributes.instanceCount();
 	if (range.first > total)
 		return failure(RenderErrorCode::InvalidArgument, "Instance range starts beyond position count");
@@ -335,9 +345,14 @@ auto detail::PrimitiveResources::draw (
 	if (options.texture && (!options.texture->texture || !options.texture->sampler))
 		return failure(RenderErrorCode::InvalidArgument, "Texturing requires both texture and sampler");
 	const auto &light = options.lighting;
-	const auto scale = std::max({std::abs(light.direction.x), std::abs(light.direction.y), std::abs(light.direction.z)});
-	if (light.enabled && (!finite(light.direction) || scale == 0.f || !finite(light.ambient) || !finite(light.diffuse)))
-		return failure(RenderErrorCode::InvalidArgument, "Lighting requires finite colors and a finite nonzero direction");
+	const auto scale = std::max({
+		std::abs(light.direction.x), std::abs(light.direction.y), std::abs(light.direction.z)
+	});
+	if (light.enabled
+		&& (!finite(light.direction) || scale == 0.f || !finite(light.ambient) || !finite(light.diffuse)))
+		return failure(
+			RenderErrorCode::InvalidArgument, "Lighting requires finite colors and a finite nonzero direction"
+		);
 	AttributeUniforms uniforms;
 	uniforms.drawInfo.x = (Uint32)range.first;
 	std::array<SDL_GPUBuffer*, 4> bindings;

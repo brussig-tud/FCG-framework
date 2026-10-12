@@ -5,46 +5,35 @@ The FCG Framework is a lightweight C++ graphics framework used as the basis for 
 <em>Foundations Computer Graphics</em> exercise. It is built around the <em>SDL 3 GPU</em> API, a modern rendering
 middleware with backends for Vulkan, Direct3D 12 and Metal.
 
-The components it provides are grouped according to function and organized into the Core, Image, Render, and Extras libraries.
+The functionality is grouped by purpose into the <em>Core</em>, <em>Image</em>, <em>Render</em>, and <em>Extras</em>
+libraries. Each library has an overview page describing its purpose and where to start. The module guides then give
+step-by-step usage guidance for every part of a library.
 
-- \ref fcg_components "Component guides" organize facilities by responsibility.
-- \ref fcg_libraries lists CMake link targets and the components each library provides.
-- \ref fcg_api "API reference" links to declarations, including APIs whose guides are incomplete.
+\section fcg_start Start here
+
+Begin with the \ref fcg_core_overview "Core overview": it shows how to write a first applet and run it with
+\ref fcg::run, and points to the modules for input handling, geometry, images, cameras, and GUI.
+
+\section fcg_library_overviews Library overviews
+
+- \ref fcg_core_overview "Core library overview"
+- \ref fcg_image_overview "Image library overview"
+- \ref fcg_render_overview "Render library overview"
+- \ref fcg_extras_overview "Extras library overview"
+
+\section fcg_modules_section Module guides
+
+All module guides are collected under \ref fcg_modules. The library pages under \ref fcg_libraries list which modules
+belong to which library, together with the CMake link target to use.
 
 \section fcg_api API reference
 
 Browse the <a href="annotated.html">class reference</a>, <a href="namespaces.html">namespaces</a>, and
 <a href="files.html">public headers</a>.
-
-\section fcg_guides Component guides
-
-- \ref fcg_render_guide "Render library guide"
-- \ref fcg_primitives
-- \ref fcg_image_guide "Image library guide"
-- \ref fcg_images
-- \ref fcg_image_loading
-- \ref fcg_sdl_image
-- \ref fcg_extras_guide "Extras library guide"
-- \ref fcg_file_dialogs
-- \ref fcg_textures
-- \ref fcg_fullscreen
-- \ref fcg_buffers
-- \ref fcg_runtime
-- \ref fcg_applets
-- \ref fcg_events
-- \ref fcg_devices
-- \ref fcg_windows
-- \ref fcg_render_state
-- \ref fcg_gui
-- \ref fcg_resources
-- \ref fcg_viewing
-- \ref fcg_camera_focus
-- \ref fcg_orbit_camera
-- \ref fcg_camera_2d
-- \ref fcg_utilities
 */
 
-/** \defgroup fcg_components Framework components
- * Component identities are independent of the libraries that provide them. See \ref fcg_libraries for library ownership
- * and CMake link targets.
+/** \defgroup fcg_modules Modules
+ * The framework's module guides. Each guide is a group with its own page and holds the usage guidance for one module;
+ * there is roughly one module per public header. The library pages under \ref fcg_libraries show which library
+ * provides which module.
  */

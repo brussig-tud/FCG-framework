@@ -23,7 +23,7 @@
 // Module namespace open
 //
 
-/// The library top-level namespace.
+// The library top-level namespace.
 namespace fcg {
 
 
@@ -96,23 +96,17 @@ void Player::requestClose ()
 auto Player::shouldClose () const -> bool {
 	if (m_closeRequested.load())
 		return true;
-
 	return m_window && m_window->shouldClose();
 }
 
-auto Player::findCamera (std::string_view name) -> std::optional<Camera*>
-{
-	for (auto &applet : applets) {
-		Camera *cam = dynamic_cast<Camera*>(applet.get());
-		if (cam && applet->name() == name)
+auto Player::findCamera (std::string_view name) -> std::optional<Camera*> {
+	for (auto &applet : applets)
+		if (Camera *cam = dynamic_cast<Camera*>(applet.get()); applet->name() == name)
 			return cam;
-	}
 	return {};
 }
 
 auto Player::swapchainFormat () const -> SDL_GPUTextureFormat {
-	/// If the player has no main window or that window is not claimed by a
-	/// device an \c SDL_GPU_TEXTUREFORMAT_INVALID is returned as sentinel value.
 	return m_window ? m_window->swapchainFormat() : SDL_GPU_TEXTUREFORMAT_INVALID;
 }
 

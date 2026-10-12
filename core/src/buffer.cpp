@@ -39,7 +39,8 @@ auto sdlError (const char *operation) -> std::unexpected<BufferError> {
 	return std::unexpected(BufferError{BufferErrorCode::SDLFailure, std::string(operation) + ": " + SDL_GetError()});
 }
 
-/// Check a range without overflowing `offset + size`; an empty range may start at the end.
+/// Check that a byte range lies within \c capacity without overflowing <tt>offset + size</tt>. An empty range may
+/// start at the end.
 auto fits (std::size_t capacity, std::size_t offset, std::size_t size) -> bool {
 	return offset <= capacity && size <= capacity - offset;
 }
@@ -75,7 +76,7 @@ constexpr auto maxSize = std::size_t(std::numeric_limits<Uint32>::max());
 // Module namespace open
 //
 
-/// The library top-level namespace.
+// The library top-level namespace.
 namespace fcg {
 
 
@@ -608,7 +609,7 @@ void UploadBatch::clear () {
 
 //////
 //
-// Functions
+// Function implementations
 //
 
 auto pushUniforms (

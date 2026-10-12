@@ -8,144 +8,57 @@
 // Module documentation
 //
 
-/// \page fcg_image_guide Image library guide
-///
-/// Link the Image CMake target for the ability to load image files:
-/// \verbatim FCG-framework::Image \endverbatim
-/// Include `<FCG/Image/image_loader.h>` for the generic loader and
-/// `<FCG/Image/sdl_image.h>` for direct backend use. This library publicly links Core. CPU loading requires no applet,
-/// SDL video initialization, or GPU device. The \ref fcg_images, \ref fcg_image_loading, and \ref fcg_sdl_image
-/// guides describe its components. Core provides textures and rendering; <tt>\ref fcg::Image::upload</tt> explicitly converts and uploads decoded images. Core lives in `core/` and exposes headers under `FCG/`;
-/// Image lives in `libs/image/` and exposes headers under `FCG/Image/`.
-///
-/// \section image_library_build Build and dependencies
-/// \c FCG_SHARED_LIBS selects framework linkage; \c FCG_USE_SHARED_SDL selects SDL linkage, defaulting to the framework
-/// choice. Source-built SDL_image follows the latter because a shared SDL_image requires shared SDL3. SDL3_image
-/// 3.4.4 is the pinned source fallback. Compatible system packages and previously provided \c SDL3_image::SDL3_image
-/// targets are reused as-is; source configuration cannot change their codecs or linkage. As with Core, installed
-/// targets currently defer full third-party dependency exports. CPM/`add_subdirectory` consumers receive build-time
-/// dependency targets transitively.
-///
-/// The source fallback enables built-in formats and avoids external codec dependencies by default. AVIF, JPEG XL,
-/// TIFF, WebP, libpng, and codec vendoring default to `OFF`. PNG uses SDL's built-in decoder and JPEG uses SDL_image's
-/// stb backend. Change the upstream \c SDLIMAGE_* variables before adding the framework; FCG respects normal variables
-/// and cache entries and introduces no bespoke codec switches. To decode WebP with installed codec dependencies:
-/// \code{.cmake}
-/// set(SDLIMAGE_WEBP ON CACHE BOOL "Enable WebP decoding")
-/// set(SDLIMAGE_STRICT ON CACHE BOOL "Require requested codec dependencies")
-/// CPMAddPackage(NAME FCG SOURCE_DIR "/path/to/framework")
-/// target_link_libraries(my_app PRIVATE FCG-framework::Image)
-/// \endcode
-/// Replace the source path with your framework checkout, or use your pinned `GITHUB_REPOSITORY`/`GIT_TAG` in CPM.
-/// To enable AVIF loading, set \c SDLIMAGE_AVIF=ON before adding the framework. For a source-built, non-vendored SDL_image,
-/// CPM reuses a supplied \c avif target or a compatible installed libavif package (minimum version 1.0); otherwise it
-/// fetches libavif 1.4.2. Explicit \c AVIF_CODEC_* settings are respected. Automatic decoder selection reuses an installed
-/// libaom, dav1d, or libgav1, or builds libaom locally when none is available. Without an x86 assembler, local libaom
-/// uses its portable implementation unless \c AOM_TARGET_CPU is explicitly selected. Local libaom requires Perl;
-/// Git for Windows' bundled Perl is discovered automatically. AVIF saving, libavif tools, tests,
-/// examples, and optional libyuv default to `OFF`. Enable \c SDLIMAGE_AVIF_SAVE to also request an encoder. Codec linkage
-/// defaults to static with position-independent code; explicit \c SDLIMAGE_AVIF_SHARED or \c SDLIMAGE_DEPS_SHARED choices
-/// are respected. Supplied or installed SDL_image backends retain their existing capabilities and do not trigger this
-/// codec resolution. Normal variables, cache entries, and standard CPM source/download overrides remain supported.
-/// Set \c SDLIMAGE_VENDORED=ON to use SDL_image's own codec submodules instead; enabled submodules are fetched with the
-/// pinned SDL_image checkout. Enable \c SDLIMAGE_JXL, \c SDLIMAGE_TIF, or \c SDLIMAGE_PNG_LIBPNG similarly.
-/// \c SDLIMAGE_STRICT makes missing dependencies a configuration error rather than silently disabling a requested codec.
-/// Vendored codecs link statically by default (\c SDLIMAGE_DEPS_SHARED=OFF), keeping them inside SDL_image.
-/// Options also work with `-D` on the command line. Prebuilt packages may support more or fewer formats.
-/// Resolved source/package capabilities determine the shipped handler's advertised formats. If a supplied target or
-/// package has no trustworthy metadata, set \c FCG_SDL_IMAGE_FORMATS to an explicit list of SDL codec identifiers:
-/// `ANI;AVIF;BMP;GIF;JPG;JXL;LBM;PCX;PNG;PNM;QOI;SVG;TGA;TIF;WEBP;XCF;XPM;XV`. An explicitly empty list is valid;
-/// unknown identifiers and missing declarations fail configuration. This declaration describes the existing backend,
-/// rather than changing its codec configuration. Configured dynamic codecs can still fail when runtime libraries are
-/// unavailable. ANI is animation-only and is omitted from still-image metadata; BMP also advertises ICO and CUR.
-/// Adding the virtual metadata method preserves existing handler source compatibility; binary consumers must rebuild.
-///
-/// \section image_library_start Starting points
-/// Use <code>\ref fcg::ImageLoader::global "ImageLoader::global()"</code> for the shipped automatic registry, a local
-/// <code>\ref fcg::ImageLoader "ImageLoader"</code> for explicit control, or
-/// <code>\ref fcg::SDLImageFormatHandler "SDLImageFormatHandler"</code> directly when backend choice is intentional.
-/// All loads are synchronous and return `std::expected`. No initialization call, logger, GPU allocation, cache, or
-/// background task is introduced. Registration exists for loaded translation units; see \ref image_loading_registration
-/// for static-archive retention. Saving, animation sequences, resizing, automatic conversion, and GPU upload are
-/// outside this library's loading API. SDL_image's still-image API supplies one surface even for formats that can
-/// contain multiple frames.
-
-
-
-//////
-//
-// Component documentation
-//
-
 /// \defgroup fcg_image_loading Image loading and format handlers
-/// \ingroup fcg_components
-/// \brief Format-independent dispatch over an owned registry, with optional automatic global registration.
+/// \ingroup fcg_modules
+/// \brief Format-independent loading of image files and memory blocks through a registry of handlers.
 ///
-/// \section image_loading_workflows File and memory workflows
+/// <tt>\ref fcg::ImageLoader "ImageLoader"</tt> decodes image files into <tt>\ref fcg::Image "Images"</tt> without
+/// the caller having to know the format: it asks its registered <tt>\ref fcg::ImageFormatHandler
+/// "ImageFormatHandler"</tt>s in order of descending priority until one succeeds. The shipped SDL_image handler
+/// covers the formats the SDL_image build provides. Register your own handlers to load formats SDL_image does not
+/// know, or to route loading through custom code.
+///
+/// \section fcg_image_loading_usage Getting started
+/// \snippet image_examples.cpp includes
 /// \snippet image_examples.cpp file
-/// Files are read once, then dispatched as bytes with their extension as a hint. No handler reopens the path, and
-/// every fallback attempt sees identical bytes. Paths use `std::filesystem::path`, including native Unicode paths.
-/// Memory inputs are `std::span<const std::byte>` of encoded file data, not decoded pixel data. They are borrowed only
-/// during the call and may be released immediately after it returns. An optional hint is an extension such as `"png"`
-/// or `"TGA"`, with an optional leading dot; ASCII case is normalized. Embedded NULs are rejected. Hints are advisory:
-/// signature-based formats can still load when a filename is extensionless or misleading. TGA usually needs a hint.
+/// Files are read once and dispatched as bytes, with the file extension as a hint for formats that carry no signature
+/// (TGA usually needs it; signature-based formats load even when the extension is wrong or missing). The hint is an
+/// extension such as \c "png", with an optional leading dot; ASCII case is normalized. Loading from memory works the
+/// same way:
 /// \snippet image_examples.cpp memory
 ///
-/// \section image_loading_dispatch Acceptance, ordering, and fallback
-/// <code>\ref fcg::ImageFormatHandler::accepts "ImageFormatHandler::accepts"</code> decides whether an input is worth
-/// attempting without retaining or modifying it. A positive answer does not guarantee decoding or codec availability.
-/// <code>\ref fcg::ImageLoader "ImageLoader"</code> knows no format names or magic bytes. Its registry owns handlers,
-/// sorted by descending integer priority then ascending ID for equal priorities. IDs are unique, nonempty owned
-/// strings. Client priorities default to zero; the shipped SDL_image entry uses `-100`. A handler may return a probe
-/// error or a decoding error; both are collected and fallback continues. The first successful decoder wins.
-/// Registration/removal during a callback into the same loader is forbidden. Each call starts dispatch afresh; neither
-/// successful nor failed input is cached.
+/// \section fcg_image_loading_workflows Common tasks
+/// \subsection fcg_image_loading_workflows_registry Choosing a loader instance
+/// <tt>\ref fcg::ImageLoader::global "ImageLoader::global()"</tt> is the shared process-wide loader, with the
+/// SDL_image handler pre-registered; the load above went through it. A locally constructed
+/// <tt>\ref fcg::ImageLoader "ImageLoader"</tt> starts empty and is useful when a module needs its own set of
+/// handlers:
 /// \snippet image_examples.cpp independent
+/// <tt>\ref fcg::ImageLoader::fileFormats "fileFormats"</tt> lists which formats a loader advertises, e.g. for
+/// building file-dialog filters with <tt>\ref fcg::extra::imageFileFilters "imageFileFilters"</tt>.
 ///
-/// \section image_loading_lifetime Registry ownership and synchronization
-/// <tt>\ref fcg::ImageFormatHandler::fileFormats</tt> defaults to an empty list.
-/// <tt>\ref fcg::ImageLoader::fileFormats</tt> collects owning snapshots of <tt>\ref fcg::ImageFileFormat</tt> records
-/// in registry order, retaining overlaps. Metadata advertises formats without guaranteeing decode success. Snapshots
-/// remain valid after registration, removal, and registry destruction. The viewer queries the singleton for each dialog.
-///
-/// Independent loaders start empty and are neither copyable nor movable.
-/// <code>\ref fcg::ImageLoader::registerHandler "registerHandler"</code> takes unique ownership; removal or loader
-/// destruction destroys that handler. Images do not borrow their decoder or registry. Borrowed bytes/hints must not be
-/// retained by implementations. Externally serialize registration, removal, inspection, and loading through each
-/// loader. If a handler shares state across loaders, that state needs its own synchronization. Initialization of
-/// <code>\ref fcg::ImageLoader::global "global()"</code> is thread-safe; registry operations have no internal locking.
-///
-/// \section image_loading_registration Automatic registration and global lifetime
-/// <code>\ref fcg::ImageLoader::global "ImageLoader::global()"</code> is an exported, out-of-line accessor to one
-/// process-lifetime registry per linked Image library instance. It is constructed on first use and is intentionally not
-/// destroyed at program shutdown, avoiding static destruction-order dependencies. Its owned handlers likewise remain
-/// until explicitly removed. Registration helpers never unregister on destruction. Avoid unloading a module while its
-/// handler remains registered.
+/// \subsection fcg_image_loading_workflows_handlers Adding a format handler
+/// Implement <tt>\ref fcg::ImageFormatHandler "ImageFormatHandler"</tt> and register it on a loader:
 /// \snippet image_examples.cpp registration
+/// \c accepts decides whether a load attempt is worth trying, and \c load performs the decoding. Registration
+/// transfers ownership of the handler to the loader.
 ///
-/// A namespace-scope <code>\ref fcg::FormatHandlerRegistration "FormatHandlerRegistration"</code> transfers a
-/// constructed handler to this registry during dynamic static initialization. It needs no function-scope bootstrap
-/// call. Invalid/duplicate registrations throw `std::invalid_argument`; an uncaught exception in a static initializer
-/// terminates startup. Allocation exceptions can also propagate. Singleton access is safe during static initialization,
-/// but loaders in unrelated global constructors cannot assume all translation units' registrars have already run. The
-/// full automatic registry is available after those initializers. The shipped handler has a link anchor referenced by
-/// <code>\ref fcg::ImageLoader::global "global()"</code>, so ordinary static linking retains it. Client registrar-only
-/// translation units in static archives require an anchor, object-library linkage, or whole-archive linkage: the helper
-/// cannot register code that the linker never includes. A client anchor must reference the registrar's translation unit
-/// from reachable code. Registration only constructs CPU-side objects, never GPU resources.
+/// \section fcg_image_loading_lifetime Ownership and lifetime
+/// <tt>\ref fcg::ImageLoader::registerHandler "registerHandler"</tt> takes ownership; removing a handler or
+/// destroying the loader destroys it. Images do not borrow their decoder. <tt>\ref fcg::ImageLoader::global
+/// "global()"</tt> is constructed on first use and lives until process end; its handlers remain registered until
+/// removed explicitly. Avoid unloading a shared library while its handler is still registered. Registry operations
+/// and loads are not synchronized internally; serialize them externally. Static-archive clients should see the note
+/// in <tt>\ref fcg::FormatHandlerRegistration "FormatHandlerRegistration"</tt>.
 ///
-/// \section image_loading_errors Error handling
-/// Empty inputs and invalid hints/paths produce
-/// <code>\ref fcg::ImageErrorCode::InvalidArgument "InvalidArgument"</code>; inaccessible or unreadable files produce
-/// <code>\ref fcg::ImageErrorCode::IOFailure "IOFailure"</code>.
-/// <code>\ref fcg::ImageErrorCode::UnsupportedFormat "UnsupportedFormat"</code> means every registered handler
-/// declined, including an empty registry. If any attempt failed and none succeeded,
-/// <code>\ref fcg::ImageErrorCode::DecodeFailure "DecodeFailure"</code> contains handler IDs and their diagnostics in
-/// attempt order. Individual handlers can return <code>\ref fcg::ImageErrorCode::SDLFailure "SDLFailure"</code> or
-/// another more specific category, retained as text in the aggregate. Errors own their messages; SDL diagnostics are
-/// captured immediately. The library does not log. Allocation and implementation exceptions are not caught as decode
-/// failures; custom handlers should use `std::expected` for recoverable failures.
-/// \snippet image_examples.cpp errors
+/// \section fcg_image_loading_errors Handling errors
+/// Loads return <tt>std::expected&lt;\ref fcg::Image "Image", \ref fcg::ImageError "ImageError"&gt;</tt>:
+/// <tt>\ref fcg::ImageErrorCode::UnsupportedFormat "UnsupportedFormat"</tt> means no handler accepted the input,
+/// and <tt>\ref fcg::ImageErrorCode::DecodeFailure "DecodeFailure"</tt> aggregates the diagnostics of every handler
+/// that tried, in attempt order. Nothing logs automatically. Custom handlers should return recoverable failures as
+/// <tt>std::expected</tt>; exceptions escaping a handler abort the load.
+///
+/// \see \ref fcg_images, \ref fcg_sdl_image
 
 
 
@@ -176,6 +89,9 @@
 /// The library top-level namespace.
 namespace fcg {
 
+/// \addtogroup fcg_image_loading
+/// @{
+
 
 
 //////
@@ -183,13 +99,17 @@ namespace fcg {
 // Structs and enums
 //
 
-/// \brief Owned metadata for an advertised image format; decoding can still fail. \ingroup fcg_image_loading
+/// \brief
+/// 	Describes an image file format that a handler advertises.
+///
+/// Use these records to build file-dialog filters, e.g. with \c fcg::extra::imageFileFilters from the Extras
+/// library. An advertised format is not a guarantee that every file of that format can be decoded.
 struct ImageFileFormat
 {
-	/// Human-readable format label.
+	/// Human-readable name of the format, e.g. <tt>"PNG"</tt>.
 	std::string name;
 
-	/// Canonical lowercase extensions without leading dots.
+	/// File name extensions of the format, lowercase and without a leading dot, e.g. <tt>"jpg"</tt>, <tt>"jpeg"</tt>.
 	std::vector<std::string> extensions;
 };
 
@@ -200,7 +120,26 @@ struct ImageFileFormat
 // Classes
 //
 
-/// \brief Extension point for synchronous encoded-byte decoding. \ingroup fcg_image_loading
+/// \brief
+/// 	Interface for decoders that turn encoded image files into an \c Image.
+///
+/// An \c ImageLoader tries its registered handlers in turn; a handler can also be used on its own. To add support for
+/// a file format:
+/// 1. Derive from \c ImageFormatHandler.
+/// 2. Implement \c accepts to check cheaply, e.g. from a file signature or the hint, whether decoding should be
+///    attempted.
+/// 3. Implement the byte overload of \c load to decode the data into a new \c SDL_Surface and wrap it with
+///    \c Image::adopt. Add <tt>using ImageFormatHandler::load;</tt> to your class to keep the file overload of
+///    \c load available.
+/// 4. Optionally override \c fileFormats to advertise the formats for file dialogs.
+/// 5. Register an instance with \c ImageLoader::registerHandler, or at namespace scope with
+///    \c FormatHandlerRegistration.
+///
+/// Both \c accepts and \c load are synchronous. They receive the encoded bytes and the hint only for the duration of
+/// the call and must not keep references to them. Report recoverable failures through the returned
+/// \c std::expected; exceptions propagate to the caller of \c ImageLoader::load unchanged. A handler must not register
+/// or remove handlers of the loader that is currently calling it. Calls through one loader are serialized by its
+/// users, but a handler that shares state between several loaders must synchronize that state itself.
 class FCG_IMAGE_EXPORT ImageFormatHandler
 {
 public:
@@ -208,44 +147,103 @@ public:
 	////
 	// Object construction/destruction
 
-	/// Allow destruction through an owning base pointer.
+	/// Destroys the handler. Handlers are owned and destroyed through \c ImageFormatHandler pointers.
 	virtual ~ImageFormatHandler () = default;
 
 
 	////
 	// Methods
 
-	/// Advertised formats as an owning snapshot. Existing handlers default to an empty list.
+	/// \brief
+	/// 	Returns the image file formats this handler decodes, for display in file dialogs.
 	///
-	/// \note Advertising a format does not guarantee successful decoding or runtime codec availability.
+	/// The default implementation returns an empty list.
 	///
-	/// \return Format metadata, independent of handler lifetime.
+	/// \note
+	/// 	Advertising a format does not guarantee that decoding succeeds, e.g. when a codec library is unavailable at
+	/// 	runtime.
+	///
+	/// \return The advertised formats.
 	[[nodiscard]] virtual auto fileFormats () const -> std::vector<ImageFileFormat> { return {}; }
 
-	/// Inspect encoded bytes without retaining or changing them. Acceptance need not imply decode success.
+	/// \brief
+	/// 	Checks whether this handler should attempt to decode the given data.
 	///
-	/// \param bytes Encoded data, borrowed during the call. \param hint Normalized extension, possibly empty.
+	/// A result of \c true permits a call to \c load but does not guarantee that decoding succeeds. Return an error
+	/// only if the check itself could not be carried out; \c ImageLoader records the error and continues with the
+	/// next handler.
 	///
-	/// \returns Whether decoding should be attempted, or a recoverable probe failure.
+	/// \note
+	/// 	\c ImageLoader always passes a normalized hint: the leading dot is removed and ASCII letters are lowercase,
+	/// 	e.g. <tt>"png"</tt> for a file named <tt>photo.PNG</tt>. The hint is empty if the extension is unknown.
+	/// 	Direct callers may pass hints that are not normalized.
+	///
+	/// \param bytes
+	/// 	The encoded file contents, valid only during the call.
+	/// \param hint
+	/// 	The file name extension of the input, or empty if unknown.
+	///
+	/// \return \c true if decoding should be attempted, \c false if not, or an error if the check failed.
 	[[nodiscard]] virtual auto accepts (std::span<const std::byte> bytes, std::string_view hint={}) const
 		-> std::expected<bool, ImageError> = 0;
 
-	/// Decode borrowed bytes synchronously into an independently owned surface.
+	/// \brief
+	/// 	Decodes encoded file contents into an image.
 	///
-	/// \param bytes Encoded data, borrowed during the call. \param hint Extension hint; never retained.
+	/// \c ImageLoader calls this only after \c accepts returned \c true, but direct callers, including the file
+	/// overload of \c load, may call it without calling \c accepts first. The returned image does not depend on
+	/// \c bytes after the call.
 	///
-	/// \returns A decoded `Image` or an owned error. Implementations may be called without a preceding `accepts()`.
+	/// \note
+	/// 	Implementations return a non-empty image on success; \c ImageLoader treats an empty image as a failure. The
+	/// 	hint is normalized as described for \c accepts when the call comes from \c ImageLoader or the file overload
+	/// 	of \c load.
+	///
+	/// \param bytes
+	/// 	The encoded file contents, valid only during the call.
+	/// \param hint
+	/// 	The file name extension of the input, or empty if unknown.
+	///
+	/// \return The decoded image, or an error describing why decoding failed.
 	[[nodiscard]] virtual auto load (std::span<const std::byte> bytes, std::string_view hint={}) const
 		-> std::expected<Image, ImageError> = 0;
 
-	/// Read a file once, derive its extension hint, and invoke the byte decoder directly.
-	/// \anchor image_loading_handler_file_load
+	/// \brief
+	/// 	Reads a file completely and decodes it with this handler alone.
 	///
-	/// \param path Native filesystem path. \returns A decoded image or input/I/O/decoder failure.
+	/// \anchor image_loading_handler_file_load
+	/// The extension of \c path is normalized and passed to the byte overload of \c load as the hint. \c accepts is not
+	/// consulted.
+	///
+	/// \param path
+	/// 	The path of the image file.
+	///
+	/// \return
+	/// 	The decoded image, \c ImageErrorCode::InvalidArgument if the path is empty or contains a NUL character
+	/// 	or the file is empty, \c ImageErrorCode::IOFailure if the file cannot be opened or read, or the error
+	/// 	returned by the byte overload of \c load.
 	[[nodiscard]] auto load (const std::filesystem::path &path) const -> std::expected<Image, ImageError>;
 };
 
-/// \brief Owned format-handler registry with ordered fallback. \ingroup fcg_image_loading
+/// \brief
+/// 	A registry of image format handlers that loads image files by trying the handlers in order.
+///
+/// Most applications use the process-wide loader returned by \c global, which can decode the common image formats:
+/// \code
+/// auto image = fcg::ImageLoader::global().load("textures/wood.png");
+/// if (!image)
+/// 	SDL_Log("Loading failed: %s", image.error().message.c_str());
+/// \endcode
+/// Construct your own \c ImageLoader to control exactly which handlers are used; a new loader has no handlers.
+///
+/// Handlers are tried in order of descending priority, with equal priorities ordered by ascending ID. For each
+/// handler, the loader calls \c ImageFormatHandler::accepts and, if it returns \c true, \c ImageFormatHandler::load.
+/// The first successfully decoded image is returned. Failed checks and failed decoding attempts are recorded, and
+/// the loader continues with the next handler. Every call starts afresh; nothing is cached.
+///
+/// An \c ImageLoader is not thread-safe: all operations on one loader, including loading, must be externally
+/// serialized. Handlers must not register or remove handlers of the loader that calls them. Exceptions thrown by
+/// handlers propagate to the caller.
 class FCG_IMAGE_EXPORT ImageLoader
 {
 public:
@@ -253,74 +251,135 @@ public:
 	////
 	// Object construction/destruction
 
-	/// Construct an empty registry; no builtin handlers are installed in independent instances.
+	/// Creates a loader without any handlers.
 	ImageLoader () = default;
 
-	/// Destroy all owned handlers. Must not overlap a load or other registry operation.
+	/// \brief
+	/// 	Destroys the loader and all its handlers.
+	///
+	/// \pre No other operation on this loader is in progress.
 	~ImageLoader () = default;
 
-	/// Registries own handlers and cannot be copied.
+	/// Not copyable.
 	ImageLoader (const ImageLoader&) = delete;
 
-	/// Registries cannot be copy-assigned.
+	/// Not copy-assignable.
 	auto operator= (const ImageLoader&) -> ImageLoader& = delete;
 
-	/// Registry identity is stable; loaders cannot be moved.
+	/// Not movable.
 	ImageLoader (ImageLoader&&) = delete;
 
-	/// Loaders cannot be move-assigned.
+	/// Not move-assignable.
 	auto operator= (ImageLoader&&) -> ImageLoader& = delete;
 
 
 	////
 	// Registry
 
-	/// Obtain the process-lifetime singleton. Full automatic registration completes after static initialization.
+	/// \brief
+	/// 	Returns the process-wide loader.
 	///
-	/// \returns The shared registry; serialize subsequent operations externally.
+	/// The loader comes with an \c SDLImageFormatHandler registered under the ID <tt>"sdl_image"</tt> with priority
+	/// -100, so handlers registered with the default priority 0 are tried first. Handlers registered through
+	/// \c FormatHandlerRegistration are added to this loader as well. The loader is created on the first call and is
+	/// never destroyed, so it stays usable until the process ends.
+	///
+	/// Creating the loader on first use is thread-safe. All operations on the returned loader must be externally
+	/// serialized like for any other \c ImageLoader.
+	///
+	/// \note
+	/// 	When called during static initialization, e.g. from the constructor of a global object, handlers registered
+	/// 	by other translation units, including the SDL_image handler, may not have been registered yet.
+	///
+	/// \return The process-wide loader.
 	[[nodiscard]] static auto global () -> ImageLoader&;
 
-	/// Transfer a handler into this registry, ordered by descending priority and ascending ID.
+	/// \brief
+	/// 	Adds a handler to this loader and takes ownership of it.
 	///
-	/// \param id Unique nonempty ID, copied/owned by the registry; embedded NULs are invalid.
-	/// \param handler Non-null owner, consumed even if registration fails. \param priority Higher values run first.
+	/// The handler is placed according to its priority and ID (see the class description). It is destroyed when it is
+	/// removed or when the loader is destroyed. The handler is consumed even if registration fails. If an exception,
+	/// e.g. \c std::bad_alloc, is thrown, the registry remains unchanged.
 	///
-	/// \returns Success, `InvalidArgument`, or `DuplicateHandler`. Allocation exceptions may propagate.
+	/// \pre Not called from within a handler call made by this loader.
+	///
+	/// \param id
+	/// 	Unique, non-empty name of the handler without NUL characters. It identifies the handler in error messages
+	/// 	and for \c removeHandler.
+	/// \param handler
+	/// 	The handler; must not be null.
+	/// \param priority
+	/// 	Handlers with higher priority are tried first.
+	///
+	/// \return
+	/// 	Nothing on success, \c ImageErrorCode::InvalidArgument if \c id is empty or contains a NUL character or
+	/// 	\c handler is null, or \c ImageErrorCode::DuplicateHandler if a handler with this ID is already registered.
 	[[nodiscard]] auto registerHandler (std::string id, std::unique_ptr<ImageFormatHandler> handler, int priority=0)
 		-> std::expected<void, ImageError>;
 
-	/// Remove and destroy a handler by ID. Must not be called from this loader's callbacks.
+	/// \brief
+	/// 	Removes the handler registered under the given ID and destroys it.
 	///
-	/// \param id Registered ID. \returns Whether an entry was removed.
+	/// \pre Not called from within a handler call made by this loader.
+	///
+	/// \param id
+	/// 	The ID the handler was registered with.
+	///
+	/// \return \c true if a handler was removed, \c false if no handler has this ID.
 	auto removeHandler (std::string_view id) -> bool;
 
-	/// Inspect registry size without exposing borrowed handler objects.
-	///
-	/// \returns The number of owned handlers.
+	/// Returns the number of registered handlers.
 	[[nodiscard]] auto handlerCount () const -> std::size_t { return m_handlers.size(); }
 
-	/// Collect owning format snapshots in registry order, retaining overlaps and repeated entries.
+	/// \brief
+	/// 	Returns the formats advertised by all registered handlers.
 	///
-	/// \note Serialize with other registry operations; handlers must not modify this loader during the call.
+	/// The result concatenates the \c ImageFormatHandler::fileFormats lists of all handlers in the order in which the
+	/// handlers are tried. Formats advertised by several handlers appear repeatedly.
 	///
-	/// \return Advertised formats, independent of subsequent registration or removal.
+	/// \return The advertised formats.
 	[[nodiscard]] auto fileFormats () const -> std::vector<ImageFileFormat>;
 
 
 	////
 	// Loading
 
-	/// Read a file once and dispatch its bytes to accepting handlers in registry order.
+	/// \brief
+	/// 	Reads an image file completely and decodes it with the registered handlers.
 	///
-	/// \param path Native path; its extension is advisory. \returns A decoded image or input/I/O/dispatch failure.
+	/// The file's extension is passed to the handlers as the hint, as described for the byte overload of \c load.
+	///
+	/// \param path
+	/// 	The path of the image file.
+	///
+	/// \return
+	/// 	The decoded image, \c ImageErrorCode::InvalidArgument if the path is empty or contains a NUL character
+	/// 	or the file is empty, \c ImageErrorCode::IOFailure if the file cannot be opened or read, or any error of
+	/// 	the byte overload of \c load.
 	[[nodiscard]] auto load (const std::filesystem::path &path) const -> std::expected<Image, ImageError>;
 
-	/// Try accepting handlers until one succeeds. Input is not retained and no implicit conversion occurs.
+	/// \brief
+	/// 	Decodes an image from encoded file contents in memory with the registered handlers.
+	///
+	/// Handlers are tried as described in the class description. The input is not modified or retained, and the
+	/// decoded image is returned in the pixel format produced by the handler.
 	///
 	/// \param bytes
-	/// 	Nonempty encoded image. \param hint Optional extension, with optional leading dot; case-insensitive.
+	/// 	The encoded file contents, e.g. read from a file or an embedded resource. They only need to stay valid
+	/// 	during the call.
+	/// \param hint
+	/// 	The file name extension of the input, e.g. <tt>"png"</tt>, or empty if unknown. A leading dot and ASCII
+	/// 	letter case are ignored. Formats with a file signature load without a hint; the SDL_image handler needs it
+	/// 	for TGA files.
 	///
-	/// \returns An image, `UnsupportedFormat` if all decline, or an ordered aggregate `DecodeFailure`.
+	/// \return
+	/// 	The decoded image, or an error:
+	/// 	- \c ImageErrorCode::InvalidArgument if \c bytes is empty or \c hint contains a NUL character;
+	/// 	- \c ImageErrorCode::UnsupportedFormat if no handler accepted the input, including when no handler is
+	/// 	  registered;
+	/// 	- \c ImageErrorCode::DecodeFailure if at least one handler failed and none succeeded. The message contains
+	/// 	  one line per failed handler in the order they were tried, formatted as <tt>id: message</tt>, or
+	/// 	  <tt>id (probe): message</tt> if the handler's \c accepts check failed.
 	[[nodiscard]] auto load (std::span<const std::byte> bytes, std::string_view hint={}) const
 		-> std::expected<Image, ImageError>;
 
@@ -330,16 +389,16 @@ private:
 	////
 	// Types
 
-	/// One owned decoder and its deterministic dispatch key.
+	/// One registered handler together with the key that determines its position in the dispatch order.
 	struct Entry
 	{
-		/// Unique ID for diagnostics and equal-priority ordering.
+		/// Unique ID, used in diagnostics and for ordering handlers of equal priority.
 		std::string id;
 
-		/// Owned implementation.
+		/// The owned handler.
 		std::unique_ptr<ImageFormatHandler> handler;
 
-		/// Higher values precede lower ones.
+		/// Dispatch priority; higher values are tried first.
 		int priority;
 	};
 
@@ -347,11 +406,26 @@ private:
 	////
 	// Fields
 
-	/// Owned entries in dispatch order. Access is externally serialized.
+	/// Registered handlers in dispatch order. Access is externally serialized.
 	std::vector<Entry> m_handlers;
 };
 
-/// \brief Namespace-scope registration of an owned handler with `ImageLoader::global()`. \ingroup fcg_image_loading
+/// \brief
+/// 	Registers a handler with \c ImageLoader::global from a namespace-scope variable.
+///
+/// Define a registration object at namespace scope in the translation unit that implements the handler. The handler
+/// is registered during static initialization, before \c main runs:
+/// \code
+/// namespace {
+/// const fcg::FormatHandlerRegistration myFormatRegistration{"my_format", std::make_unique<MyFormatHandler>()};
+/// }
+/// \endcode
+/// The registration is permanent: destroying the object does not remove the handler.
+///
+/// \note
+/// 	If the translation unit is part of a static library and nothing else in it is referenced by the program, the
+/// 	linker may leave it out, and the handler is never registered. Reference a symbol from that translation unit,
+/// 	link it as an object library, or use whole-archive linking.
 class FCG_IMAGE_EXPORT FormatHandlerRegistration
 {
 public:
@@ -359,21 +433,34 @@ public:
 	////
 	// Object construction/destruction
 
-	/// Register immediately. Invalid or duplicate registration throws `std::invalid_argument`; never logs.
+	/// \brief
+	/// 	Registers a handler with \c ImageLoader::global.
 	///
-	/// \param id Unique nonempty registry ID. \param handler Owner transferred to the singleton.
-	/// \param priority Dispatch priority, higher first. Allocation exceptions may propagate.
+	/// An exception thrown from the initializer of a namespace-scope variable terminates the program.
+	///
+	/// \param id
+	/// 	Unique, non-empty name of the handler without NUL characters.
+	/// \param handler
+	/// 	The handler, whose ownership is transferred to the global loader; must not be null.
+	/// \param priority
+	/// 	Handlers with higher priority are tried first.
+	///
+	/// \throws std::invalid_argument
+	/// 	If \c id is empty, contains a NUL character or is already registered, or if \c handler is null. The
+	/// 	exception message describes the problem.
 	FormatHandlerRegistration (std::string id, std::unique_ptr<ImageFormatHandler> handler, int priority=0);
 
-	/// No deregistration occurs; handler ownership belongs to the singleton.
+	/// Destroys the registration object; the handler stays registered.
 	~FormatHandlerRegistration () = default;
 
-	/// Registration helpers represent one construction-time action and cannot be copied.
+	/// Not copyable.
 	FormatHandlerRegistration (const FormatHandlerRegistration&) = delete;
 
-	/// Helpers cannot be copy-assigned.
+	/// Not copy-assignable.
 	auto operator= (const FormatHandlerRegistration&) -> FormatHandlerRegistration& = delete;
 };
+
+/// @}
 
 
 

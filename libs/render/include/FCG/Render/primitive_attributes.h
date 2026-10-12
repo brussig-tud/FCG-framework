@@ -41,10 +41,6 @@
 /// The library top-level namespace.
 namespace fcg {
 
-/// \defgroup fcg_primitives Instanced primitives
-/// \ingroup fcg_components
-/// \brief Shared attributes and filled quad and box renderers; see \ref fcg_render_guide.
-
 /// \addtogroup fcg_primitives
 /// @{
 
@@ -55,194 +51,182 @@ namespace fcg {
 // Structs and enums
 //
 
-/// Fixed logical attributes; renderer support is independent of storage in a collection.
+/// \brief
+/// 	Per-instance attributes stored in a \c PrimitiveAttributes collection.
+///
+/// A renderer uses only the attributes listed by its \c PrimitiveRenderer::supportedAttributes and ignores all others.
 enum class Attribute
 {
-	/// Finite homogeneous point with nonzero W; an array determines the instance count.
+	/// \brief
+	/// 	Center of the instance as a homogeneous point (x, y, z, w). The drawn center is (x, y, z) / w.
+	///
+	/// All components must be finite and w must be nonzero. Positions can only be supplied as an array or a buffer
+	/// view, never as a constant. The number of positions determines the instance count of the collection. Without a
+	/// position source, the collection has zero instances.
 	Position,
 
-	/// User-supplied normal; unused by the initial renderers.
+	/// Per-instance normal. The renderers of this library do not use it.
 	Normal,
 
-	/// User-supplied radius; unused by the initial renderers.
+	/// Per-instance radius. The renderers of this library do not use it.
 	Radius,
 
-	/// Finite, nonnegative local half sizes.
+	/// \brief
+	/// 	Half size of the instance along its local X, Y and Z axes.
+	///
+	/// All components must be finite and nonnegative. Zero is allowed and collapses the instance along that axis.
+	/// Without an extent source, every instance has the extent (1, 1, 1).
 	Extent,
 
-	/// Finite, nonzero quaternion normalized by the renderer.
+	/// \brief
+	/// 	Rotation of the instance, given as a quaternion.
+	///
+	/// All components must be finite and not all zero. Renderers normalize the quaternion before use, so its length
+	/// does not matter. Without an orientation source, instances are not rotated.
 	Orientation,
 
-	/// RGBA instance color.
+	/// \brief
+	/// 	Color of the instance as RGBA.
+	///
+	/// When drawing with a texture, the color is multiplied by the texture color. When lighting is enabled, its RGB
+	/// part is scaled by the lighting and its alpha is kept. Without a color source, instances are opaque white
+	/// (1, 1, 1, 1).
 	Color,
 
-	/// Number of logical attributes; not an attribute itself.
+	/// The number of attributes. Not an attribute itself.
 	Count
 };
 
-/// Value types and component layouts for fixed logical attributes.
+/// \brief
+/// 	Value type and memory layout of an <tt>Attribute</tt>.
 ///
-/// \tparam A The logical attribute.
+/// \tparam A The attribute.
 template <Attribute A> struct AttributeTraits;
 
-/// Typed object representation for \c Attribute::Position.
+/// Value type and memory layout of <tt>Attribute::Position</tt>.
 template <> struct AttributeTraits<Attribute::Position>
 {
-	////
-	// Types
-
-	/// Array element and constant value type.
+	/// Type of one array element or buffer view element.
 	using Value = glm::vec4;
 
-
-	////
-	// Fields
-
-	/// Whether a constant source is permitted.
+	/// Whether the attribute can be supplied as a constant.
 	static constexpr bool constantSupported = false;
 
-	/// Byte offsets of shader components, in XYZ or XYZW order, including quaternion storage ordering.
+	/// Byte offsets of the x, y, z and w components within a <tt>Value</tt>.
 	static constexpr std::array<std::size_t, 4> componentOffsets{
 		offsetof(Value, x), offsetof(Value, y), offsetof(Value, z), offsetof(Value, w)
 	};
 };
 
-/// Typed object representation for \c Attribute::Normal.
+/// Value type and memory layout of <tt>Attribute::Normal</tt>.
 template <> struct AttributeTraits<Attribute::Normal>
 {
-	////
-	// Types
-
-	/// Array element and constant value type.
+	/// Type of one array element, buffer view element or constant.
 	using Value = glm::vec3;
 
-
-	////
-	// Fields
-
-	/// Whether a constant source is permitted.
+	/// Whether the attribute can be supplied as a constant.
 	static constexpr bool constantSupported = true;
 
-	/// Byte offsets of shader components, in XYZ or XYZW order, including quaternion storage ordering.
+	/// Byte offsets of the x, y and z components within a <tt>Value</tt>.
 	static constexpr std::array<std::size_t, 3> componentOffsets{
 		offsetof(Value, x), offsetof(Value, y), offsetof(Value, z)
 	};
 };
 
-/// Typed object representation for \c Attribute::Radius.
+/// Value type and memory layout of <tt>Attribute::Radius</tt>.
 template <> struct AttributeTraits<Attribute::Radius>
 {
-	////
-	// Types
-
-	/// Array element and constant value type.
+	/// Type of one array element, buffer view element or constant.
 	using Value = float;
 
-
-	////
-	// Fields
-
-	/// Whether a constant source is permitted.
+	/// Whether the attribute can be supplied as a constant.
 	static constexpr bool constantSupported = true;
 
-	/// Byte offsets of shader components, in XYZ or XYZW order, including quaternion storage ordering.
+	/// Byte offset of the single component within a <tt>Value</tt>.
 	static constexpr std::array<std::size_t, 1> componentOffsets{0};
 };
 
-/// Typed object representation for \c Attribute::Extent.
+/// Value type and memory layout of <tt>Attribute::Extent</tt>.
 template <> struct AttributeTraits<Attribute::Extent>
 {
-	////
-	// Types
-
-	/// Array element and constant value type.
+	/// Type of one array element, buffer view element or constant.
 	using Value = glm::vec3;
 
-
-	////
-	// Fields
-
-	/// Whether a constant source is permitted.
+	/// Whether the attribute can be supplied as a constant.
 	static constexpr bool constantSupported = true;
 
-	/// Byte offsets of shader components, in XYZ or XYZW order, including quaternion storage ordering.
+	/// Byte offsets of the x, y and z components within a <tt>Value</tt>.
 	static constexpr std::array<std::size_t, 3> componentOffsets{
 		offsetof(Value, x), offsetof(Value, y), offsetof(Value, z)
 	};
 };
 
-/// Typed object representation for \c Attribute::Orientation.
+/// Value type and memory layout of <tt>Attribute::Orientation</tt>.
 template <> struct AttributeTraits<Attribute::Orientation>
 {
-	////
-	// Types
-
-	/// Array element and constant value type.
+	/// Type of one array element, buffer view element or constant.
 	using Value = glm::quat;
 
-
-	////
-	// Fields
-
-	/// Whether a constant source is permitted.
+	/// Whether the attribute can be supplied as a constant.
 	static constexpr bool constantSupported = true;
 
-	/// Byte offsets of shader components, in XYZ or XYZW order, including quaternion storage ordering.
+	/// Byte offsets of the quaternion components x, y, z and w within a <tt>Value</tt>, where w is the real part.
 	static constexpr std::array<std::size_t, 4> componentOffsets{
 		offsetof(Value, x), offsetof(Value, y), offsetof(Value, z), offsetof(Value, w)
 	};
 };
 
-/// Typed object representation for \c Attribute::Color.
+/// Value type and memory layout of <tt>Attribute::Color</tt>.
 template <> struct AttributeTraits<Attribute::Color>
 {
-	////
-	// Types
-
-	/// Array element and constant value type.
+	/// Type of one array element, buffer view element or constant.
 	using Value = glm::vec4;
 
-
-	////
-	// Fields
-
-	/// Whether a constant source is permitted.
+	/// Whether the attribute can be supplied as a constant.
 	static constexpr bool constantSupported = true;
 
-	/// Byte offsets of shader components, in XYZ or XYZW order, including quaternion storage ordering.
+	/// Byte offsets of the red, green, blue and alpha components within a <tt>Value</tt>.
 	static constexpr std::array<std::size_t, 4> componentOffsets{
 		offsetof(Value, x), offsetof(Value, y), offsetof(Value, z), offsetof(Value, w)
 	};
 };
 
-/// Borrowed array of typed values in a graphics storage buffer.
+/// \brief
+/// 	Describes an array of attribute values in a GPU buffer that you manage, for use with
+/// 	<tt>PrimitiveAttributes::Update::bind</tt>.
 ///
-/// Owners must remain stable and alive while used. Offsets and strides are multiples of four bytes.
-/// Values follow \c AttributeTraits component offsets, allowing interleaved records and padded GLM types.
-/// GPU-supplied transforms must satisfy the corresponding \c Attribute value contracts.
+/// Element \c i starts at byte <tt>offset + i * stride</tt> of \c buffer and must have the memory layout of
+/// <tt>AttributeTraits<A>::Value</tt>, as described by <tt>AttributeTraits<A>::componentOffsets</tt>. A stride larger
+/// than the value size lets you bind one attribute of an array of interleaved records.
 ///
-/// \tparam A The logical attribute.
+/// The buffer must have been created on the device of the collection with \c SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ
+/// usage. \c offset and \c stride must be multiples of 4 bytes, \c stride must be at least the size of the value type,
+/// and all \c count elements must lie within the buffer. The values are read on the GPU without any checks, so they
+/// must meet the requirements of the respective \c Attribute themselves.
+///
+/// \tparam A The attribute.
 template <Attribute A> struct AttributeBufferView
 {
-	////
-	// Fields
-
-	/// Borrowed buffer on the collection's device with graphics storage read usage.
+	/// The buffer containing the values. Not owned.
 	const Buffer *buffer = nullptr;
 
-	/// Byte offset of the first typed element.
+	/// Byte offset of the first element within the buffer.
 	std::size_t offset = 0;
 
-	/// Byte distance between typed elements, at least the value type's size.
+	/// Byte distance between the starts of consecutive elements. The default is the size of the value type.
 	std::size_t stride = sizeof(typename AttributeTraits<A>::Value);
 
-	/// Number of accessible elements; zero represents an empty array.
+	/// Number of elements. Zero means an empty array.
 	std::size_t count = 0;
 };
 
-/// Read-only source: absence, a constant, or a borrowed GPU view.
+/// \brief
+/// 	The source of an attribute, as returned by <tt>PrimitiveAttributes::source</tt>.
 ///
-/// \tparam A The logical attribute.
+/// Holds \c std::monostate if the attribute is absent, the value if it is a constant, or an \c AttributeBufferView if
+/// it is an array.
+///
+/// \tparam A The attribute.
 template <Attribute A>
 using AttributeSource = std::variant<std::monostate, typename AttributeTraits<A>::Value, AttributeBufferView<A>>;
 
@@ -253,65 +237,81 @@ using AttributeSource = std::variant<std::monostate, typename AttributeTraits<A>
 // Classes
 //
 
-/// Shared GPU attributes with retained allocations and no retained CPU arrays.
+/// \brief
+/// 	A collection of per-instance attributes in GPU memory that any number of primitive renderers can draw.
 ///
-/// Access is externally serialized. Devices outlive resources. Updates never wait for GPU idle.
-/// All referenced CPU arrays must remain valid and unchanged until \c setAttributes returns.
-/// Validation, allocation, staging failure, and callback exceptions preserve visible metadata.
-/// After automatic submission failure changed arrays are unusable until replaced successfully.
+/// Each \c Attribute is either absent, a constant shared by all instances, an array copied from CPU memory, or an
+/// array in a GPU buffer that you manage. The number of positions determines the number of instances. Change the
+/// sources with <tt>setAttributes</tt>, then pass the collection to <tt>PrimitiveRenderer::draw</tt>:
+/// \code
+/// fcg::PrimitiveAttributes attributes(device);
+/// auto result = attributes.setAttributes([&] (fcg::PrimitiveAttributes::Update &update) {
+/// 	update.set<fcg::Attribute::Position>(std::span(positions));
+/// 	update.set<fcg::Attribute::Color>(glm::vec4(1.f, 0.f, 0.f, 1.f));
+/// });
+/// if (result)
+/// 	result = boxes.draw(attributes, state, commandBuffer, renderPass);
+/// \endcode
+///
+/// The collection keeps no CPU copy of uploaded arrays, and updates never wait for the GPU. If an update fails, the
+/// previous sources stay in effect; see \c setAttributes for the consequences of a failed GPU submission.
+///
+/// The collection is not thread-safe: calls on it, including draws that use it, must not run concurrently. The device
+/// must outlive the collection.
 class FCG_RENDER_EXPORT PrimitiveAttributes
 {
 	////
 	// Types
 
-	/// Pending operation or committed source kind.
+	/// Kind of a committed source or of a pending change.
 	enum class Kind
 	{
-		/// Retain the previously committed source.
+		/// Pending only: keep the committed source.
 		Unchanged,
 
-		/// Remove the source.
+		/// The attribute has no source.
 		Absent,
 
-		/// Use the descriptor's constant components.
+		/// The source is the constant stored in <tt>Descriptor::constant</tt>.
 		Constant,
 
-		/// Stage the borrowed host bytes.
+		/// Pending only: an array in CPU memory to upload. Committed arrays are stored as \c View of the
+		/// collection-owned buffer.
 		Array,
 
-		/// Borrow a typed GPU view.
+		/// A typed view into a GPU buffer.
 		View
 	};
 
-	/// Erased source description; only pending arrays borrow host bytes.
+	/// Type-erased description of a committed source or a pending change. Only pending arrays reference CPU memory.
 	struct Descriptor
 	{
-		/// Source or pending operation kind.
+		/// Kind of source or pending change.
 		Kind kind = Kind::Unchanged;
 
-		/// Array bytes, borrowed only during an update.
+		/// CPU bytes of a pending array, referenced only during an update.
 		std::span<const std::byte> bytes;
 
-		/// Constant components in shader order.
+		/// Constant components in shader component order.
 		glm::vec4 constant{};
 
-		/// Borrowed GPU owner for a view.
+		/// Buffer of a view; not owned. For committed arrays, points to the collection-owned buffer.
 		const Buffer *buffer = nullptr;
 
 		/// Byte offset of the first element.
 		std::size_t offset = 0;
 
-		/// Byte stride between elements.
+		/// Byte distance between consecutive elements.
 		std::size_t stride = 0;
 
-		/// Logical element count.
+		/// Number of elements.
 		std::size_t count = 0;
 
-		/// Invalid host byte count detected before constructing a byte span.
+		/// Set if the byte size of a pending array overflows <tt>std::size_t</tt>; \c bytes is left empty in that case.
 		bool overflow = false;
 	};
 
-	/// Private GPU owners and upload staging.
+	/// Implementation state: collection-owned GPU buffers, committed sources and upload staging.
 	struct State;
 
 
@@ -320,15 +320,20 @@ public:
 	////
 	// Types
 
-	/// Scoped mutation proxy; cannot be copied, moved, or constructed outside an update.
+	/// \brief
+	/// 	Records changes to the attribute sources of a \c PrimitiveAttributes collection.
 	///
-	/// Do not retain a reference or pointer to this proxy after its callback returns.
+	/// You receive an \c Update in the callback passed to <tt>PrimitiveAttributes::setAttributes</tt> and cannot
+	/// create one yourself. Each call replaces the pending source of one attribute; if an attribute is assigned
+	/// several times, the last assignment counts. Attributes that are not assigned keep their current source. The
+	/// changes take effect when \c setAttributes succeeds. Do not keep a reference or pointer to the \c Update after
+	/// the callback returns.
 	class Update
 	{
 		////
 		// Friend declarations
 
-		/// The collection controls proxy lifetime and commits its descriptors.
+		/// \c PrimitiveAttributes creates the \c Update for the duration of an update and applies the recorded changes.
 		friend class PrimitiveAttributes;
 
 
@@ -337,21 +342,35 @@ public:
 		////
 		// Object construction/destruction
 
-		/// Proxies cannot be copied.
+		/// Not copyable.
 		Update(const Update&) = delete;
 
-		/// Proxies cannot be assigned.
+		/// Not copy-assignable.
 		auto operator= (const Update&) -> Update& = delete;
 
 
 		////
 		// Methods
 
-		/// Replace an attribute with a full array, copying directly into staging after the callback.
+		/// \brief
+		/// 	Sets the attribute to an array of per-instance values in CPU memory.
 		///
-		/// \tparam A Logical attribute. \tparam T Matching value type. \tparam N Span extent.
+		/// The values are copied to GPU memory when the enclosing \c setAttributes call completes. Values of
+		/// <tt>Attribute::Position</tt>, \c Attribute::Extent and \c Attribute::Orientation are checked against the
+		/// requirements of the respective attribute at that point.
 		///
-		/// \param values Borrowed values that remain valid and unchanged until the enclosing update returns.
+		/// \pre
+		/// 	\p values must remain valid and unchanged until the enclosing \c setAttributes call returns.
+		///
+		/// \tparam A
+		/// 	The attribute to set.
+		/// \tparam T
+		/// 	The element type. Must be <tt>AttributeTraits<A>::Value</tt>, optionally \c const qualified.
+		/// \tparam N
+		/// 	The extent of the span.
+		///
+		/// \param values
+		/// 	The values, one per instance.
 		template <Attribute A, class T, std::size_t N>
 			requires std::same_as<std::remove_cv_t<T>, typename AttributeTraits<A>::Value>
 		void set (std::span<T, N> values)
@@ -366,11 +385,18 @@ public:
 				pending.bytes = std::as_bytes(values);
 		}
 
-		/// Supply a constant; this overload is unavailable for position.
+		/// \brief
+		/// 	Sets the attribute to a constant shared by all instances.
 		///
-		/// \tparam A Attribute supporting constants.
+		/// Not available for <tt>Attribute::Position</tt>. Constants of \c Attribute::Extent and
+		/// \c Attribute::Orientation are checked against the requirements of the respective attribute when the
+		/// enclosing \c setAttributes call completes.
 		///
-		/// \param value The constant copied into the pending descriptor.
+		/// \tparam A
+		/// 	The attribute to set.
+		///
+		/// \param value
+		/// 	The constant. It is copied.
 		template <Attribute A> requires AttributeTraits<A>::constantSupported
 		void set (const typename AttributeTraits<A>::Value &value)
 		{
@@ -382,11 +408,22 @@ public:
 				std::memcpy(&pending.constant[(int)i], bytes + AttributeTraits<A>::componentOffsets[i], sizeof(float));
 		}
 
-		/// Borrow an existing typed GPU array without uploading.
+		/// \brief
+		/// 	Sets the attribute to an array in a GPU buffer that you manage, without copying it.
 		///
-		/// \tparam A The logical attribute.
+		/// The view must meet the requirements described for <tt>AttributeBufferView</tt>; this is checked when the
+		/// enclosing \c setAttributes call completes. Every subsequent draw reads the current buffer contents, which
+		/// are not checked.
 		///
-		/// \param view Buffer and byte layout borrowed while this source remains assigned.
+		/// \pre
+		/// 	The \c Buffer referenced by \p view must not be moved or destroyed until the attribute is assigned
+		/// 	another source or the collection is destroyed.
+		///
+		/// \tparam A
+		/// 	The attribute to set.
+		///
+		/// \param view
+		/// 	The buffer and the layout of the values within it.
 		template <Attribute A> void bind (AttributeBufferView<A> view) {
 			descriptors[(std::size_t)A] = {
 				.kind = Kind::View, .buffer = view.buffer, .offset = view.offset,
@@ -394,9 +431,12 @@ public:
 			};
 		}
 
-		/// Remove a source, retaining any owned GPU capacity for later reuse.
+		/// \brief
+		/// 	Removes the source of the attribute. Renderers then use the default value described for the respective
+		/// 	<tt>Attribute</tt>.
 		///
-		/// \tparam A The logical attribute.
+		/// \tparam A
+		/// 	The attribute to remove.
 		template <Attribute A> void clear () {
 			descriptors[(std::size_t)A] = {.kind = Kind::Absent};
 		}
@@ -407,14 +447,14 @@ public:
 		////
 		// Object construction/destruction
 
-		/// Construct only for an enclosing collection update.
+		/// Constructs an empty change set; only \c PrimitiveAttributes creates updates.
 		Update() = default;
 
 
 		////
 		// Fields
 
-		/// Last assignment per attribute; omitted attributes retain their sources.
+		/// Last assignment per attribute; attributes left at \c Kind::Unchanged keep their committed source.
 		std::array<Descriptor, (std::size_t)Attribute::Count> descriptors{};
 	};
 
@@ -422,39 +462,51 @@ public:
 	////
 	// Object construction/destruction
 
-	/// Borrow a device; initially allocates no GPU storage.
+	/// \brief
+	/// 	Creates an empty collection: all attributes are absent and the instance count is zero.
+	///
+	/// \param device
+	/// 	The device on which GPU memory is allocated. It must outlive the collection.
 	explicit PrimitiveAttributes(Device &device);
 
-	/// Release GPU owners without waiting for idle.
+	/// Destroys the collection and its GPU memory without waiting for the GPU. Draws that were already submitted still
+	/// complete.
 	~PrimitiveAttributes();
 
-	/// Collections cannot be copied.
+	/// Not copyable.
 	PrimitiveAttributes(const PrimitiveAttributes&) = delete;
 
-	/// Collections cannot be assigned.
+	/// Not copy-assignable.
 	auto operator= (const PrimitiveAttributes&) -> PrimitiveAttributes& = delete;
 
-	/// Collections cannot be moved; borrowed source owners remain stable.
+	/// Not movable.
 	PrimitiveAttributes(PrimitiveAttributes&&) = delete;
 
-	/// Collections cannot be move-assigned.
+	/// Not move-assignable.
 	auto operator= (PrimitiveAttributes&&) -> PrimitiveAttributes& = delete;
 
 
 	////
 	// Accessors
 
-	/// Borrow the device supplied at construction.
+	/// Returns the device the collection was created on.
 	[[nodiscard]] auto device () const -> Device&;
 
-	/// Instance count from position; absent or empty position means zero instances.
+	/// Returns the number of instances: the element count of the position source, or zero if position is absent.
 	[[nodiscard]] auto instanceCount () const -> std::size_t;
 
-	/// Query a typed source; views into owned arrays expire on capacity growth or collection destruction.
+	/// \brief
+	/// 	Returns the current source of an attribute.
 	///
-	/// \tparam A The logical attribute.
+	/// A constant is returned as its value. Both arrays set with \c Update::set and buffers bound with \c Update::bind
+	/// are returned as an <tt>AttributeBufferView</tt>. For an array set with <tt>Update::set</tt>, the view refers to
+	/// a buffer owned by the collection; for an empty array, its \c buffer may be null. Such a view stays valid until
+	/// the next successful \c setAttributes call that changes the attribute, or until the collection is destroyed.
 	///
-	/// \return Absence, constant, or typed buffer view, including its actual stride.
+	/// \tparam A
+	/// 	The attribute to query.
+	///
+	/// \return The source of the attribute.
 	template <Attribute A> [[nodiscard]] auto source () const -> AttributeSource<A>
 	{
 		const auto &data = descriptor(A);
@@ -469,41 +521,81 @@ public:
 		return value;
 	}
 
-	/// Whether the source can be drawn; failed automatic submission invalidates changed arrays.
+	/// \brief
+	/// 	Returns whether renderers can draw the current source of an attribute.
 	///
-	/// \tparam A The logical attribute.
+	/// An attribute becomes unusable when \c setAttributes without a copy pass fails to submit an array assigned to
+	/// it. The GPU contents of the attribute are undefined then, and drawing with a renderer that uses the attribute
+	/// fails with <tt>RenderErrorCode::InvalidState</tt>. The next successful assignment of any source to the
+	/// attribute, including <tt>Update::clear</tt>, makes it usable again.
 	///
-	/// \return Usability restored by a successful replacement or clearing.
+	/// \tparam A
+	/// 	The attribute to query.
+	///
+	/// \return Whether the attribute can be drawn.
 	template <Attribute A> [[nodiscard]] auto usable () const -> bool { return isUsable(A); }
 
 
 	////
 	// Methods
 
-	/// Collect final assignments and submit changed arrays in one owned command buffer.
+	/// \brief
+	/// 	Changes attribute sources and uploads new arrays to the GPU in a single submission.
 	///
-	/// Callback exceptions propagate after cleanup, with no uploads recorded. Recursive updates are rejected.
+	/// Calls \p fn once with an \c Update on which it records the changes. Then all changes are checked, and the
+	/// arrays assigned with \c Update::set are uploaded and submitted to the GPU in one command buffer. If no arrays
+	/// were assigned, nothing is submitted. The call does not wait for the GPU. Draws recorded after it returns use the
+	/// new sources.
 	///
-	/// \tparam Fn Callback invocable with an \c Update reference.
+	/// If checking the changes or allocating GPU memory fails, the call returns an error and all sources stay
+	/// unchanged. If the submission fails, the call returns <tt>RenderErrorCode::SDLFailure</tt>, all sources stay
+	/// unchanged, and the attributes that were assigned arrays become unusable (see <tt>usable</tt>) until they are
+	/// assigned again. If \p fn throws, the exception propagates, all sources stay unchanged and nothing is uploaded.
 	///
-	/// \param fn Callback recording assignments; array storage remains valid until this call returns.
+	/// \tparam Fn
+	/// 	A callable that accepts a <tt>PrimitiveAttributes::Update&</tt>.
 	///
-	/// \return Success after submission, or a recoverable error.
+	/// \param fn
+	/// 	Records the changes. CPU arrays passed to \c Update::set must remain valid and unchanged until this call
+	/// 	returns.
+	///
+	/// \return
+	/// 	Success, or an error. The error is <tt>RenderErrorCode::InvalidState</tt> if this is called from within the
+	/// 	callback of another \c setAttributes call on the same collection, or if the device has been moved from. It
+	/// 	is <tt>RenderErrorCode::InvalidArgument</tt> if a value, constant or buffer view does not meet its
+	/// 	requirements, and <tt>RenderErrorCode::SDLFailure</tt> if allocating, uploading or submitting failed.
 	template <class Fn> [[nodiscard]] auto setAttributes (Fn &&fn) -> std::expected<void, RenderError> {
 		return performUpdate(nullptr, std::forward<Fn>(fn));
 	}
 
-	/// Record all changed arrays in a supplied copy pass without submitting or waiting.
+	/// \brief
+	/// 	Changes attribute sources and records the uploads of new arrays into a copy pass that you provide.
 	///
-	/// \pre The pass is active on this device. End it before drawing and submit its command buffer.
+	/// Works like the overload without a copy pass, but records the uploads into \p copyPass instead of submitting
+	/// them, and never makes attributes unusable. On success, the new sources are in effect immediately. Draws that use
+	/// the new arrays must be recorded after \p copyPass has ended, either in the same command buffer or in one that
+	/// is submitted later. The uploads reach the GPU only when the command buffer containing \p copyPass is submitted.
+	/// The call does not wait for the GPU.
 	///
-	/// \note Resupply changed arrays after cancellation or failed submission; recorded writes cannot be rolled back.
+	/// \pre
+	/// 	\p copyPass is active and belongs to a command buffer on the device of the collection.
 	///
-	/// \tparam Fn Callback invocable with an \c Update reference.
+	/// \note
+	/// 	If that command buffer is canceled or its submission fails, or if this call fails after recording some
+	/// 	uploads, the GPU contents of the affected arrays are undefined. Assign these arrays again before drawing.
 	///
-	/// \param copyPass Active copy pass. \param fn Callback recording final assignments.
+	/// \tparam Fn
+	/// 	A callable that accepts a <tt>PrimitiveAttributes::Update&</tt>.
 	///
-	/// \return Recording success or a recoverable error; success does not imply submission.
+	/// \param copyPass
+	/// 	The active copy pass to record the uploads into. Must not be null.
+	/// \param fn
+	/// 	Records the changes. CPU arrays passed to \c Update::set must remain valid and unchanged until this call
+	/// 	returns.
+	///
+	/// \return
+	/// 	Success once the uploads are recorded, or an error. The errors are those of the overload without a copy
+	/// 	pass, plus <tt>RenderErrorCode::InvalidArgument</tt> if \p copyPass is null.
 	template <class Fn> [[nodiscard]] auto setAttributes (SDL_GPUCopyPass *copyPass, Fn &&fn)
 		-> std::expected<void, RenderError>
 	{
@@ -518,7 +610,8 @@ private:
 	////
 	// Methods
 
-	/// Guard recursion, invoke the callback, and always discard pending staging on exit.
+	/// Runs one update: rejects recursion, invokes the callback, applies the changes, and discards pending uploads on
+	/// every exit path, including exceptions.
 	template <class Fn> auto performUpdate (SDL_GPUCopyPass *pass, Fn &&fn) -> std::expected<void, RenderError>
 	{
 		if (auto result = beginUpdate(); !result)
@@ -535,26 +628,27 @@ private:
 		}
 	}
 
-	/// Reject recursive access before the callback runs.
+	/// Rejects moved-from devices and recursive updates before the callback runs, then marks an update as running.
 	[[nodiscard]] auto beginUpdate () -> std::expected<void, RenderError>;
 
-	/// Validate, allocate, stage, record, and commit final descriptors.
+	/// Validates the recorded changes, allocates and uploads arrays, records or submits the uploads, and commits the
+	/// new sources. With a null \p pass, the uploads are submitted in a command buffer owned by this call.
 	[[nodiscard]] auto finishUpdate (SDL_GPUCopyPass *pass, const Update &update) -> std::expected<void, RenderError>;
 
-	/// Clear pending staging and the recursion guard.
+	/// Discards pending uploads and marks the running update as finished.
 	void cancelUpdate () noexcept;
 
-	/// Read an erased committed descriptor.
+	/// Returns the committed source of an attribute.
 	[[nodiscard]] auto descriptor (Attribute attribute) const -> const Descriptor&;
 
-	/// Read submission usability.
+	/// Returns whether the committed source of an attribute can be drawn; see <tt>usable</tt>.
 	[[nodiscard]] auto isUsable (Attribute attribute) const -> bool;
 
 
 	////
 	// Fields
 
-	/// Private storage and staging; no CPU array mirrors.
+	/// Implementation state; never null. Keeps no copies of uploaded CPU arrays.
 	std::unique_ptr<State> state;
 };
 

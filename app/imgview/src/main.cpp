@@ -41,7 +41,10 @@
 // Classes
 //
 
-/// Displays a textured image with planar camera navigation.
+/// \brief Applet that displays an image file as a textured quad and lets the user open other images via a file dialog.
+///
+/// The image is drawn as a quad of height 2 centered at the origin, with its width matching the image's aspect ratio.
+/// Combine it with a planar camera applet such as \c fcg::applet::Camera2D for navigation.
 class ImageViewerApplet : public fcg::Applet
 {
 public:
@@ -49,21 +52,32 @@ public:
 	////
 	// Object construction/destruction
 
-	/// The default constructor.
+	/// Constructs the applet without any resources. They are created by \c init.
 	ImageViewerApplet() = default;
 
-	/// The destructor. Releases the graphics pipeline created during <code>\ref init</code>.
+	/// Releases the image, its texture and all rendering resources.
 	~ImageViewerApplet() override = default;
 
 
 	////
 	// Interface: fcg::Applet
 
+	/// \brief Returns the display name of this applet.
+	///
+	/// \return The string <tt>"Image Viewer"</tt>.
 	[[nodiscard]] auto name () const -> const std::string& override {
 		const static std::string name = "Image Viewer";
 		return name;
 	}
 
+	/// \brief
+	/// 	Creates the quad renderer, quad attributes and sampler, then loads the placeholder image
+	/// 	<tt>assets/cgvlogo.png</tt>.
+	///
+	/// \param device The device to create the GPU resources on.
+	/// \param player The player the quad renderer is created for.
+	///
+	/// \throws std::runtime_error if creating the quad renderer, the sampler, the texture or the quad attributes fails.
 	void init (fcg::Device &device, fcg::Player &player) override
 	{
 		// Init our quad renderer
@@ -93,10 +107,12 @@ public:
 		loadImage(device, "assets/cgvlogo.png");
 	}
 
+	/// Does nothing, as the applet holds no viewport-dependent resources.
 	void onViewportResize (fcg::Device &device, const glm::uvec2 &oldViewportSize, fcg::Player &player) override {
-		// Nothing to do yet.
+		// Nothing to do.
 	}
 
+	/// Shows a window with the current file name, a button that opens a file dialog, and the image dimensions.
 	void gui (fcg::Device &device, fcg::Player &player) override
 	{
 		// Start our widget
@@ -113,21 +129,32 @@ public:
 			openImage(player);
 
 		// Image metadata
-		ImGui::Text("%d × %d pixels", image->width(), image->height());
+		if (image)
+			ImGui::Text("%d × %d pixels", image->width(), image->height());
+		else
+			ImGui::TextUnformatted("No image loaded");
 
 		// Finalize our widget
 		ImGui::End();
 	}
 
+	/// Does nothing, as the applet has no per-frame state to advance.
 	void update (fcg::Device &device, fcg::Player &player, float dt) override {
-		// Nothing to do yet.
+		// Nothing to do.
 	}
 
+	/// \brief
+	/// 	Draws the image quad with the current viewing transformation and alpha blending. Draws nothing while no
+	/// 	image is loaded.
+	///
+	/// \throws std::runtime_error if drawing the quad fails.
 	void render (
 		fcg::Device &device, fcg::RenderState &rs, SDL_GPURenderPass *renderPass, SDL_GPUCommandBuffer *commandBuffer,
 		fcg::Player &player
 	) override
 	{
+		if (!texture)
+			return;
 		fcg::DrawOptions options;
 		options.texture = fcg::PrimitiveTexture{texture->handle(), sampler->handle()};
 		if (auto drawn = qr->draw(*attributes, rs, commandBuffer, renderPass, options); !drawn)
@@ -140,7 +167,18 @@ protected:
 	////
 	// Methods
 
-	/// \brief Upload the currently loaded image to the GPU.
+	/// \brief
+	/// 	Uploads the current \c image into a new texture and sets up the quad with height 2 and the image's aspect
+	/// 	ratio.
+	///
+	/// The quad is rotated by 180 degrees around the \e x-axis, flipping it vertically so that the image's first row
+	/// appears at the top.
+	///
+	/// \pre \c image holds an image.
+	///
+	/// \param device The device to create the texture on.
+	///
+	/// \throws std::runtime_error if the upload or the quad attribute update fails.
 	void uploadImage (fcg::Device &device)
 	{
 		// Upload to texture
@@ -167,58 +205,82 @@ protected:
 			throw std::runtime_error(updated.error().message);
 	}
 
-	/// \brief Load image from given file.
+	/// \brief Loads the image file at \p filepath with the global \c fcg::ImageLoader and uploads it.
+	///
+	/// If loading fails, the error is logged and the previously loaded image, if any, stays on display.
+	///
+	/// \param device The device to create the texture on.
+	/// \param filepath The path of the image file to load.
+	///
+	/// \throws std::runtime_error if uploading the image fails.
 	void loadImage (fcg::Device &device, const std::filesystem::path &filepath)
 	{
 		// Load from file
-		if (auto maybeImage = fcg::ImageLoader::global().load(filepath); maybeImage) {
-			image = std::move(*maybeImage);
-			imageFilepath = filepath;
-		}
-		else
+		auto maybeImage = fcg::ImageLoader::global().load(filepath);
+		if (!maybeImage) {
 			SDL_LogError(
 				SDL_LOG_CATEGORY_APPLICATION, "ImageViewerApplet: failed to load image '%s'\n%s",
 				filepath.string().c_str(), maybeImage.error().message.c_str()
 			);
+			return;
+		}
+		image = std::move(*maybeImage);
+		imageFilepath = filepath;
 
 		// Upload
 		uploadImage(device);
 	}
 
-	/// Open one file with a fresh snapshot of the singleton registry's format metadata.
+	/// \brief
+	/// 	Shows a native open-file dialog filtered to the image formats currently registered with the global
+	/// 	\c fcg::ImageLoader, and loads the selected file.
+	///
+	/// Blocks until the user closes the dialog. Does nothing if the user cancels. If the dialog cannot be shown, the
+	/// error is logged and nothing else happens.
+	///
+	/// \param player The player whose main window is the dialog's parent and whose device receives the texture.
+	///
+	/// \throws std::runtime_error if uploading the selected image fails.
 	void openImage (fcg::Player &player)
 	{
 		// Open the file dialog
-		auto selected = *fcg::extra::showOpenFileDialog(fcg::extra::FileDialogOptions {
+		auto selected = fcg::extra::showOpenFileDialog(fcg::extra::FileDialogOptions {
 			.parent=player.mainWindow(), .title="Open image",
 			.filters=fcg::extra::imageFileFilters(fcg::ImageLoader::global().fileFormats())
 		});
+		if (!selected) {
+			SDL_LogError(
+				SDL_LOG_CATEGORY_APPLICATION, "ImageViewerApplet: file dialog failed\n%s",
+				selected.error().message.c_str()
+			);
+			return;
+		}
 
 		// Try to load the selected image if any
-		if (!selected.paths.empty() && !selected.paths.front().empty())
-			loadImage(player.device(), selected.paths.front());
+		if (!selected->paths.empty() && !selected->paths.front().empty())
+			loadImage(player.device(), selected->paths.front());
 	}
 
 
 	////
 	// Fields
 
-	/// The filepath of the currently loaded image
+	/// The path of the currently loaded image file.
 	std::filesystem::path imageFilepath;
 
-	/// The CPU-side image which we can manipulate pixels on.
+	/// The currently loaded image in CPU memory.
 	std::optional<fcg::Image> image;
 
-	/// Texture created from \ref image for displaying.
+	/// The GPU texture created from <tt>\ref image "image"</tt> for display.
 	std::optional<fcg::Texture> texture;
 
 	/// The renderer for the image quad.
 	std::optional<fcg::QuadRenderer> qr;
 
-	/// Linear filtered, clamped image sampling.
+	/// The sampler used for the image texture, with linear filtering and clamp-to-edge addressing.
 	std::optional<fcg::Sampler> sampler;
 
-	/// One image quad's transform.
+	/// The attributes of the single image quad: position, extent and orientation.
 	std::optional<fcg::PrimitiveAttributes> attributes;
 };
 
@@ -226,10 +288,11 @@ protected:
 
 //////
 //
-// Functions
+// Function implementations
 //
 
-/// Program entry point.
+/// The program entry point. Runs a 2D camera followed by the image viewer applet in a window titled
+/// <tt>"Image Viewer"</tt>.
 auto main () -> int {
 	// Run with 2D camera and our image viewer applet
 	return fcg::run<fcg::applet::Camera2D, ImageViewerApplet>(fcg::PlayerSettings{.mainWindowTitle="Image Viewer"});

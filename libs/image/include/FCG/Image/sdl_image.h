@@ -9,53 +9,46 @@
 //
 
 /// \defgroup fcg_sdl_image SDL_image backend
-/// \ingroup fcg_components
-/// \brief The framework's sole concrete image format handler, backed by SDL3_image.
+/// \ingroup fcg_modules
+/// \brief The framework's concrete image format handler, backed by SDL3_image.
 ///
-/// \section sdl_image_workflows Direct and registry-based loading
-/// <code>\ref fcg::SDLImageFormatHandler "SDLImageFormatHandler"</code> implements
-/// <code>\ref fcg::ImageFormatHandler</code> for all formats provided by the linked SDL_image. It is a small stateless
-/// wrapper: it borrows encoded bytes through \c SDL_IOFromConstMem, delegates decoding to
-/// \c IMG_LoadTyped_IO, and adopts the returned surface. The SDL_image header is private to the implementation;
-/// clients need only SDL3 surface headers. Use the wrapper directly or add an instance to a local loader.
+/// <tt>\ref fcg::SDLImageFormatHandler "SDLImageFormatHandler"</tt> implements
+/// <tt>\ref fcg::ImageFormatHandler "ImageFormatHandler"</tt> for every still-image format that the linked SDL_image
+/// build provides — typically PNG, JPEG, BMP, GIF, TGA and QOI; <tt>\ref fcg::ImageFormatHandler::fileFormats
+/// "fileFormats"</tt> lists them. This is the handler that <tt>\ref fcg::ImageLoader::global
+/// "ImageLoader::global()"</tt> ships with, and the usual way to load images; use it directly when the backend choice
+/// should be explicit.
+///
+/// \section fcg_sdl_image_usage Getting started
 /// \snippet image_examples.cpp direct
+/// From files containing several frames, such as animated GIFs, a single image is decoded.
 ///
-/// \section sdl_image_formats Detection and codec availability
-/// Acceptance uses SDL_image's \c IMG_is* probes on a seekable memory stream. Each probe starts at offset zero; no
-/// input bytes are copied or retained. Formats with signatures ignore misleading hints. A recognized extension also
-/// permits an attempt, particularly TGA, which has no reliable signature probe. A hint is advisory rather than a
-/// forced codec selection. Probes and hinted acceptance are not a guarantee that the linked build can decode the
-/// data: optional codecs can be disabled or unavailable at runtime. Consult \ref image_library_build to enable them.
-/// Built-in formats include PNG, JPEG, BMP, GIF, TGA, QOI, and several other SDL_image codecs. External codec formats
-/// are disabled by default in fetched builds; system packages keep their own capabilities. BMP support is supplied
-/// by this same handler; the framework ships no additional handler based on \c SDL_LoadBMP or \c SDL_LoadPNG.
+/// \section fcg_sdl_image_workflows Common tasks
+/// \subsection fcg_sdl_image_workflows_formats Knowing which formats are available
+/// Format detection uses SDL_image's content probes, so signature-based formats load even with a wrong filename.
+/// Extension-only formats such as TGA need a hint. Probes and hints are not a guarantee that decoding succeeds:
+/// optional codecs can be disabled in the linked SDL_image build. See the
+/// \ref fcg_image_overview "Image library overview" for enabling additional codecs.
 ///
-/// \section sdl_image_lifetime Ownership and initialization
-/// The wrapper owns no SDL initialization state, cache, GPU resource, or borrowed input. No \c IMG_Init / \c IMG_Quit calls
-/// exist in SDL_image 3. Construction does no decoding and is safe during static registration. Destruction releases
-/// no library-global state. Every operation owns its temporary stream, closes it exactly once, and keeps returned
-/// surfaces in RAII owners until adoption succeeds. Images remain usable after the handler or input bytes die.
-/// Externally serialize calls when sharing an instance; independently constructed wrappers can be used independently,
-/// subject to the linked codecs' concurrency contracts. No video initialization is needed for these CPU loads.
+/// \subsection fcg_sdl_image_workflows_registering Registering the handler on other loaders
+/// The global loader comes with an instance of this handler registered under the ID <tt>"sdl_image"</tt> with
+/// priority -100. Independent <tt>\ref fcg::ImageLoader "ImageLoader"</tt>s start empty; register your own instance
+/// of the handler on them as with any other handler.
 ///
-/// \section sdl_image_registration Shipped registration
-/// A namespace-scope helper in the backend's translation unit registers ID `"sdl_image"` with priority `-100` in
-/// <code>\ref fcg::ImageLoader::global "ImageLoader::global()"</code>. The singleton implementation references that
-/// translation unit through a link anchor. Merely linking Image and using
-/// <code>\ref fcg::ImageLoader::global "global()"</code> retains automatic registration in static and shared builds.
-/// Independent loaders remain empty until explicit registration. The usual static-initialization ordering restrictions
-/// apply; see \ref image_loading_registration before loading from a global constructor.
+/// \section fcg_sdl_image_lifetime Ownership and lifetime
+/// The handler owns no initialization state, cache, or GPU resource, and no SDL video initialization is needed for
+/// these CPU loads. Construction does no decoding and is safe during static registration. Images stay usable after
+/// the handler or the input bytes are gone. Serialize calls that share one instance; independent instances can be
+/// used independently.
 ///
-/// \section sdl_image_errors Backend failures
+/// \section fcg_sdl_image_errors Handling errors
 /// Empty encoded input and embedded NULs in hints produce
-/// <code>\ref fcg::ImageErrorCode::InvalidArgument "InvalidArgument"</code>. Stream allocation/seeking/probing
-/// infrastructure failures produce <code>\ref fcg::ImageErrorCode::SDLFailure "SDLFailure"</code>. \c IMG_LoadTyped_IO
-/// failures produce <code>\ref fcg::ImageErrorCode::DecodeFailure "DecodeFailure"</code> with \c SDL_GetError captured
-/// before stream/surface cleanup. A malformed image may pass detection and fail decoding. Through
-/// <code>\ref fcg::ImageLoader "ImageLoader"</code>, these failures permit later handlers to run and contribute to the
-/// aggregate error if none succeeds. Direct <code>\ref image_loading_handler_file_load "load(path)"</code> shares the
-/// same file reader as <code>\ref fcg::ImageLoader "ImageLoader"</code> and adds its input/I/O errors. No failures are
-/// logged.
+/// <tt>\ref fcg::ImageErrorCode::InvalidArgument "InvalidArgument"</tt>, stream infrastructure failures produce
+/// <tt>\ref fcg::ImageErrorCode::SDLFailure "SDLFailure"</tt>, and undecodable data produces
+/// <tt>\ref fcg::ImageErrorCode::DecodeFailure "DecodeFailure"</tt> with SDL's diagnostics in the message. A
+/// malformed image may pass detection and then fail decoding. Nothing logs.
+///
+/// \see \ref fcg_images, \ref fcg_image_loading
 
 
 
@@ -80,6 +73,9 @@
 /// The library top-level namespace.
 namespace fcg {
 
+/// \addtogroup fcg_sdl_image
+/// @{
+
 
 
 //////
@@ -87,7 +83,18 @@ namespace fcg {
 // Classes
 //
 
-/// \brief Stateless SDL3_image decoder preserving its returned surface representation. \ingroup fcg_sdl_image
+/// \brief
+/// 	Image format handler that decodes images with SDL3_image.
+///
+/// The handler decodes every still-image format enabled in the linked SDL_image build, typically including PNG,
+/// JPEG, BMP, GIF, TGA and QOI; \c fileFormats lists them. From files containing several frames, such as animated
+/// GIFs, a single image is decoded. Decoded images keep the pixel format, pitch, palette and color key produced by
+/// SDL_image.
+///
+/// \c ImageLoader::global comes with an instance of this handler registered under the ID <tt>"sdl_image"</tt> with
+/// priority -100. You can also call the handler directly or register your own instance with a local
+/// \c ImageLoader. Loading does not require SDL video initialization. Calls on a shared instance must
+/// be externally synchronized.
 class FCG_IMAGE_EXPORT SDLImageFormatHandler final : public ImageFormatHandler
 {
 public:
@@ -95,39 +102,69 @@ public:
 	////
 	// Object construction/destruction
 
-	/// Construct without initializing SDL or allocating codec resources.
+	/// Creates the handler. This is cheap and safe during static initialization.
 	SDLImageFormatHandler () = default;
 
 
 	////
-	// Accessors
+	// Interface: ImageFormatHandler
 
-	/// Advertise still-image codecs resolved by the linked SDL_image configuration.
-	///
-	/// \note Configured dynamic codecs may fail when their runtime libraries are unavailable.
-	///
-	/// \return Owned labels and canonical extensions; animation-only ANI is excluded.
-	[[nodiscard]] auto fileFormats () const -> std::vector<ImageFileFormat> override;
-
-
-	////
-	// Methods
-
-	/// Retain the base filesystem convenience overload alongside the byte decoder.
+	/// Makes the file overload \c ImageFormatHandler::load available alongside the byte overload below.
 	using ImageFormatHandler::load;
 
-	/// Probe signatures or a recognized hint; a positive result is permission to try decoding.
-	/// \param bytes Encoded image, borrowed only during this call. \param hint Optional extension; case-insensitive.
-	/// \returns Acceptance or an input/SDL stream error; never retains input or a decoded surface.
+	/// \brief
+	/// 	Returns the still-image formats enabled in the linked SDL_image build.
+	///
+	/// \note
+	/// 	A listed format can still fail to decode if SDL_image loads its codec library at runtime and that library is
+	/// 	unavailable.
+	///
+	/// \return The supported formats with their names and lowercase extensions.
+	[[nodiscard]] auto fileFormats () const -> std::vector<ImageFileFormat> override;
+
+	/// \brief
+	/// 	Checks whether the data starts with the signature of a format known to SDL_image, or whether the hint names
+	/// 	such a format.
+	///
+	/// The recognized hints are \c avif, \c bmp, \c cur, \c gif, \c ico, \c iff, \c jpeg, \c jpg, \c jxl, \c lbm,
+	/// \c pbm, \c pcx, \c pgm, \c png, \c pnm, \c ppm, \c qoi, \c svg, \c tga, \c tif, \c tiff, \c webp, \c xcf,
+	/// \c xpm and \c xv. A recognized hint is accepted even if the linked SDL_image build cannot decode that format.
+	///
+	/// \param bytes
+	/// 	The encoded file contents, valid only during the call; must not be empty.
+	/// \param hint
+	/// 	The file name extension of the input, or empty if unknown. A leading dot and ASCII letter case are ignored.
+	///
+	/// \return
+	/// 	Whether decoding should be attempted, \c ImageErrorCode::InvalidArgument if \c bytes is empty or \c hint
+	/// 	contains a NUL character, or \c ImageErrorCode::SDLFailure if reading the data through an SDL memory stream
+	/// 	failed.
 	[[nodiscard]] auto accepts (std::span<const std::byte> bytes, std::string_view hint={}) const
 		-> std::expected<bool, ImageError> override;
 
-	/// Decode to an owned SDL surface with native format, pitch, and transparency metadata.
-	/// \param bytes Nonempty encoded data. \param hint Optional extension, particularly for TGA; never retained.
-	/// \returns An `Image` or an input/SDL/decode failure. Input may be released on return.
+	/// \brief
+	/// 	Decodes encoded file contents with SDL_image.
+	///
+	/// If the data starts with a recognized file signature, it is decoded as that format, whatever the hint says.
+	/// Otherwise, SDL_image uses the hint only for formats that have no signature; in particular, TGA files can only
+	/// be decoded with the hint \c tga.
+	///
+	/// \param bytes
+	/// 	The encoded file contents, valid only during the call; must not be empty.
+	/// \param hint
+	/// 	The file name extension of the input, or empty if unknown. A leading dot and ASCII letter case are ignored.
+	///
+	/// \return
+	/// 	The decoded image, or an error:
+	/// 	- \c ImageErrorCode::InvalidArgument if \c bytes is empty or \c hint contains a NUL character;
+	/// 	- \c ImageErrorCode::SDLFailure if reading the data through an SDL memory stream failed;
+	/// 	- \c ImageErrorCode::DecodeFailure if SDL_image could not decode the data, including when the format is
+	/// 	  not recognized or not supported by the build. The message contains SDL's error description.
 	[[nodiscard]] auto load (std::span<const std::byte> bytes, std::string_view hint={}) const
 		-> std::expected<Image, ImageError> override;
 };
+
+/// @}
 
 
 

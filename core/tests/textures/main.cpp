@@ -24,6 +24,7 @@
 // Framework
 #include <FCG/texture.h>
 #include <FCG/fullscreen.h>
+#include <FCG/render_state.h>
 #include <FCG/window.h>
 #include <FCG/Image/image.h>
 #include <FCG/Render/quad_renderer.h>
@@ -521,6 +522,27 @@ void sceneAndPresentation (fcg::Device &device)
 	device.unclaimWindow(window);
 }
 
+/// Derived render-state matrices are computed on demand, independent of query order.
+void renderState (fcg::Device &device)
+{
+	fcg::RenderState state(device);
+	glm::mat4 modelview(1.f);
+	modelview[0][0] = 2.f;
+	modelview[1][1] = 3.f;
+	modelview[2][2] = 4.f;
+	modelview[3] = {1.f, 2.f, 3.f, 1.f};
+	state.loadModelviewMatrix(modelview);
+	// Query the inverse normal matrix first, without having queried the normal matrix before.
+	const glm::mat3 invNormal = state.invNormalMatrix();
+	const glm::mat3 expected(glm::vec3{2.f, 0.f, 0.f}, glm::vec3{0.f, 3.f, 0.f}, glm::vec3{0.f, 0.f, 4.f});
+	for (int col = 0; col < 3; ++col)
+		for (int row = 0; row < 3; ++row)
+			require(
+				std::abs(invNormal[col][row] - expected[col][row]) < 1e-5f, "Inverse normal matrix is incorrect"
+			);
+	require(state.normalMatrix()[0][0] == 0.5f, "Normal matrix is incorrect");
+}
+
 // Anonymous namespace end
 }
 
@@ -545,6 +567,7 @@ auto main () -> int
 			images(*device);
 			fullscreen(*device);
 			sceneAndPresentation(*device);
+			renderState(*device);
 			device->waitIdle();
 		}
 		SDL_Quit();

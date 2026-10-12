@@ -26,7 +26,7 @@
 // Module namespace open
 //
 
-/// The library top-level namespace.
+// The library top-level namespace.
 namespace fcg {
 
 
@@ -193,6 +193,7 @@ auto Device::createShader (
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Transpiling a shader failed: %s", SDL_GetError());
 	return shader;
 }
+
 
 
 //////

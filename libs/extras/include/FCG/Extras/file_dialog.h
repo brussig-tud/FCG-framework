@@ -5,6 +5,64 @@
 
 //////
 //
+// Module documentation
+//
+
+/// \defgroup fcg_file_dialogs File and folder dialogs
+/// \ingroup fcg_modules
+/// \brief Native open/save file and open-folder dialogs with future or callback completion.
+///
+/// <tt>\ref fcg::extra::showOpenFileDialog "showOpenFileDialog"</tt>,
+/// <tt>\ref fcg::extra::showSaveFileDialog "showSaveFileDialog"</tt>, and
+/// <tt>\ref fcg::extra::showOpenFolderDialog "showOpenFolderDialog"</tt> show the platform's native dialogs. Each
+/// comes in three variants: an <em>async</em> one that returns a <tt>std::future</tt>, a <em>callback</em> one that
+/// invokes a function when the user finishes, and a <em>blocking</em> one that returns the result directly. All accept
+/// owned <tt>\ref fcg::extra::FileDialogOptions "FileDialogOptions"</tt>: an optional parent window, a title, default
+/// locations, filters, and selection flags.
+///
+/// \section fcg_file_dialogs_usage Getting started
+/// Show a dialog from an applet and pick up the result in a later frame:
+/// \snippet file_dialog_examples.cpp future
+///
+/// \section fcg_file_dialogs_workflows Common tasks
+/// \subsection fcg_file_dialogs_workflows_variants Choosing a completion variant
+/// Use the async variant when the dialog should stay open while the application keeps running: keep the future in
+/// your applet and poll it from <tt>\ref fcg::Applet::update "update"</tt> while SDL events are processed. Request
+/// continuous redraw so the loop stays active while waiting, and balance the request when the result arrives. Use the
+/// callback variant to react without storing a future:
+/// \snippet file_dialog_examples.cpp callback
+/// Callbacks run on the main thread during SDL event processing by default
+/// (<tt>\ref fcg::extra::FileDialogCallbackThread "FileDialogCallbackThread"</tt> selects otherwise), may run before
+/// the launching call returns, and must not throw. Use the blocking variant only when nothing else needs to happen
+/// meanwhile: it pumps SDL events until the dialog closes, so the application does not render or update during that
+/// time.
+///
+/// \subsection fcg_file_dialogs_workflows_filters Filtering by file type
+/// Filters pair a label with a list of extensions without leading dots, e.g. <tt>{"Images", {"png", "jpg"}}</tt>.
+/// Use <tt>\ref fcg::extra::imageFileFilters "imageFileFilters"</tt> to build a filter list from the formats an
+/// <tt>\ref fcg::ImageLoader "ImageLoader"</tt> supports. <tt>"*"</tt> is accepted only as the sole extension of an
+/// all-files filter. Save dialogs ignore multiple selection; folder dialogs ignore filters. Platforms may ignore
+/// individual settings.
+///
+/// \section fcg_file_dialogs_lifetime Ownership and lifetime
+/// Launch dialogs from the main thread. Keep SDL and the parent window alive until the dialog completes; dialogs
+/// cannot be cancelled through this wrapper, and destroying a future neither blocks nor cancels. The selected paths
+/// use <tt>std::filesystem::path</tt>, and results do not borrow SDL strings.
+///
+/// \section fcg_file_dialogs_errors Handling errors
+/// The result is a <tt>std::expected</tt>-style <tt>\ref fcg::extra::FileDialogResult "FileDialogResult"</tt>: empty
+/// selected paths mean cancellation, and failures carry a
+/// <tt>\ref fcg::extra::FileDialogError "FileDialogError"</tt>
+/// with a category (invalid arguments, invalid launch state such as missing SDL event processing, or SDL failure) and
+/// message. Empty callbacks are rejected with \c std::invalid_argument at launch;
+/// exceptions inside a callback terminate the application. Nothing logs.
+///
+/// \see \ref fcg_applets, \ref fcg_events
+
+
+
+//////
+//
 // Includes
 //
 
@@ -39,11 +97,14 @@ namespace fcg {
 // Namespaces open
 //
 
-/// The framework top-level namespace.
+/// The library top-level namespace.
 namespace fcg {
 
-/// The library namespace containing our assorted extra utilities.
+/// The library's namespace for assorted extra utilities.
 namespace extra {
+
+/// \addtogroup fcg_file_dialogs
+/// @{
 
 
 
@@ -52,76 +113,105 @@ namespace extra {
 // Structs and enums
 //
 
-/// \brief Owned native file-dialog filter. \ingroup fcg_file_dialogs
+/// A named file-type filter offered by open-file and save-file dialogs.
 struct FileDialogFilter
 {
-	/// Human-readable UTF-8 label; must be nonempty and contain no NULs.
+	/// Human-readable UTF-8 label shown in the dialog. Must be nonempty and must not contain NUL characters.
 	std::string name;
 
-	/// Extensions without leading dots, or a single \c "*" for all files.
-	/// Letters, digits, hyphens, underscores, and interior dots are allowed.
+	/// \brief
+	/// 	File extensions matched by this filter, without leading dots (e.g. \c "png"), or a single \c "*" to match
+	/// 	all files.
+	///
+	/// The list must be nonempty. Extensions may contain ASCII letters, digits, hyphens, underscores and interior
+	/// dots. \c "*" is only accepted as the sole entry of a filter.
 	std::vector<std::string> extensions;
 };
 
-/// \brief Native file-dialog launch options. \ingroup fcg_file_dialogs
+/// \brief
+/// 	Settings for launching a native file or folder dialog.
+///
+/// Invalid settings are reported as <tt>\ref FileDialogErrorCode::InvalidArgument</tt> through the dialog result.
+/// Platforms may ignore individual settings.
 struct FileDialogOptions
 {
-	/// Borrowed parent, possibly \c nullptr; must outlive completion.
+	/// \brief
+	/// 	Optional window the dialog is attached to, or \c nullptr for none.
+	///
+	/// The window is borrowed and must stay alive until the dialog has completed.
 	Window *parent = nullptr;
 
-	/// UTF-8 title; empty uses the platform default.
+	/// UTF-8 dialog title. Must not contain NUL characters. If empty, the platform default title is used.
 	std::string title;
 
-	/// Allow multiple files or folders; ignored for save dialogs.
+	/// Whether the user may select more than one file or folder. Ignored by save-file dialogs.
 	bool allowMultiple = false;
 
-	/// Native filesystem file or directory to start at; empty uses the platform default.
+	/// File or directory the dialog initially shows. If empty, the platform default location is used.
 	std::filesystem::path defaultLocation;
 
-	/// Owned filters; ignored for folder dialogs.
+	/// \brief
+	/// 	File-type filters offered to the user, in the given order. Ignored by folder dialogs.
+	///
+	/// If empty, the dialog does not restrict file types.
 	std::vector<FileDialogFilter> filters;
 };
 
-/// \brief Owned native file-dialog selection. \ingroup fcg_file_dialogs
+/// The outcome of a dialog that completed without error.
 struct FileDialogSelection
 {
-	/// Selected native filesystem paths; an empty list means cancellation.
+	/// The selected files or folders. An empty list means the user cancelled the dialog.
 	std::vector<std::filesystem::path> paths;
 
-	/// Zero-based filter index when supplied by the platform and within the submitted filter list.
+	/// \brief
+	/// 	Zero-based index into <tt>\ref FileDialogOptions::filters</tt> of the filter the user had selected.
+	///
+	/// Empty if the platform does not report the selected filter, or reports an index outside the submitted list.
 	std::optional<std::size_t> selectedFilter;
 };
 
-/// \brief Recoverable dialog error categories. \ingroup fcg_file_dialogs
+/// Categories of errors reported by file dialogs.
 enum class FileDialogErrorCode
 {
-	/// Invalid filters, strings, or filesystem encoding.
+	/// The <tt>\ref FileDialogOptions</tt> contained an invalid filter, title or location.
 	InvalidArgument,
-	/// Launch outside the main thread or without initialized SDL events.
+
+	/// The dialog was launched from a thread other than the main thread, or before the SDL event subsystem was
+	/// initialized.
 	InvalidState,
-	/// SDL failed to create properties, launch, or complete the native dialog.
+
+	/// SDL failed to prepare, show or complete the native dialog.
 	SDLFailure
 };
 
-/// \brief Owned file-dialog diagnostic. \ingroup fcg_file_dialogs
+/// \brief
+/// 	Error returned by file-dialog operations: a category plus a human-readable message (including SDL's message
+/// 	where relevant).
 struct FileDialogError
 {
-	/// Error category.
+	/// The error category.
 	FileDialogErrorCode code;
 
-	/// Error text captured before SDL's thread-local error can change.
+	/// Human-readable description of the error.
 	std::string message;
 };
 
-/// \brief Successful selection (including cancellation), or an owned error. \ingroup fcg_file_dialogs
+/// \brief
+/// 	Result of a file dialog: the user's selection (an empty selection means cancellation), or an error.
 using FileDialogResult = std::expected<FileDialogSelection, FileDialogError>;
 
-/// \brief Callback dispatch policy. \ingroup fcg_file_dialogs
+/// Selects the thread on which a dialog completion callback is invoked.
 enum class FileDialogCallbackThread
 {
-	/// Dispatch during SDL main-thread event processing; inline when already on the main thread.
+	/// \brief
+	/// 	Invoke the callback on the main thread.
+	///
+	/// If the dialog completes on the main thread, the callback runs immediately. Otherwise, it runs the next time
+	/// the application processes SDL events on the main thread.
 	MainThread,
-	/// Invoke directly on SDL's completion thread, which may be the main thread or a worker.
+
+	/// Invoke the callback directly on the thread on which SDL completes the dialog. This can be the main thread or a
+	/// background thread.
 	SDLThread
 };
 
@@ -132,93 +222,190 @@ enum class FileDialogCallbackThread
 // Functions
 //
 
-/// \brief Show a native open-file dialog. \ingroup fcg_file_dialogs
+/// \brief
+/// 	Shows a native open-file dialog and returns a future for its result.
 ///
-/// \pre Launch on the main thread with SDL events initialized; keep SDL and the parent alive until completion.
+/// Call from the main thread after SDL's event subsystem has been initialized. The function returns immediately.
+/// Check the future regularly (e.g. once per frame with <tt>wait_for(0s)</tt>) while the application keeps processing
+/// SDL events; on some platforms the dialog only completes while SDL events are being processed. Do not block the main
+/// thread on <tt>get()</tt> or <tt>wait()</tt>; use <tt>\ref showOpenFileDialog</tt> for a blocking dialog instead.
+/// The future may already be ready when the function returns, e.g. if the launch failed.
 ///
-/// \note Native dialogs cannot be cancelled through this wrapper. Destroying the future does not block or cancel.
+/// A running native dialog cannot be cancelled. Destroying the future neither blocks nor closes the dialog.
 ///
-/// \param options Owned launch settings; platform support for individual settings varies.
+/// \pre
+/// 	SDL and <tt>\ref FileDialogOptions::parent</tt> (if set) stay alive until the dialog has completed.
 ///
-/// \return A future fulfilled directly on SDL completion, including launch errors and cancellation.
+/// \param options
+/// 	The dialog settings.
+///
+/// \return
+/// 	A future that becomes ready when the dialog completes. Its value is the selection, an empty selection if the
+/// 	user cancelled, or an error: <tt>\ref FileDialogErrorCode::InvalidState</tt> if called from a thread other than
+/// 	the main thread or without the SDL event subsystem, <tt>\ref FileDialogErrorCode::InvalidArgument</tt> for
+/// 	invalid \c options, or <tt>\ref FileDialogErrorCode::SDLFailure</tt> if SDL failed.
 [[nodiscard]] FCG_EXTRAS_EXPORT auto showOpenFileDialogAsync (FileDialogOptions options={})
 	-> std::future<FileDialogResult>;
 
-/// \brief Show a native open-file dialog with callback completion. \ingroup fcg_file_dialogs
+/// \brief
+/// 	Shows a native open-file dialog and invokes a callback with its result.
 ///
-/// \pre Launch on the main thread with SDL events initialized; keep SDL and the parent alive until completion.
+/// Call from the main thread after SDL's event subsystem has been initialized. The callback is invoked exactly once,
+/// on the thread selected by \c thread. It may be invoked before this function returns, e.g. if the launch failed.
+/// With <tt>\ref FileDialogCallbackThread::MainThread</tt>, the application must keep processing SDL events to receive
+/// the callback.
+///
+/// A running native dialog cannot be cancelled.
+///
+/// \pre
+/// 	SDL and <tt>\ref FileDialogOptions::parent</tt> (if set) stay alive until the callback has been invoked.
 ///
 /// \note
-/// 	Pump SDL events for main-thread callbacks. Completion may be inline. Callbacks must not throw;
-/// 	callback exceptions, unrecoverable allocation failures in SDL callbacks, and dispatch failure terminate.
-/// 	Native dialogs cannot be cancelled through this wrapper. An empty callback throws \c std::invalid_argument.
+/// 	The callback must not throw. An exception leaving the callback terminates the program.
 ///
-/// \param options Owned launch settings.
-/// \param callback Move-only completion function, retained until invoked exactly once.
-/// \param thread Callback dispatch policy, including for validation errors.
+/// \param options
+/// 	The dialog settings.
+/// \param callback
+/// 	Function receiving the result, which is a selection, an empty selection if the user cancelled, or an error
+/// 	with the same meaning as described for <tt>\ref showOpenFileDialogAsync</tt>. Must not be empty. The callback,
+/// 	including its captures, is kept alive until it has been invoked.
+/// \param thread
+/// 	The thread on which to invoke \c callback, also for errors detected at launch.
+///
+/// \throws std::invalid_argument
+/// 	If \c callback is empty. No dialog is shown in this case.
 FCG_EXTRAS_EXPORT void showOpenFileDialogCallback (
 	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback,
 	FileDialogCallbackThread thread=FileDialogCallbackThread::MainThread
 );
 
-/// \brief Blocking convenience wrapper for \ref showOpenFileDialogAsync. \ingroup fcg_file_dialogs
+/// \brief
+/// 	Shows a native open-file dialog and waits until the user has closed it.
 ///
-/// \param options Owned launch settings; platform support for individual settings varies.
+/// Call from the main thread after SDL's event subsystem has been initialized. While waiting, the function pumps SDL
+/// events so that the dialog can complete. The events stay queued for the application, which does not render or
+/// update until the function returns.
 ///
-/// \return The user selection (including cancellation), or a \ref FileDialogError if there was a problem.
+/// \param options
+/// 	The dialog settings.
+///
+/// \return
+/// 	The selection, an empty selection if the user cancelled, or an error with the same meaning as described for
+/// 	<tt>\ref showOpenFileDialogAsync</tt>.
 [[nodiscard]] FCG_EXTRAS_EXPORT auto showOpenFileDialog (FileDialogOptions options={}) -> FileDialogResult;
 
-/// \brief Show a native save-file dialog; uses the same lifetime contract as \ref showOpenFileDialogAsync.
-/// \ingroup fcg_file_dialogs
+/// \brief
+/// 	Shows a native save-file dialog and returns a future for its result.
 ///
-/// \param options Owned launch settings; multiple selection is ignored.
+/// Usage, requirements and errors are the same as for <tt>\ref showOpenFileDialogAsync</tt>. The user selects at
+/// most one path.
 ///
-/// \return A nonblocking-destructor future fulfilled directly on SDL completion.
+/// \pre
+/// 	SDL and <tt>\ref FileDialogOptions::parent</tt> (if set) stay alive until the dialog has completed.
+///
+/// \param options
+/// 	The dialog settings. <tt>\ref FileDialogOptions::allowMultiple</tt> is ignored.
+///
+/// \return
+/// 	A future that becomes ready when the dialog completes, with a result as described for
+/// 	<tt>\ref showOpenFileDialogAsync</tt>.
 [[nodiscard]] FCG_EXTRAS_EXPORT auto showSaveFileDialogAsync (FileDialogOptions options={})
 	-> std::future<FileDialogResult>;
 
-/// \brief Show a save-file dialog with the callback contract of \ref showOpenFileDialogCallback. \ingroup fcg_file_dialogs
+/// \brief
+/// 	Shows a native save-file dialog and invokes a callback with its result.
 ///
-/// \param options Owned launch settings; multiple selection is ignored.
-/// \param callback Nonempty completion function; must not throw.
-/// \param thread Callback dispatch policy.
+/// Usage, requirements and callback rules are the same as for <tt>\ref showOpenFileDialogCallback</tt>.
+///
+/// \pre
+/// 	SDL and <tt>\ref FileDialogOptions::parent</tt> (if set) stay alive until the callback has been invoked.
+///
+/// \note
+/// 	The callback must not throw. An exception leaving the callback terminates the program.
+///
+/// \param options
+/// 	The dialog settings. <tt>\ref FileDialogOptions::allowMultiple</tt> is ignored.
+/// \param callback
+/// 	Function receiving the result as described for <tt>\ref showOpenFileDialogCallback</tt>. Must not be empty.
+/// \param thread
+/// 	The thread on which to invoke \c callback, also for errors detected at launch.
+///
+/// \throws std::invalid_argument
+/// 	If \c callback is empty. No dialog is shown in this case.
 FCG_EXTRAS_EXPORT void showSaveFileDialogCallback (
 	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback,
 	FileDialogCallbackThread thread=FileDialogCallbackThread::MainThread
 );
 
-/// \brief Blocking convenience wrapper for \ref showSaveFileDialogAsync. \ingroup fcg_file_dialogs
+/// \brief
+/// 	Shows a native save-file dialog and waits until the user has closed it.
 ///
-/// \param options Owned launch settings; platform support for individual settings varies.
+/// Usage and waiting behavior are the same as for <tt>\ref showOpenFileDialog</tt>.
 ///
-/// \return The user selection (including cancellation), or a \ref FileDialogError if there was a problem.
+/// \param options
+/// 	The dialog settings. <tt>\ref FileDialogOptions::allowMultiple</tt> is ignored.
+///
+/// \return
+/// 	The selection, an empty selection if the user cancelled, or an error with the same meaning as described for
+/// 	<tt>\ref showOpenFileDialogAsync</tt>.
 [[nodiscard]] FCG_EXTRAS_EXPORT auto showSaveFileDialog (FileDialogOptions options={}) -> FileDialogResult;
 
-/// \brief Show a native folder dialog; uses the lifetime contract of \ref showOpenFileDialogAsync.
-/// \ingroup fcg_file_dialogs
+/// \brief
+/// 	Shows a native folder dialog and returns a future for its result.
 ///
-/// \param options Owned launch settings; filters are ignored and multiple selection is supported.
+/// Usage, requirements and errors are the same as for <tt>\ref showOpenFileDialogAsync</tt>.
 ///
-/// \return A nonblocking-destructor future fulfilled directly on SDL completion.
+/// \pre
+/// 	SDL and <tt>\ref FileDialogOptions::parent</tt> (if set) stay alive until the dialog has completed.
+///
+/// \param options
+/// 	The dialog settings. <tt>\ref FileDialogOptions::filters</tt> is ignored.
+///
+/// \return
+/// 	A future that becomes ready when the dialog completes, with a result as described for
+/// 	<tt>\ref showOpenFileDialogAsync</tt>.
 [[nodiscard]] FCG_EXTRAS_EXPORT auto showOpenFolderDialogAsync (FileDialogOptions options={})
 	-> std::future<FileDialogResult>;
 
-/// \brief Show a folder dialog with the callback contract of \ref showOpenFileDialogCallback. \ingroup fcg_file_dialogs
+/// \brief
+/// 	Shows a native folder dialog and invokes a callback with its result.
 ///
-/// \param options Owned launch settings; filters are ignored.
-/// \param callback Nonempty completion function; must not throw.
-/// \param thread Callback dispatch policy.
+/// Usage, requirements and callback rules are the same as for <tt>\ref showOpenFileDialogCallback</tt>.
+///
+/// \pre
+/// 	SDL and <tt>\ref FileDialogOptions::parent</tt> (if set) stay alive until the callback has been invoked.
+///
+/// \note
+/// 	The callback must not throw. An exception leaving the callback terminates the program.
+///
+/// \param options
+/// 	The dialog settings. <tt>\ref FileDialogOptions::filters</tt> is ignored.
+/// \param callback
+/// 	Function receiving the result as described for <tt>\ref showOpenFileDialogCallback</tt>. Must not be empty.
+/// \param thread
+/// 	The thread on which to invoke \c callback, also for errors detected at launch.
+///
+/// \throws std::invalid_argument
+/// 	If \c callback is empty. No dialog is shown in this case.
 FCG_EXTRAS_EXPORT void showOpenFolderDialogCallback (
 	FileDialogOptions options, std::move_only_function<void(FileDialogResult)> callback,
 	FileDialogCallbackThread thread=FileDialogCallbackThread::MainThread
 );
 
-/// \brief Blocking convenience wrapper for \ref showOpenFolderDialogAsync. \ingroup fcg_file_dialogs
+/// \brief
+/// 	Shows a native folder dialog and waits until the user has closed it.
 ///
-/// \param options Owned launch settings; platform support for individual settings varies.
+/// Usage and waiting behavior are the same as for <tt>\ref showOpenFileDialog</tt>.
 ///
-/// \return The user selection (including cancellation), or a \ref FileDialogError if there was a problem.
+/// \param options
+/// 	The dialog settings. <tt>\ref FileDialogOptions::filters</tt> is ignored.
+///
+/// \return
+/// 	The selection, an empty selection if the user cancelled, or an error with the same meaning as described for
+/// 	<tt>\ref showOpenFileDialogAsync</tt>.
 [[nodiscard]] FCG_EXTRAS_EXPORT auto showOpenFolderDialog (FileDialogOptions options={}) -> FileDialogResult;
+
+/// @}
 
 
 

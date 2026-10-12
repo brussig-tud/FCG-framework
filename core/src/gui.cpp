@@ -4,6 +4,9 @@
 // Includes
 //
 
+// C++ STL
+/* nothing here yet */
+
 // SDL3 library
 #include <SDL3/SDL.h>
 
@@ -25,7 +28,7 @@
 // Module namespace open
 //
 
-/// The library top-level namespace.
+// The library top-level namespace.
 namespace fcg {
 
 

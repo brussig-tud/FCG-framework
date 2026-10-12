@@ -4,6 +4,9 @@
 // Includes
 //
 
+// C++ STL
+/* nothing here yet */
+
 // Local includes
 #include "shapes.h"
 
@@ -11,10 +14,13 @@
 
 //////
 //
-// SimpleShape
+// Class implementations
 //
 
-SimpleShape::~SimpleShape () = default;
+////
+// SimpleShape
+
+SimpleShape::~SimpleShape() = default;
 
 auto SimpleShape::uploadGeometry (
 	fcg::Device &device, std::span<const Vertex> vertices, std::span<const std::uint32_t> indices

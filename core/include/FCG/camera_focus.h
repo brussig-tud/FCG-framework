@@ -1,6 +1,62 @@
 
+
 #ifndef __FCG_CAMERA_FOCUS_H__
 #define __FCG_CAMERA_FOCUS_H__
+
+
+//////
+//
+// Module documentation
+//
+
+/// \defgroup fcg_camera_focus Camera focus picking
+/// \ingroup fcg_modules
+/// \brief Focusing the camera on the object under the mouse cursor.
+///
+/// <tt>\ref fcg::CameraFocus "CameraFocus"</tt> adds depth picking to any <tt>\ref fcg::Camera "Camera"</tt>: it
+/// finds the world-space point under a mouse click by reading back the rendered depth buffer, then smoothly moves the
+/// camera's focal point there over half a second. Both ready-made camera applets use it for their double-click focus
+/// navigation; you can also drive it yourself for custom triggers. In planar mode, only the XY coordinates change and
+/// the focus depth is preserved, for cameras that cannot move along their view direction, such as
+/// <tt>\ref fcg::applet::Camera2D "Camera2D"</tt>.
+///
+/// \section fcg_camera_focus_usage Getting started
+/// The controller is not an applet; it borrows the camera and is wired into the owning applet's callbacks:
+/// \snippet camera_focus_examples.cpp focus navigation
+///
+/// \section fcg_camera_focus_workflows Common tasks
+/// \subsection fcg_camera_focus_workflows_wiring Wiring the controller into an applet
+/// Call the four methods from the applet callbacks, every time they run:
+/// - <tt>\ref fcg::CameraFocus::rendered "rendered"</tt> in <tt>\ref fcg::Applet::render "render"</tt>, with the view
+///   and projection matrices and the viewport used for the current frame;
+/// - <tt>\ref fcg::CameraFocus::pick "pick"</tt> in <tt>\ref fcg::Applet::onEvent "onEvent"</tt>, with the
+///   mouse-button event that should trigger focusing;
+/// - <tt>\ref fcg::CameraFocus::update "update"</tt> in <tt>\ref fcg::Applet::update "update"</tt>, which applies
+///   finished picks and advances the animation;
+/// - <tt>\ref fcg::CameraFocus::resized "resized"</tt> in <tt>\ref fcg::Applet::onViewportResize
+///   "onViewportResize"</tt>.
+///
+/// While an animation runs, the controller requests continuous redraws and balances them itself.
+///
+/// \subsection fcg_camera_focus_workflows_triggers Custom triggers
+/// <tt>\ref fcg::CameraFocus::pick "pick"</tt> accepts any mouse-button event: the triggering button, modifier keys
+/// and click count are the caller's choice. Mouse positions are given in window coordinates and are scaled to drawable
+/// pixels automatically. A depth of 1 (the background) is ignored.
+///
+/// \section fcg_camera_focus_lifetime Ownership and lifetime
+/// The controller borrows its camera, which must outlive the controller. The <tt>\ref fcg::Player "Player"</tt>
+/// passed to <tt>\ref fcg::CameraFocus::pick "pick"</tt> and <tt>\ref fcg::CameraFocus::update "update"</tt> must
+/// stay alive while a pick or animation is in progress; use the same player for both.
+///
+/// \section fcg_camera_focus_errors Handling errors
+/// <tt>\ref fcg::CameraFocus::pick "pick"</tt> returns \c false when nothing has been rendered yet, the viewport has
+/// changed since the last frame, the event is not a mouse-button event, or the click position is outside the window.
+/// Readback failures and exceptions from the camera setters propagate from <tt>\ref fcg::CameraFocus::update
+/// "update"</tt>; an animation whose setter fails is cancelled. Supply finite, invertible matrices, and use planar
+/// mode for cameras that cannot move along their view direction.
+///
+/// \see \ref fcg_viewing, \ref fcg_events, \ref fcg_orbit_camera, \ref fcg_camera_2d
+
 
 
 //////
@@ -25,6 +81,7 @@
 // Forward declarations
 //
 
+// Framework types
 namespace fcg {
 	class Camera;
 	class Player;
@@ -38,50 +95,9 @@ namespace fcg {
 // Namespaces open
 //
 
+/// The library top-level namespace.
 namespace fcg {
 
-/// \defgroup fcg_camera_focus Camera focus picking
-/// \ingroup fcg_components
-///
-/// \brief Reusable depth picking and smooth focal-point transitions for cameras.
-///
-/// <tt>\ref fcg::CameraFocus "CameraFocus"</tt> operates on any <tt>\ref fcg::Camera "Camera"</tt> without
-/// inheriting from <tt>\ref fcg::Applet "Applet"</tt>. It unprojects picked depth using the last rendered
-/// matrices and drawable viewport, then translates focus over half a second using smoothstep interpolation.
-/// Optional planar mode interpolates only XY and preserves focus Z exactly.
-/// Both <tt>\ref fcg::applet::OrbitCamera "OrbitCamera"</tt> and
-/// <tt>\ref fcg::applet::Camera2D "Camera2D"</tt> use this controller for double-click focus navigation.
-///
-/// \section fcg_camera_focus_workflows Common workflows
-/// After rendering, call <tt>\ref fcg::CameraFocus::rendered "CameraFocus::rendered"</tt> with the matrices
-/// and drawable viewport used for that frame. Pass a mouse-button event to
-/// <tt>\ref fcg::CameraFocus::pick "CameraFocus::pick"</tt> to schedule a depth readback; callers choose
-/// the triggering button, modifiers, and click count. Logical window coordinates are scaled to drawable pixels.
-/// Call <tt>\ref fcg::CameraFocus::update "CameraFocus::update"</tt> each frame to collect readbacks and
-/// advance the animation. Background depth one is ignored. Call
-/// <tt>\ref fcg::CameraFocus::cancel "CameraFocus::cancel"</tt> before manually changing the camera.
-///
-/// \section fcg_camera_focus_lifetime Ownership and lifetime
-/// The controller borrows its camera and players. The camera must outlive the controller; a player must outlive
-/// its pending readback and active animation, including their cleanup in the controller's destructor.
-/// Use the same player for picking and updating while either is outstanding. Controllers cannot be copied or moved.
-/// Cancelled readbacks are still collected: continue updating before the next frame overwrites the result.
-/// After the player replaces its readback storage on resize, call
-/// <tt>\ref fcg::CameraFocus::resized "CameraFocus::resized"</tt> to discard invalidated tokens and snapshots.
-/// The normal <tt>\ref fcg::Applet::onViewportResize "Applet::onViewportResize"</tt> callback runs at this point.
-/// Continuous-redraw requests are balanced on completion, cancellation, resize, and destruction.
-///
-/// \section fcg_camera_focus_errors Errors
-/// Picking returns false for missing snapshots, empty or mismatched viewports, non-button events, and invalid
-/// click coordinates. Depth readback failures and camera setter exceptions propagate; an animation whose setter
-/// fails is cancelled. The destructor logs readback failures instead of throwing. Supplied matrices must be
-/// finite and invertible, and the camera must support the requested focus translations. Use planar mode for
-/// cameras constrained to fixed-depth XY movement.
-///
-/// \section fcg_camera_focus_examples Examples
-/// \snippet camera_focus_examples.cpp focus navigation
-///
-/// \see \ref fcg_viewing, \ref fcg_runtime, \ref fcg_events, \ref fcg_orbit_camera, \ref fcg_camera_2d
 /// \addtogroup fcg_camera_focus
 /// @{
 
@@ -92,9 +108,21 @@ namespace fcg {
 // Classes
 //
 
-/// \brief Depth picking and smooth focus translation through a borrowed \c Camera.
+/// \brief Moves the focal point of a <tt>\ref fcg::Camera "Camera"</tt> smoothly to a scene point picked by mouse.
 ///
-/// \pre The camera and players used for pending readbacks or active animations outlive their use by this controller.
+/// A camera applet owns one controller and drives it from its applet callbacks:
+/// - in \c Applet::render, call \c rendered every frame with the matrices used for that frame;
+/// - in \c Applet::onEvent, call \c pick for the mouse-button event that should pick a new focus;
+/// - in \c Applet::update, call \c update once per frame, always with the same \c Player;
+/// - in \c Applet::onViewportResize, call \c resized;
+/// - before any manual change to the camera, call \c cancel.
+///
+/// A successful pick reads the depth under the cursor and moves the focal point there over half a second, keeping
+/// the camera's orientation and focus distance. In planar mode, only the X and Y coordinates of the focal point
+/// change.
+///
+/// \pre
+/// 	The camera outlives the controller. The \c Player passed to \c pick and \c update outlives the controller.
 class FCG_FRAMEWORK_EXPORT CameraFocus
 {
 	////
@@ -148,62 +176,112 @@ public:
 	////
 	// Object construction/destruction
 
-	/// \brief Construct a focus controller, optionally constraining animation to XY.
+	/// \brief Create a focus controller for the given camera.
 	///
-	/// \param camera The borrowed camera whose focus will be translated.
-	/// \param planar Whether to preserve focus Z exactly; defaults to unrestricted 3D translation.
+	/// \param camera
+	/// 	The camera whose focal point is moved. It is borrowed and must outlive the controller.
+	/// \param planar
+	/// 	If \c true, only the X and Y coordinates of the focal point change and its Z coordinate is preserved
+	/// 	exactly, as needed by cameras restricted to movement in the XY plane. If \c false (the default), the
+	/// 	focal point moves freely in 3D.
 	explicit CameraFocus(Camera &camera, bool planar = false);
 
-	/// Controllers cannot be copied because they own readback collection and redraw requests.
+	/// Not copyable.
 	CameraFocus(const CameraFocus&) = delete;
 
-	/// Controllers cannot be moved because readback and redraw ownership stays with this instance.
+	/// Not movable.
 	CameraFocus(CameraFocus&&) = delete;
 
-	/// The destructor. Collects any pending readbacks and releases the redraw request for an active animation.
+	/// \brief Destroy the controller, stopping any focus animation.
+	///
+	/// \pre The \c Player last passed to \c pick or \c update is still alive.
 	~CameraFocus();
 
-	/// Controllers cannot be copy-assigned because they own readback collection and redraw requests.
+	/// Not copy-assignable.
 	auto operator= (const CameraFocus&) -> CameraFocus& = delete;
 
-	/// Controllers cannot be move-assigned because readback and redraw ownership stays with this instance.
+	/// Not move-assignable.
 	auto operator= (CameraFocus&&) -> CameraFocus& = delete;
 
 
 	////
 	// Methods
 
-	/// \brief Retain the matrix and drawable viewport snapshot from a rendered frame.
+	/// \brief Record the matrices of the frame being rendered, which \c pick uses to locate the clicked point.
 	///
-	/// Empty viewports are ignored. Later camera changes do not alter this snapshot.
+	/// Call every frame from \c Applet::render with the same matrices that the camera installs in the
+	/// \c RenderState. Calls with an empty viewport are ignored.
 	///
-	/// \pre The matrices are finite and their product is invertible.
+	/// \pre The matrices are finite and <tt>projection * view</tt> is invertible.
+	///
+	/// \param view
+	/// 	The modelview matrix used for rendering.
+	/// \param projection
+	/// 	The projection matrix used for rendering.
+	/// \param viewport
+	/// 	The drawable viewport size in pixels. Must equal \c Player::viewportSize for \c pick to succeed.
 	void rendered (const glm::mat4 &view, const glm::mat4 &projection, const glm::uvec2 &viewport);
 
-	/// \brief Convert a window-space mouse-button event to drawable pixels and schedule a depth readback.
+	/// \brief Start picking a new focal point at the cursor position of a mouse-button event.
 	///
-	/// A successful pick cancels the previous transition and collects any previous readback before scheduling
-	/// another. Button, click count, and modifier filtering are the caller's responsibility.
+	/// Call from \c Applet::onEvent. The caller decides which button, click count and modifiers trigger a pick. On
+	/// success, any running focus animation stops, and the depth of the scene under the cursor is requested from the
+	/// player; \c update then reads it in the same frame and starts the animation toward the picked point.
 	///
-	/// \pre Use the same player while a readback or animation is outstanding.
+	/// \pre
+	/// 	\c update is called later in the same frame, with the same \c Player, as happens naturally when \c pick is
+	/// 	called from \c Applet::onEvent and \c update from \c Applet::update.
 	///
-	/// \return Whether a readback was scheduled for the click.
+	/// \param event
+	/// 	The mouse-button event whose position, in window coordinates, should be picked.
+	/// \param player
+	/// 	The player providing the depth of the rendered scene.
+	///
+	/// \return
+	/// 	\c true if picking started. \c false, with no change, if \c event is not a mouse-button event, if
+	/// 	\c rendered has not yet been called with a non-empty viewport (since construction or the last \c resized),
+	/// 	if that viewport differs from the current \c Player::viewportSize, or if the event position is not finite
+	/// 	or lies outside the window.
+	///
+	/// \throws std::runtime_error
+	/// 	If the depth of the scene cannot be requested, e.g. when no frame is currently available; see
+	/// 	\c Player::scheduleDepthReadback.
 	[[nodiscard]] auto pick (const Event &event, Player &player) -> bool;
 
-	/// \brief Collect pending readbacks and advance active focus animations by the given time in seconds.
+	/// \brief Advance the focus animation and start it after a successful \c pick.
 	///
-	/// Nonfinite or negative time steps contribute zero animation time. Cancelled picks are collected without
-	/// applying their results. Setter failures cancel the active animation and propagate to the caller.
+	/// Call exactly once per frame from \c Applet::update. After a pick, this waits if necessary until the GPU has
+	/// provided the depth under the cursor. If that pixel shows background (depth 1), nothing happens. Otherwise,
+	/// the focal point moves from its current position to the picked point over 0.5 seconds with smoothstep easing,
+	/// by calling \c Camera::translateToFocalPoint each frame. While the animation runs, the controller requests
+	/// continuous redraw from the player (see \c Player::pushContinuousRedraw).
 	///
-	/// \pre Use the player that owns the outstanding readback or animation; collect before its result is overwritten.
+	/// \pre Always the same \c Player is passed, also to \c pick.
+	///
+	/// \param player
+	/// 	The player that renders the camera's view.
+	/// \param dt
+	/// 	The time since the last frame in seconds. Negative or nonfinite values count as zero.
+	///
+	/// \throws std::runtime_error
+	/// 	If the depth requested by \c pick cannot be read, including when \c update was not called in the same
+	/// 	frame as \c pick; see \c Player::getDepthReadbackResult.
+	/// \throws std::logic_error
+	/// 	If the player has discarded the requested depth, e.g. after a viewport change without a call to
+	/// 	\c resized.
+	/// \throws std::invalid_argument
+	/// 	If the camera rejects a focus position. The animation is stopped before the exception propagates.
 	void update (Player &player, float dt);
 
-	/// Cancel animation and pending focus application, preserving readbacks that still need collection.
+	/// \brief Stop the focus animation and discard a pick whose result has not been applied yet.
+	///
+	/// Call before changing the camera manually. Keep calling \c update every frame afterwards.
 	void cancel ();
 
-	/// \brief Discard rendered snapshots and tokens invalidated by the player's viewport resize.
+	/// \brief Adapt to a change of the viewport size.
 	///
-	/// \pre The player has already replaced its readback storage and invalidated the old tokens.
+	/// Call from \c Applet::onViewportResize. Stops the focus animation like \c cancel, discards any pick in
+	/// progress, and makes \c pick return \c false until \c rendered has been called again.
 	void resized ();
 
 

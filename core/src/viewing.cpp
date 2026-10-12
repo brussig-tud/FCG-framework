@@ -18,6 +18,7 @@
 // Module namespace open
 //
 
+// The library top-level namespace.
 namespace fcg {
 
 

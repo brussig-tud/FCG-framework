@@ -27,22 +27,22 @@ namespace {
 /// Local shorthand for encoder failure categories.
 using Code = fcg::FullscreenErrorCode;
 
-/// Construct an owned encoder diagnostic.
+/// Construct an error result with the given category and message.
 auto error (Code code, std::string message) -> std::unexpected<fcg::FullscreenError> {
 	return std::unexpected(fcg::FullscreenError{code, std::move(message)});
 }
 
-/// Capture backend diagnostics immediately.
+/// Construct an \c SDLFailure error, capturing SDL's current error message before later SDL calls overwrite it.
 auto sdlError (const char *operation) -> std::unexpected<fcg::FullscreenError> {
 	return error(Code::SDLFailure, std::string(operation) + ": " + SDL_GetError());
 }
 
-/// Validate portable viewport dimensions.
+/// Check that both output dimensions lie in 1–16384, the portable maximum texture size.
 auto validExtent (glm::uvec2 extent) -> bool {
 	return extent.x && extent.y && extent.x <= 16384 && extent.y <= 16384;
 }
 
-/// Construct a built-in fragment encoder.
+/// Create a fullscreen pass from the embedded built-in fragment shader \p name, with one texture/sampler pair.
 auto builtin (fcg::Device &device, SDL_GPUTextureFormat format, const char *name)
 	-> std::expected<fcg::FullscreenPass, fcg::FullscreenError>
 {
@@ -62,6 +62,7 @@ auto builtin (fcg::Device &device, SDL_GPUTextureFormat format, const char *name
 // Module namespace open
 //
 
+// The library top-level namespace.
 namespace fcg {
 
 

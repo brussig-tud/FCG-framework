@@ -21,7 +21,7 @@
 // Module namespace open
 //
 
-/// The library top-level namespace.
+// The library top-level namespace.
 namespace fcg {
 
 
@@ -164,7 +164,6 @@ void Frame::endRenderPass ()
 	SDL_EndGPURenderPass(m_renderPass);
 	m_renderPass = nullptr;
 }
-
 
 
 

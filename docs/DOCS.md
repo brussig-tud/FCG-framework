@@ -1,9 +1,8 @@
 # Framework manual
 
-The framework manual combines guides in principal public headers with the complete registered public API. Class and
-method documentation stays beside declarations. Private members are hidden. Missing narrative and parameter descriptions
-are allowed during the transition; malformed documentation, unresolved explicit references, and missing snippets fail
-the documentation build.
+The framework manual combines the library overviews and module guides in public headers with the complete registered
+public API. Class and method documentation stays beside declarations. Private members are hidden. Malformed
+documentation, unresolved explicit references, and missing snippets fail the documentation build.
 
 With Doxygen installed:
 
@@ -13,63 +12,41 @@ cmake --build --preset debug --target fcg-docs
 ```
 
 Open `build/debug/docs/html/index.html`. The shared preset writes to `build/debug-shared/docs/html/index.html`; every
-build tree has its own `docs/Doxyfile` and `docs/html`. The complete buffer guide remains at `group__fcg__buffers.html`,
-with its existing section anchors. To invoke Doxygen directly, use the generated configuration, e.g.
-`doxygen build/debug/docs/Doxyfile`.
+build tree has its own `docs/Doxyfile` and `docs/html`. To invoke Doxygen directly, use the generated configuration,
+e.g. `doxygen build/debug/docs/Doxyfile`.
 
 `FCG_BUILD_DOCUMENTATION` defaults to ON for top-level builds and OFF when embedded. Set it to OFF to omit the target.
 Doxygen is optional: if absent, configuration succeeds and reports that `fcg-docs` is unavailable. Documentation is
-outside the default build and has no library or executable dependencies. `buffer-docs` has been replaced by `fcg-docs`.
+outside the default build and has no library or executable dependencies.
 
 
-## Component guides
+## Module guides
 
-Define each component with `\defgroup` in its principal public header and attach it to `\ingroup fcg_components`. Use
-stable IDs describing responsibilities (such as `fcg_buffers`), never library ownership. Preserve group IDs and section
-anchors when files or library boundaries change. Group additional headers with `\addtogroup` and balanced `@{` / `@}`
-blocks inside the declaration namespace; use explicit `\ingroup` where needed. Group all public declarations with their
-logical component.
+What library overviews and module guides contain, where they live, and how to write them is codified in `AGENTS.md`
+(sections "Library overviews and module guides" and "API documentation content"). In short: one overview page per
+library, one module guide (`\defgroup`, in group `fcg_modules`) per public header, written for inexperienced new users,
+with snippets from compiled example sources.
 
-New guide stubs should include a meaningful overview with explicit API and related-component links, an explicit **Guide
-incomplete** notice, and sections with these suffixes:
-
-- `<group>_workflows`: Common workflows
-- `<group>_lifetime`: Ownership and lifetime
-- `<group>_errors`: Errors
-- `<group>_examples`: Examples
-
-Do not guess uninvestigated behavior. Expand the stub as contracts are investigated. The buffer guide in
-`core/include/FCG/buffer.h` is a complete example, with snippets from `core/tests/buffers/buffer_examples.cpp`. The normal build
-compiles these as `buffer-examples`. Register snippet directories even when their library binaries or example
-executables are disabled; examples are never API inputs.
+Do not guess uninvestigated behavior; expand guides as contracts are investigated. The buffer guide in
+`core/include/FCG/buffer.h` is a complete example, with snippets from `core/tests/buffers/buffer_examples.cpp`. The
+normal build compiles these as `buffer-examples`. Register snippet directories even when their library binaries or
+example executables are disabled; examples are never API inputs.
 
 Update module guides, class/method contracts, and compiled snippets in the same change as their APIs. Validate both
-parts: build the normal targets (including `buffer-examples`), then build `fcg-docs` and review the affected rendered
-pages. Doxygen detects broken references and snippets; compilation checks example/API compatibility. Neither replaces
-review of lifetime, error, and ownership contracts. For buffer ownership, distinguish optional absence from moved-from
-objects and keep examples of delayed creation and replacement consistent with the factories.
+parts: build the normal targets (including the `*-examples` targets), then build `fcg-docs` and review the affected
+rendered pages. Doxygen detects broken references and snippets; compilation checks example/API compatibility. Neither
+replaces review of lifetime, error, and ownership contracts.
 
 
 ## Cameras
 
 Core provides `FCG/viewing.h`, `FCG/camera_focus.h`, `FCG/applet/orbit_camera.h`, and `FCG/applet/camera_2d.h`.
-The [viewing guide](../build/debug/docs/html/group__fcg__viewing.html) documents
-[`fcg::Camera`](../build/debug/docs/html/classfcg_1_1Camera.html) and
-[`fcg::CameraParameters`](../build/debug/docs/html/structfcg_1_1CameraParameters.html).
-Both camera applets implement the common camera interface independently of their applet callbacks.
-The hello application continues to use the orbit camera.
-
-The [focus-picking guide](../build/debug/docs/html/group__fcg__camera__focus.html) documents the reusable
-[`fcg::CameraFocus`](../build/debug/docs/html/classfcg_1_1CameraFocus.html) controller. It borrows a camera,
-retains rendered matrix snapshots, collects depth readbacks, and animates focus translation without inheriting
-from an applet. Call its cancellation method before manual camera changes and its resize method after the player
-invalidates readback storage. Both supplied camera applets perform this integration internally.
-
-This is a source-breaking change: the former `fcg::applet::OrbitCameraParams` has been renamed to
-[`fcg::CameraParameters`](../build/debug/docs/html/structfcg_1_1CameraParameters.html) without an alias;
-`fovY` is now a variant of degree-valued `PerspectiveFov` and world-height-valued `OrthoExtend`.
-Focal-point access returns a value, and the additional camera base changes the applet class layout.
-Use the setters to mutate parameters; they validate input and cancel active focus transitions.
+The [viewing module guide](../build/debug/docs/html/group__fcg__viewing.html) documents the shared
+[`fcg::Camera`](../build/debug/docs/html/classfcg_1_1Camera.html) interface and
+[`fcg::CameraParameters`](../build/debug/docs/html/structfcg_1_1CameraParameters.html). The
+[focus-picking module guide](../build/debug/docs/html/group__fcg__camera__focus.html) documents the reusable
+[`fcg::CameraFocus`](../build/debug/docs/html/classfcg_1_1CameraFocus.html) controller; both supplied camera applets
+integrate it internally. The camera module guides and class contracts are the authority on behavior and integration.
 
 The normal build compiles `camera-examples`; `camera-smoke` checks the CPU contracts and `camera-lifecycle`
 checks controls, picking, cancellation, resizing, and redraw cleanup against real rendered depth.
@@ -84,36 +61,34 @@ For example, Image lives in `libs/image/`, uses `<FCG/Image/image_loader.h>`, an
 Register additional library directories and targets in `libs/CMakeLists.txt`; packaging derives their include
 directories from the targets. Libraries link dependency targets prepared by the root startup step described below.
 
-Image's former flat include paths have been removed. Update consumers to use `FCG/Image/` and reinstall into a clean
-prefix to avoid retaining obsolete headers; installation does not delete files from earlier versions.
-
 Keep the framework-owned manifest in `docs/Documentation.cmake`, outside binary build-option branches:
 
 ```cmake
 fcg_register_documentation(LIBRARY Core
-    LINK_TARGET FCG-framework::Core
-    COMPONENTS fcg_buffers fcg_devices
+    LINK_TARGET FCG-Framework::Core
+    OVERVIEW fcg_core_overview
+    MODULES fcg_buffers fcg_devices
     INPUTS "${PROJECT_SOURCE_DIR}/core/include/FCG"
     EXAMPLE_DIRS "${PROJECT_SOURCE_DIR}/core/tests/buffers"
     PREDEFINED FCG_FRAMEWORK_EXPORT=
 )
 ```
 
-`LINK_TARGET` is metadata and need not name an existing CMake target. Library names and component IDs must be
-identifiers. Repeat registrations for a library to accumulate inputs, components, snippet paths, and definitions; the
-link target must agree. Inputs are deduplicated, and component ownership conflicts are configuration errors. Relative
+`LINK_TARGET` is metadata and need not name an existing CMake target. Library names and module IDs must be
+identifiers. Repeat registrations for a library to accumulate inputs, modules, snippet paths, and definitions; the
+link target must agree. Inputs are deduplicated, and module ownership conflicts are configuration errors. Relative
 paths resolve at the registration call's source directory, including subdirectories; absolute paths are useful in
 included manifests.
 
-Register public-header directories or individual `.h`, `.hh`, `.hpp`, `.hxx`, or `.dox` guide files. Directories are searched
-recursively; implementation sources and nested `src`, `app`, `apps`, `applications`, `test`, `tests`, `dependencies`,
-`third_party`, `vendor`, `_deps`, and build directories are excluded. The active binary tree is excluded too. Only
-register public source locations; snippet paths are separate.
+Register public-header directories or individual `.h`, `.hh`, `.hpp`, `.hxx`, or `.dox` documentation files. Directories
+are searched recursively; implementation sources and nested `src`, `app`, `apps`, `applications`, `test`, `tests`,
+`dependencies`, `third_party`, `vendor`, `_deps`, and build directories are excluded. The active binary tree is excluded
+too. Only register public source locations; snippet paths are separate.
 
-To add a library, add its manifest registration and public component groups. Add the guide links to `docs/main.dox`. The
-generated library index lists its CMake target and links to component groups; library pages do not own the groups in
-Doxygen's hierarchy. To split a library or move a component, change its ownership registration and any necessary input
-paths. Keep the component's group ID and anchors unchanged. No changes to the documentation target are needed.
+To add a library, add its manifest registration and public module groups. Add the overview link to `docs/main.dox`. The
+generated library pages list the CMake target, the overview, and the module guides; library pages do not own the groups
+in Doxygen's hierarchy. To split a library or move a module, change its ownership registration and any necessary input
+paths. Keep the module's group ID and anchors unchanged. No changes to the documentation target are needed.
 
 The reusable builder is `cmake/Documentation.cmake`. After all registrations, call
 `fcg_add_documentation(TEMPLATE ... MAIN_PAGE ...)` once, as the framework root does. The template and landing page are
@@ -123,11 +98,12 @@ The caller resolves Doxygen before invoking the builder; the framework does this
 Run `ctest --preset debug -R documentation` for the registration/manual fixture. It needs Doxygen for HTML checks and
 still checks configuration behavior when Doxygen is unavailable.
 
-Library registrations may include `GUIDE <page_id>` to link an authored library guide from the generated library
-page. The guide belongs in a registered public header, alongside the component guides; repeated registrations must
-agree on its ID. Image's full example is in `libs/image/include/FCG/Image/image_loader.h`, with compiled snippets in
-`libs/image/tests/image_examples.cpp`. Link `FCG-framework::Image` for CPU image loading. See its guide for source codec
-configuration through upstream `SDLIMAGE_*` options and automatic registration in static/shared builds.
+Library registrations may include `OVERVIEW <page_id>` to link the library's overview page from the generated library
+page. The overview lives in a registered public header — in the library's umbrella header if one exists, otherwise in
+its most principal public header; repeated registrations must agree on its ID. Image's overview is in
+`libs/image/include/FCG/Image/image.h`, with compiled snippets in `libs/image/tests/image_examples.cpp`. Link
+`FCG-Framework::Image` for CPU image loading. See "SDL_image formats and codecs" below for source codec configuration
+through upstream `SDLIMAGE_*` options and automatic registration in static/shared builds.
 
 
 ## Dependency startup
@@ -154,3 +130,48 @@ Doxygen and the WebP package used by optional codec tests are also discovered du
 required. Documentation and test setup consume the discovery results. Run `ctest --preset debug -R dependencies` and
 the corresponding shared preset to exercise supplied targets, source defaults, caller overrides, and all four
 framework/backend static/shared combinations without downloading dependencies during the tests.
+
+
+### SDL_image formats and codecs
+
+`FCG_SHARED_LIBS` selects framework linkage; `FCG_USE_SHARED_SDL` selects SDL linkage, defaulting to the framework
+choice. Source-built SDL_image follows the latter because a shared SDL_image requires shared SDL3. SDL3_image
+3.4.4 is the pinned source fallback. Compatible system packages and previously provided `SDL3_image::SDL3_image`
+targets are reused as-is; source configuration cannot change their codecs or linkage. Installed targets defer full
+third-party dependency exports. CPM/`add_subdirectory` consumers receive build-time dependency targets transitively.
+
+The source fallback enables built-in formats and avoids external codec dependencies by default. AVIF, JPEG XL,
+TIFF, WebP, libpng, and codec vendoring default to `OFF`. PNG uses SDL's built-in decoder and JPEG uses SDL_image's
+stb backend. Change the upstream `SDLIMAGE_*` variables before adding the framework; FCG respects normal variables
+and cache entries and introduces no bespoke codec switches. To decode WebP with installed codec dependencies:
+
+```cmake
+set(SDLIMAGE_WEBP ON CACHE BOOL "Enable WebP decoding")
+set(SDLIMAGE_STRICT ON CACHE BOOL "Require requested codec dependencies")
+CPMAddPackage(NAME FCG SOURCE_DIR "/path/to/framework")
+target_link_libraries(my_app PRIVATE FCG-Framework::Image)
+```
+
+Replace the source path with your framework checkout, or use your pinned `GITHUB_REPOSITORY`/`GIT_TAG` in CPM.
+To enable AVIF loading, set `SDLIMAGE_AVIF=ON` before adding the framework. For a source-built, non-vendored SDL_image,
+CPM reuses a supplied `avif` target or a compatible installed libavif package (minimum version 1.0); otherwise it
+fetches libavif 1.4.2. Explicit `AVIF_CODEC_*` settings are respected. Automatic decoder selection reuses an installed
+libaom, dav1d, or libgav1, or builds libaom locally when none is available. Without an x86 assembler, local libaom
+uses its portable implementation unless `AOM_TARGET_CPU` is explicitly selected. Local libaom requires Perl;
+Git for Windows' bundled Perl is discovered automatically. AVIF saving, libavif tools, tests,
+examples, and optional libyuv default to `OFF`. Enable `SDLIMAGE_AVIF_SAVE` to also request an encoder. Codec linkage
+defaults to static with position-independent code; explicit `SDLIMAGE_AVIF_SHARED` or `SDLIMAGE_DEPS_SHARED` choices
+are respected. Supplied or installed SDL_image backends retain their existing capabilities and do not trigger this
+codec resolution. Normal variables, cache entries, and standard CPM source/download overrides remain supported.
+Set `SDLIMAGE_VENDORED=ON` to use SDL_image's own codec submodules instead; enabled submodules are fetched with the
+pinned SDL_image checkout. Enable `SDLIMAGE_JXL`, `SDLIMAGE_TIF`, or `SDLIMAGE_PNG_LIBPNG` similarly.
+`SDLIMAGE_STRICT` makes missing dependencies a configuration error rather than silently disabling a requested codec.
+Vendored codecs link statically by default (`SDLIMAGE_DEPS_SHARED=OFF`), keeping them inside SDL_image.
+Options also work with `-D` on the command line. Prebuilt packages may support more or fewer formats.
+
+Resolved source/package capabilities determine the shipped handler's advertised formats. If a supplied target or
+package has no trustworthy metadata, set `FCG_SDL_IMAGE_FORMATS` to an explicit list of SDL codec identifiers:
+`ANI;AVIF;BMP;GIF;JPG;JXL;LBM;PCX;PNG;PNM;QOI;SVG;TGA;TIF;WEBP;XCF;XPM;XV`. An explicitly empty list is valid;
+unknown identifiers and missing declarations fail configuration. This declaration describes the existing backend,
+rather than changing its codec configuration. Configured dynamic codecs can still fail when runtime libraries are
+unavailable. ANI is animation-only and is omitted from still-image metadata; BMP also advertises ICO and CUR.

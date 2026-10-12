@@ -38,7 +38,12 @@
 // Classes
 //
 
-// Our demo applet.
+/// \brief
+/// 	Demo applet that renders one of several procedurally generated simple shapes, selectable and configurable via
+/// 	the GUI.
+///
+/// The shapes are drawn with Blinn-Phong lighting by the embedded \c simple_shapes shader, using the viewing
+/// transformation of the current \c fcg::RenderState (e.g. as set up by a camera applet running before this one).
 class SimpleShapesApplet : public fcg::Applet
 {
 public:
@@ -46,27 +51,36 @@ public:
 	////
 	// Object construction/destruction
 
-	/// The default constructor.
+	/// Constructs the applet with one instance of each simple shape. The platonic solid is selected initially.
 	SimpleShapesApplet()
 		: shapes{std::make_unique<ConvexPolygon>(), std::make_unique<PlatonicSolid>()}
 	{}
 
-	/// The destructor. Releases the graphics pipeline created during <code>\ref init</code>.
+	/// Releases the graphics pipeline created by \c init. The device passed to \c init must still be alive.
 	~SimpleShapesApplet() override {
-		if (m_device != nullptr && m_pipeline != nullptr) {
+		if (m_device != nullptr && m_pipeline != nullptr)
 			SDL_ReleaseGPUGraphicsPipeline(m_device->handle(), m_pipeline);
-		}
 	}
 
 
 	////
 	// Interface: fcg::Applet
 
+	/// \brief Returns the display name of this applet.
+	///
+	/// \return The string <tt>"Simple Shapes"</tt>.
 	[[nodiscard]] auto name () const -> const std::string& override {
 		const static std::string name = "Simple Shapes";
 		return name;
 	}
 
+	/// \brief Loads the embedded \c simple_shapes shader and creates the graphics pipeline for drawing shapes.
+	///
+	/// The pipeline renders indexed triangle lists into the main render target's color format with a 32-bit float
+	/// depth buffer, using depth testing and writing. On failure, the error is logged and the applet renders nothing.
+	///
+	/// \param device The device to create the pipeline on. It must outlive the applet.
+	/// \param player The player providing the main render target's color format.
 	void init (fcg::Device &device, fcg::Player &player) override
 	{
 		// Cache the device so the destructor can release the pipeline.
@@ -87,9 +101,8 @@ public:
 
 		auto *vertexShader = device.createShader(fcg::ShaderStage::VERTEX, vertex->spirv, 1);
 		auto *fragmentShader = device.createShader(fcg::ShaderStage::FRAGMENT, fragment->spirv, 0);
-		if (!vertexShader || !fragmentShader) {
+		if (!vertexShader || !fragmentShader)
 			return;  // createShader already logged the error.
-		}
 
 		// Vertex layout: interleaved position + normal, both vec4.
 		SDL_GPUVertexBufferDescription vertexBufferDesc {};
@@ -147,25 +160,26 @@ public:
 		SDL_ReleaseGPUShader(device.handle(), fragmentShader);
 	}
 
+	/// Does nothing, as the applet holds no viewport-dependent resources.
 	void onViewportResize (fcg::Device &device, const glm::uvec2 &oldViewportSize, fcg::Player &player) override {
-		// Nothing to do yet.
+		// Nothing to do.
 	}
 
+	/// Shows a window with a combo box for selecting the shape, followed by the selected shape's parameter widgets.
 	void gui (fcg::Device &device, fcg::Player &player) override
 	{
 		ImGui::SetNextWindowSize({ 0, 0 }, ImGuiCond_FirstUseEver);
 		ImGui::Begin("Simple Shapes");
 
 		// Shape selection combo box.
-		if (ImGui::BeginCombo("Shape", shapes[selectedShape]->name())) {
+		if (ImGui::BeginCombo("Shape", shapes[selectedShape]->name()))
+		{
 			for (unsigned i=0; i<(unsigned)SS::NUM; ++i) {
 				const bool isSelected = (i == static_cast<std::size_t>(selectedShape));
-				if (ImGui::Selectable(shapes[i]->name(), isSelected)) {
+				if (ImGui::Selectable(shapes[i]->name(), isSelected))
 					selectedShape = static_cast<int>(i);
-				}
-				if (isSelected) {
+				if (isSelected)
 					ImGui::SetItemDefaultFocus();
-				}
 			}
 			ImGui::EndCombo();
 		}
@@ -178,11 +192,14 @@ public:
 		ImGui::End();
 	}
 
+	/// Regenerates and uploads the selected shape's geometry if its parameters have changed.
 	void update (fcg::Device &device, fcg::Player &player, float dt) override {
 		// Make sure our shape is up-to-date and ready to render
 		shapes[selectedShape]->update(device);
 	}
 
+	/// Draws the selected shape with the current viewing transformation. Draws nothing if pipeline creation failed or
+	/// the shape has no uploaded geometry.
 	void render (
 		fcg::Device &device, fcg::RenderState &rs, SDL_GPURenderPass *renderPass,
 		SDL_GPUCommandBuffer *commandBuffer, fcg::Player &player
@@ -195,12 +212,13 @@ public:
 		if (!shape.numIndices())
 			return;
 
-		// Bind the pipeline and the shape's geometry buffers.
+		// Bind the pipeline.
 		SDL_BindGPUGraphicsPipeline(renderPass, m_pipeline);
 
 		// Push the viewing uniforms so the shader can transform vertices.
 		rs.pushViewingUniforms(commandBuffer, fcg::ShaderStage::VERTEX, 0);
 
+		// Bind the shape's geometry buffers.
 		auto vertexBinding = shape.vertexBuffer()->bindVertex(renderPass);
 		auto indexBinding = shape.indexBuffer()->bindIndex(renderPass, SDL_GPU_INDEXELEMENTSIZE_32BIT);
 		if (!vertexBinding || !indexBinding) {
@@ -221,16 +239,16 @@ protected:
 	////
 	// Fields
 
-	/// All available simple shapes, instantiated once.
+	/// One instance of each simple shape, indexed by <tt>\ref SimpleShapes "SimpleShapes"</tt>.
 	std::unique_ptr<SimpleShape> shapes[(size_t)SS::NUM];
 
-	/// Index of the currently selected shape in <code>\ref shapes</code>.
+	/// The index of the currently selected shape in <tt>\ref shapes "shapes"</tt>.
 	int selectedShape = 1;
 
-	/// Cached GPU device handle, captured during <code>\ref init</code> so the destructor can release the pipeline.
+	/// The device passed to \c init, kept so that the destructor can release the pipeline.
 	fcg::Device *m_device = nullptr;
 
-	/// The graphics pipeline used to render the simple shapes.
+	/// The graphics pipeline used to render the simple shapes, or \c nullptr if its creation failed.
 	SDL_GPUGraphicsPipeline *m_pipeline = nullptr;
 };
 
@@ -238,10 +256,11 @@ protected:
 
 //////
 //
-// Functions
+// Function implementations
 //
 
-/// Program entry point.
+/// The program entry point. Runs an orbit camera followed by the simple shapes applet in a window titled
+/// <tt>"Hello FCG!"</tt>.
 int main () {
 	// Run with our demo applets
 	return fcg::run<fcg::applet::OrbitCamera, SimpleShapesApplet>(

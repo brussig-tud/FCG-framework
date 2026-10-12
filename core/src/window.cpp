@@ -23,7 +23,7 @@
 // Module namespace open
 //
 
-/// The library top-level namespace.
+// The library top-level namespace.
 namespace fcg {
 
 
@@ -77,8 +77,6 @@ auto Window::id () const -> unsigned {
 
 auto Window::swapchainFormat () const -> SDL_GPUTextureFormat
 {
-	/// If the window is not claimed by a device an \c
-	/// SDL_GPU_TEXTUREFORMAT_INVALID is returned as sentinel value.
 	if (!m_device)
 		return SDL_GPU_TEXTUREFORMAT_INVALID;
 	return SDL_GetGPUSwapchainTextureFormat(m_device->handle(), m_handle);
@@ -119,7 +117,8 @@ auto Window::claim (Device &device) -> bool
 	SDL_GPUSamplerCreateInfo samplerInfo{};
 	samplerInfo.min_filter = SDL_GPU_FILTER_NEAREST;
 	samplerInfo.mag_filter = SDL_GPU_FILTER_NEAREST;
-	samplerInfo.address_mode_u = samplerInfo.address_mode_v = samplerInfo.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+	samplerInfo.address_mode_u = samplerInfo.address_mode_v = samplerInfo.address_mode_w =
+		SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
 	auto sampler = Sampler::create(device, samplerInfo);
 	if (!presentPass || !sampler) {
 		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Creating presentation resources failed: %s",
@@ -186,7 +185,9 @@ auto Window::beginFrame (Device &device) -> Frame*
 		throw std::runtime_error(msg);
 	}
 	// Finish even an exceptional acquisition/allocation path; acquired swapchain images cannot be cancelled.
-	std::unique_ptr<SDL_GPUCommandBuffer, decltype(&SDL_SubmitGPUCommandBuffer)> submission(cmdBuffer, SDL_SubmitGPUCommandBuffer);
+	std::unique_ptr<SDL_GPUCommandBuffer, decltype(&SDL_SubmitGPUCommandBuffer)> submission(
+		cmdBuffer, SDL_SubmitGPUCommandBuffer
+	);
 	SDL_GPUTexture *swapchainTexture = nullptr;
 	auto swapchainSize = glm::uvec2(0);
 	if (!SDL_WaitAndAcquireGPUSwapchainTexture(

@@ -1,31 +1,53 @@
-/**
- * \defgroup fcg_render_state Render state
- * \ingroup fcg_components
- *
- * <code>\ref fcg::RenderState</code> collects rendering state. <code>\ref fcg::ViewingUniforms</code> describes the
- * viewing matrices passed to shaders.
- *
- * \par Guide incomplete
- * This guide is a stub. Consult the API declarations below for currently documented behavior.
- *
- * \section fcg_render_state_workflows Common workflows
- * Guide incomplete: workflow descriptions remain to be investigated and written.
- *
- * \section fcg_render_state_lifetime Ownership and lifetime
- * Guide incomplete: consult individual type and member contracts.
- *
- * \section fcg_render_state_errors Errors
- * Guide incomplete: error handling remains to be investigated and written.
- *
- * \section fcg_render_state_examples Examples
- * Guide incomplete: worked examples remain to be added and compiled.
- *
- * \see \ref fcg_windows, \ref fcg_buffers, \ref fcg_orbit_camera
- */
-
 
 #ifndef __FCG_RENDER_STATE_H__
 #define __FCG_RENDER_STATE_H__
+
+
+//////
+//
+// Module documentation
+//
+
+/// \defgroup fcg_render_state Render state
+/// \ingroup fcg_modules
+/// \brief Modelview and projection matrix stacks, their derived matrices, and pushing them to shaders.
+///
+/// <tt>\ref fcg::RenderState "RenderState"</tt> holds the transformation state of the current frame: a modelview and a
+/// projection matrix stack, each starting at identity. The derived matrices that shaders typically need — inverses,
+/// the normal matrix, the combined modelview-projection matrix — are computed on demand from the stack tops and cached
+/// until the stacks change. <tt>\ref fcg::ViewingUniforms "ViewingUniforms"</tt> is the uniform block that carries
+/// these matrices into shaders.
+///
+/// In applications run by <tt>\ref fcg::run "run"</tt>, one render state is created per frame and passed to every
+/// applet's <tt>\ref fcg::Applet::render "Applet::render"</tt> callback in applet order, so a camera applet can install
+/// its matrices for the applets that follow.
+///
+/// \section fcg_render_state_usage Getting started
+/// Load the matrices for the frame, compose transforms by right-multiplication, and push the uniform block to the
+/// shader stage that needs it:
+/// \snippet render_state_examples.cpp render_state_usage
+///
+/// \section fcg_render_state_workflows Common tasks
+/// \subsection fcg_render_state_workflows_stacks Working with the matrix stacks
+/// <tt>\ref fcg::RenderState::loadModelviewMatrix "loadModelviewMatrix"</tt> and
+/// <tt>\ref fcg::RenderState::mulModelviewMatrix "mulModelviewMatrix"</tt> replace and right-multiply the top of a
+/// stack. <tt>\ref fcg::RenderState::pushModelviewMatrix "pushModelviewMatrix"</tt> saves the current matrices and
+/// <tt>\ref fcg::RenderState::popModelviewMatrix "popModelviewMatrix"</tt> restores them; don't pop the entry that was
+/// pushed first. This is how scene hierarchies are walked: push, draw the subtree, pop.
+///
+/// \subsection fcg_render_state_workflows_derived Derived matrices
+/// The derived accessors (<tt>\ref fcg::RenderState::invModelviewMatrix "invModelviewMatrix"</tt>,
+/// <tt>\ref fcg::RenderState::normalMatrix "normalMatrix"</tt>,
+/// <tt>\ref fcg::RenderState::modelviewProjectionMatrix "modelviewProjectionMatrix"</tt>, …) compute and cache on
+/// first use. Accessing a derived matrix from a \c const render state requires that the non-const overload has been
+/// called since the last change to the stacks.
+///
+/// \subsection fcg_render_state_workflows_uniforms Matching shader declaration
+/// <tt>\ref fcg::ViewingUniforms "ViewingUniforms"</tt> is a \c std140 uniform block; its field order must match the
+/// shader's declaration. See its class documentation for the exact layout.
+///
+/// \see \ref fcg_applets, \ref fcg_viewing, \ref fcg_devices
+
 
 
 //////
@@ -57,7 +79,7 @@ struct SDL_GPUCommandBuffer;
 
 // Framework types
 namespace fcg {
-	class Device;
+class Device;
 }
 
 
@@ -70,25 +92,30 @@ namespace fcg {
 /// The library top-level namespace.
 namespace fcg {
 
-/** \addtogroup fcg_render_state
- * @{
- */
+/// \addtogroup fcg_render_state
+/// @{
 
 
 
 //////
 //
-// Structs & enums
+// Structs and enums
 //
 
-/// Convenience wrapper for a `std140`-compatible 3x3 matrix.
+/// \brief
+/// 	A 3x3 matrix laid out as required by the \c std140 rules, where each column occupies a full \c vec4 slot.
+///
+/// Use it wherever a \c mat3 has to be stored in a \c std140 uniform block, e.g. in
+/// <tt>\ref fcg::ViewingUniforms "ViewingUniforms"</tt>.
 struct alignas(16) Std140Mat3
 {
-	/// The three `std140`-aligned columns of the matrix.
+	/// The three matrix columns. The fourth component of each column is padding and always \c 0.
 	glm::vec4 columns[3];
 
-	/// Construct an `std140`-compatible matrix from a GLM matrix.
-	Std140Mat3 (const glm::mat3 &matrix)
+	/// Convert a GLM matrix into the padded \c std140 layout.
+	///
+	/// \param matrix The matrix to convert.
+	Std140Mat3(const glm::mat3 &matrix)
 		: columns{
 			{matrix[0], 0.f},
 			{matrix[1], 0.f},
@@ -98,31 +125,36 @@ struct alignas(16) Std140Mat3
 };
 static_assert(sizeof(Std140Mat3) == 3 * sizeof(glm::vec4));
 
-/// Structure of the viewing uniforms buffer.
+/// \brief
+/// 	The viewing matrices of a <tt>\ref fcg::RenderState "RenderState"</tt>, laid out as a \c std140 uniform block.
+///
+/// <tt>\ref fcg::RenderState::pushViewingUniforms "RenderState::pushViewingUniforms"</tt> uploads this block to a
+/// shader. The uniform block declared in the shader must contain the same members in the same order: six \c mat4
+/// followed by two \c mat3, for a total of 480 bytes.
 struct ViewingUniforms
 {
-	/// The modelview matrix.
+	/// The modelview matrix, transforming object coordinates into eye coordinates.
 	glm::mat4 modelview;
 
-	/// The inverse modelview matrix.
+	/// The inverse of the modelview matrix.
 	glm::mat4 invModelview;
 
-	/// The projection matrix.
+	/// The projection matrix, transforming eye coordinates into clip coordinates.
 	glm::mat4 projection;
 
-	/// The inverse projection matrix.
+	/// The inverse of the projection matrix.
 	glm::mat4 invProjection;
 
-	/// The combined modelview-projection matrix.
+	/// The combined matrix <tt>projection * modelview</tt>.
 	glm::mat4 modelviewProjection;
 
-	/// The inverse combined modelview-projection matrix.
+	/// The inverse of the combined modelview-projection matrix.
 	glm::mat4 invModelviewProjection;
 
-	/// The normal matrix.
+	/// The normal matrix, i.e. the inverse transpose of the upper-left 3x3 part of the modelview matrix.
 	Std140Mat3 normal;
 
-	/// The inverse normal matrix.
+	/// The inverse of the normal matrix.
 	Std140Mat3 invNormal;
 };
 static_assert(offsetof(ViewingUniforms, normal) == 6 * sizeof(glm::mat4));
@@ -136,7 +168,26 @@ static_assert(sizeof(ViewingUniforms) == 6 * sizeof(glm::mat4) + 2 * sizeof(Std1
 // Classes
 //
 
-/// The central render state.
+/// \brief
+/// 	Holds the viewing transformations used while rendering a frame.
+///
+/// A render state maintains two matrix stacks, one for the modelview matrix and one for the projection matrix, in the
+/// style of classic OpenGL. Both stacks start out with a single identity matrix. The top entry of each stack is the
+/// current matrix; it can be replaced (\c load…), right-multiplied (\c mul…), saved (\c push…) and restored
+/// (\c pop…).
+///
+/// The derived matrices (inverses, the normal matrix and the combined modelview-projection matrix) as well as the
+/// complete <tt>\ref fcg::ViewingUniforms "ViewingUniforms"</tt> block are computed on demand by the non-const
+/// accessors and then reused until the matrix stacks change. The \c const overloads of these accessors can only
+/// return values that have already been computed. Their precondition is that the non-const overload has been called
+/// since the last change to the matrix stacks. A change is any load, multiplication or pop.
+///
+/// The framework creates one render state per frame and passes it to \c Applet::render of every applet in turn.
+/// Camera applets typically load their view and projection matrices into it, and subsequent applets read the matrices
+/// or upload them to their shaders with <tt>\ref pushViewingUniforms</tt>.
+///
+/// References returned by the accessors are valid only until the next change to the matrix stacks. Copy the values if
+/// they are needed beyond that.
 class FCG_FRAMEWORK_EXPORT RenderState
 {
 public:
@@ -144,130 +195,164 @@ public:
 	////
 	// Object construction/destruction
 
-	/// Construct using the provided device for resource creation. The device must outlive this render state.
+	/// Construct a render state with identity modelview and projection matrices.
+	///
+	/// \param device The device that is used for rendering.
 	RenderState(Device &device);
 
-	/// The destructor. Releases all GPU resources.
+	/// The destructor.
 	~RenderState();
 
-	/// `RenderState` objects are not copyable.
+	/// Not copyable.
 	RenderState(const RenderState&) = delete;
 
-	/// `RenderState` objects are not copy-assignable.
+	/// Not copy-assignable.
 	auto operator= (const RenderState&) -> RenderState& = delete;
 
 
 	////
 	// Accessors
 
-	/// Read-only reference the top of the modelview matrix stack.
-	[[nodiscard]] auto modelviewMatrix() const -> const glm::mat4& {
+	/// The current modelview matrix, i.e. the top of the modelview matrix stack.
+	[[nodiscard]] auto modelviewMatrix () const -> const glm::mat4& {
 		return modelview.top();
 	}
 
-	/// Read-only reference the top of the projection matrix stack.
-	[[nodiscard]] auto projectionMatrix() const -> const glm::mat4& {
+	/// The current projection matrix, i.e. the top of the projection matrix stack.
+	[[nodiscard]] auto projectionMatrix () const -> const glm::mat4& {
 		return projection.top();
 	}
 
-	/// Reference the current inverse modelview matrix. Will be lazily computed if it is currently invalid.
-	[[nodiscard]] auto invModelviewMatrix() -> const glm::mat4& {
-		if (!invModelview.top().has_value()) {
+	/// The inverse of the current modelview matrix, computing it if necessary.
+	///
+	/// \return A reference to the inverse modelview matrix.
+	[[nodiscard]] auto invModelviewMatrix () -> const glm::mat4& {
+		if (!invModelview.top().has_value())
 			invModelview.top() = glm::inverse(modelview.top());
-		}
 		return invModelview.top().value();
 	}
 
-	/// Reference the top of the inverse modelview matrix stack from a \c const context.
+	/// \brief
+	/// 	The inverse of the current modelview matrix, as last computed by the non-const overload.
 	///
-	/// It is a logic error to call this accessor when the \em current inverse modelview matrix has never been queried
-	/// before, since the \c const context does not allow updating it if it is currently invalid.
-	[[nodiscard]] auto invModelviewMatrix() const -> const glm::mat4& {
+	/// \pre The non-const overload has been called since the last change to the matrix stacks.
+	///
+	/// \return A reference to the inverse modelview matrix.
+	///
+	/// \throws std::bad_optional_access if the precondition is violated.
+	[[nodiscard]] auto invModelviewMatrix () const -> const glm::mat4& {
 		return invModelview.top().value();
 	}
 
-	/// Reference the current normal matrix. Will be lazily computed if it is currently invalid.
-	[[nodiscard]] auto normalMatrix() -> const glm::mat3& {
-		if (!normal.top().has_value()) {
+	/// The normal matrix for the current modelview matrix, computing it if necessary.
+	///
+	/// \return A reference to the inverse transpose of the upper-left 3x3 part of the modelview matrix.
+	[[nodiscard]] auto normalMatrix () -> const glm::mat3& {
+		if (!normal.top().has_value())
 			normal.top() = glm::mat3(glm::transpose(glm::inverse(modelview.top())));
-		}
 		return normal.top().value();
 	}
 
-	/// Reference the top of the normal matrix stack from a \c const context.
+	/// \brief
+	/// 	The normal matrix for the current modelview matrix, as last computed by the non-const overload.
 	///
-	/// It is a logic error to call this accessor when the \em current normal matrix has never been queried before,
-	/// since the \c const context does not allow updating it if it is currently invalid.
-	[[nodiscard]] auto normalMatrix() const -> const glm::mat3& {
+	/// \pre The non-const overload has been called since the last change to the matrix stacks.
+	///
+	/// \return A reference to the inverse transpose of the upper-left 3x3 part of the modelview matrix.
+	///
+	/// \throws std::bad_optional_access if the precondition is violated.
+	[[nodiscard]] auto normalMatrix () const -> const glm::mat3& {
 		return normal.top().value();
 	}
 
-	/// Reference the current inverse normal matrix. Will be lazily computed if it is currently invalid.
-	[[nodiscard]] auto invNormalMatrix() -> const glm::mat3& {
-		if (!invNormal.top().has_value()) {
-			invNormal.top() = glm::inverse(normal.top().value());
-		}
-		return invNormal.top().value();
-	}
-
-	/// Reference the top of the inverse normal matrix stack from a \c const context.
+	/// The inverse of the current normal matrix, computing it if necessary.
 	///
-	/// It is a logic error to call this accessor when the \em current inverse normal matrix has never been queried
-	/// before, since the \c const context does not allow updating it if it is currently invalid.
-	[[nodiscard]] auto invNormalMatrix() const -> const glm::mat3& {
+	/// \return A reference to the inverse normal matrix.
+	[[nodiscard]] auto invNormalMatrix () -> const glm::mat3& {
+		if (!invNormal.top().has_value())
+			invNormal.top() = glm::inverse(normalMatrix());
 		return invNormal.top().value();
 	}
 
-	/// Reference the current inverse projection matrix. Will be lazily computed if it is currently invalid.
-	[[nodiscard]] auto invProjectionMatrix() -> const glm::mat4& {
-		if (!invProjection.top().has_value()) {
+	/// \brief
+	/// 	The inverse of the current normal matrix, as last computed by the non-const overload.
+	///
+	/// \pre The non-const overload has been called since the last change to the matrix stacks.
+	///
+	/// \return A reference to the inverse normal matrix.
+	///
+	/// \throws std::bad_optional_access if the precondition is violated.
+	[[nodiscard]] auto invNormalMatrix () const -> const glm::mat3& {
+		return invNormal.top().value();
+	}
+
+	/// The inverse of the current projection matrix, computing it if necessary.
+	///
+	/// \return A reference to the inverse projection matrix.
+	[[nodiscard]] auto invProjectionMatrix () -> const glm::mat4& {
+		if (!invProjection.top().has_value())
 			invProjection.top() = glm::inverse(projection.top());
-		}
 		return invProjection.top().value();
 	}
 
-	/// Reference the top of the inverse projection matrix stack from a \c const context.
+	/// \brief
+	/// 	The inverse of the current projection matrix, as last computed by the non-const overload.
 	///
-	/// It is a logic error to call this accessor when the \em current inverse projection matrix has never been queried
-	/// before, since the \c const context does not allow updating it if it is currently invalid.
-	[[nodiscard]] auto invProjectionMatrix() const -> const glm::mat4& {
+	/// \pre The non-const overload has been called since the last change to the matrix stacks.
+	///
+	/// \return A reference to the inverse projection matrix.
+	///
+	/// \throws std::bad_optional_access if the precondition is violated.
+	[[nodiscard]] auto invProjectionMatrix () const -> const glm::mat4& {
 		return invProjection.top().value();
 	}
 
-	/// Reference the current modelview-projection matrix. Will be lazily computed if it is currently invalid.
-	[[nodiscard]] auto modelviewProjectionMatrix() -> const glm::mat4& {
-		if (!modelviewProjection.has_value()) {
+	/// The combined modelview-projection matrix, computing it if necessary.
+	///
+	/// \return A reference to the matrix <tt>projectionMatrix() * modelviewMatrix()</tt>.
+	[[nodiscard]] auto modelviewProjectionMatrix () -> const glm::mat4& {
+		if (!modelviewProjection.has_value())
 			modelviewProjection = projection.top() * modelview.top();
-		}
 		return modelviewProjection.value();
 	}
 
-	/// Reference the current modelview-projection matrix from a \c const context.
+	/// \brief
+	/// 	The combined modelview-projection matrix, as last computed by the non-const overload.
 	///
-	/// It is a logic error to call this accessor when the \em current modelview-projection matrix has never been
-	/// queried before, since the \c const context does not allow updating it if it is currently invalid.
-	[[nodiscard]] auto modelviewProjectionMatrix() const -> const glm::mat4& {
+	/// \pre The non-const overload has been called since the last change to the matrix stacks.
+	///
+	/// \return A reference to the matrix <tt>projectionMatrix() * modelviewMatrix()</tt>.
+	///
+	/// \throws std::bad_optional_access if the precondition is violated.
+	[[nodiscard]] auto modelviewProjectionMatrix () const -> const glm::mat4& {
 		return modelviewProjection.value();
 	}
 
-	/// Reference the current inverse modelview-projection matrix. Will be lazily computed if it is currently invalid.
-	[[nodiscard]] auto invModelviewProjectionMatrix() -> const glm::mat4& {
-		if (!invModelviewProjection.has_value()) {
+	/// The inverse of the combined modelview-projection matrix, computing it if necessary.
+	///
+	/// \return A reference to the inverse modelview-projection matrix.
+	[[nodiscard]] auto invModelviewProjectionMatrix () -> const glm::mat4& {
+		if (!invModelviewProjection.has_value())
 			invModelviewProjection = glm::inverse(modelviewProjectionMatrix());
-		}
 		return invModelviewProjection.value();
 	}
 
-	/// Reference the current inverse modelview-projection matrix from a \c const context.
+	/// \brief
+	/// 	The inverse of the combined modelview-projection matrix, as last computed by the non-const overload.
 	///
-	/// It is a logic error to call this accessor when the \em current inverse modelview-projection matrix has never
-	/// been queried before, since the \c const context does not allow updating it if it is currently invalid.
-	[[nodiscard]] auto invModelviewProjectionMatrix() const -> const glm::mat4& {
+	/// \pre The non-const overload has been called since the last change to the matrix stacks.
+	///
+	/// \return A reference to the inverse modelview-projection matrix.
+	///
+	/// \throws std::bad_optional_access if the precondition is violated.
+	[[nodiscard]] auto invModelviewProjectionMatrix () const -> const glm::mat4& {
 		return invModelviewProjection.value();
 	}
 
-	/// Reference the current viewing uniforms data block. Will be lazily computed if it is currently invalid.
-	[[nodiscard]] auto viewingUniforms() -> const ViewingUniforms&
+	/// All current viewing matrices as a uniform block, computing them if necessary.
+	///
+	/// \return A reference to the viewing uniforms reflecting the current matrix stacks.
+	[[nodiscard]] auto viewingUniforms () -> const ViewingUniforms&
 	{
 		if (!m_viewingUniforms.has_value()) {
 			m_viewingUniforms = {
@@ -279,11 +364,15 @@ public:
 		return m_viewingUniforms.value();
 	}
 
-	/// Reference the current viewing uniforms data block from a \c const context.
+	/// \brief
+	/// 	All current viewing matrices as a uniform block, as last computed by the non-const overload.
 	///
-	/// It is a logic error to call this accessor when the \em current viewing uniforms data block has never been
-	/// queried before, since the \c const context does not allow updating it if it is currently invalid.
-	[[nodiscard]] auto viewingUniforms() const -> const ViewingUniforms& {
+	/// \pre The non-const overload has been called since the last change to the matrix stacks.
+	///
+	/// \return A reference to the viewing uniforms reflecting the current matrix stacks.
+	///
+	/// \throws std::bad_optional_access if the precondition is violated.
+	[[nodiscard]] auto viewingUniforms () const -> const ViewingUniforms& {
 		return m_viewingUniforms.value();
 	}
 
@@ -291,7 +380,7 @@ public:
 	////
 	// Methods
 
-	/// Push the modelview matrix stack.
+	/// Save the current modelview matrix by pushing a copy of it onto the modelview matrix stack.
 	void pushModelviewMatrix () {
 		modelview.push(modelview.top());
 		invModelview.push(invModelview.top());
@@ -299,19 +388,25 @@ public:
 		invNormal.push(invNormal.top());
 	}
 
-	/// Multiply the top of the modelview matrix stack by a new matrix.
+	/// Right-multiply the current modelview matrix by the given matrix, i.e. <tt>top = top * matrix</tt>.
+	///
+	/// \param matrix The matrix to multiply with.
 	void mulModelviewMatrix (const glm::mat4& matrix) {
 		modelview.top() *= matrix;
 		onModelviewChange();
 	}
 
-	/// Load a new modelview matrix into the top of the stack.
+	/// Replace the current modelview matrix with the given matrix.
+	///
+	/// \param matrix The new modelview matrix.
 	void loadModelviewMatrix (const glm::mat4& matrix) {
 		modelview.top() = matrix;
 		onModelviewChange();
 	}
 
-	/// Pop the modelview matrix stack.
+	/// Restore the modelview matrix saved by the matching <tt>\ref pushModelviewMatrix</tt>.
+	///
+	/// \pre The modelview matrix stack holds more than one entry, i.e. every pop matches a preceding push.
 	void popModelviewMatrix () {
 		modelview.pop();
 		invModelview.pop();
@@ -320,47 +415,66 @@ public:
 		invalidateDependentData();
 	}
 
-	/// Push the projection matrix stack.
+	/// Save the current projection matrix by pushing a copy of it onto the projection matrix stack.
 	void pushProjectionMatrix () {
 		projection.push(projection.top());
 		invProjection.push(invProjection.top());
 	}
 
-	/// Multiply the top of the projection matrix stack by a new matrix.
+	/// Right-multiply the current projection matrix by the given matrix, i.e. <tt>top = top * matrix</tt>.
+	///
+	/// \param matrix The matrix to multiply with.
 	void mulProjectionMatrix (const glm::mat4& matrix) {
 		projection.top() *= matrix;
 		onProjectionChange();
 	}
 
-	/// Load a new projection matrix into the top of the stack.
+	/// Replace the current projection matrix with the given matrix.
+	///
+	/// \param matrix The new projection matrix.
 	void loadProjectionMatrix (const glm::mat4& matrix) {
 		projection.top() = matrix;
 		onProjectionChange();
 	}
 
-	/// Pop the projection matrix stack.
+	/// Restore the projection matrix saved by the matching <tt>\ref pushProjectionMatrix</tt>.
+	///
+	/// \pre The projection matrix stack holds more than one entry, i.e. every pop matches a preceding push.
 	void popProjectionMatrix () {
 		projection.pop();
 		invProjection.pop();
 		invalidateDependentData();
 	}
 
-	/// Add pushing the <code>\ref viewingUniforms</code> data block to the command stream of the given command buffer.
+	/// \brief
+	/// 	Record pushing the current <tt>\ref viewingUniforms</tt> block to the given uniform slot of a shader stage.
 	///
-	/// \param commandBuffer The command buffer to which the push command will be added.
-	/// \param stage The shader stage for which the data block will be pushed.
-	/// \param slot The shader uniform slot to which the data block will be pushed.
+	/// Call this from \c Applet::render before issuing draw calls that use the viewing matrices. Computes any viewing
+	/// matrices that are not yet available. The data is copied into the command buffer, so later changes to the matrix
+	/// stacks do not affect draws already recorded. Failures, such as a null command buffer or an invalid slot, are
+	/// reported to the SDL error log and nothing is pushed.
+	///
+	/// \param commandBuffer The command buffer to record the push into.
+	/// \param stage The shader stage that receives the uniform block.
+	/// \param slot The uniform slot of that stage, in the range 0–3.
 	void pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot);
 
-	/// Add pushing the <code>\ref viewingUniforms</code> data block to the command stream of the given command buffer.
+	/// \brief
+	/// 	Record pushing the <tt>\ref viewingUniforms</tt> block, as last computed by the non-const overloads, to the
+	/// 	given uniform slot of a shader stage.
 	///
-	/// Just like for the corresponding \link viewingUniforms accessor \endlink, it is a logic error to call this method
-	/// when the \em current viewing uniforms data block has never been queried before, since the \c const context does
-	/// not allow updating it if it is currently invalid.
+	/// Failures, such as a null command buffer or an invalid slot, are reported to the SDL error log and nothing is
+	/// pushed.
 	///
-	/// \param commandBuffer The command buffer to which the push command will be added.
-	/// \param stage The shader stage for which the data block will be pushed.
-	/// \param slot The shader uniform slot to which the data block will be pushed.
+	/// \pre
+	/// 	The non-const overload of <tt>\ref viewingUniforms</tt> or of this method has been called since the last
+	/// 	change to the matrix stacks.
+	///
+	/// \param commandBuffer The command buffer to record the push into.
+	/// \param stage The shader stage that receives the uniform block.
+	/// \param slot The uniform slot of that stage, in the range 0–3.
+	///
+	/// \throws std::bad_optional_access if the precondition is violated.
 	void pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot) const;
 
 
@@ -369,14 +483,14 @@ private:
 	////
 	// Methods
 
-	/// Invalidate unsynchronized dependent data.
+	/// Reset the cached matrices that depend on both stacks, as well as the cached uniform block.
 	inline void invalidateDependentData () {
 		modelviewProjection.reset();
 		invModelviewProjection.reset();
 		m_viewingUniforms.reset();
 	}
 
-	/// Invalidate after a modelview matrix stack manipulation.
+	/// Reset all cached matrices derived from the top of the modelview stack after it changed.
 	inline void onModelviewChange () {
 		invModelview.top().reset();
 		normal.top().reset();
@@ -384,7 +498,7 @@ private:
 		invalidateDependentData();
 	}
 
-	/// Invalidate after a projection matrix stack manipulation.
+	/// Reset all cached matrices derived from the top of the projection stack after it changed.
 	inline void onProjectionChange () {
 		invProjection.top().reset();
 		invalidateDependentData();
@@ -394,45 +508,46 @@ private:
 	////
 	// Fields
 
-	/// The <code>\ref ViewingUniforms::modelview</code> matrix stack.
+	/// The modelview matrix stack.
 	std::stack<glm::mat4> modelview{{glm::mat4(1.f)}};
 
-	/// The <code>\ref ViewingUniforms::projection</code> matrix stack.
+	/// The projection matrix stack.
 	std::stack<glm::mat4> projection{{glm::mat4(1.f)}};
 
-	/// Lazy matrix stack for the <code>\ref ViewingUniforms::invModelview</code> matrix.
+	/// Cached inverse modelview matrices, one per modelview stack entry; empty when not yet computed.
 	std::stack<std::optional<glm::mat4>> invModelview{{glm::mat4(1.f)}};
 
-	/// Lazy matrix stack for the <code>\ref ViewingUniforms::invProjection</code> matrix.
+	/// Cached inverse projection matrices, one per projection stack entry; empty when not yet computed.
 	std::stack<std::optional<glm::mat4>> invProjection{{glm::mat4(1.f)}};
 
-	/// Lazy <code>\ref ViewingUniforms::modelviewProjection</code> matrix.
+	/// Cached modelview-projection matrix for the current stack tops; empty when not yet computed.
 	std::optional<glm::mat4> modelviewProjection;
 
-	///Lazy <code>\ref ViewingUniforms::invModelviewProjection</code> matrix.
+	/// Cached inverse modelview-projection matrix for the current stack tops; empty when not yet computed.
 	std::optional<glm::mat4> invModelviewProjection;
 
-	/// Lazy matrix stack for the <code>\ref ViewingUniforms::normal</code> matrix.
+	/// Cached normal matrices, one per modelview stack entry; empty when not yet computed.
 	std::stack<std::optional<glm::mat3>> normal{{glm::mat3(1.f)}};
 
-	/// Lazy matrix stack for the <code>\ref ViewingUniforms::invNormal</code> matrix.
+	/// Cached inverse normal matrices, one per modelview stack entry; empty when not yet computed.
 	std::stack<std::optional<glm::mat3>> invNormal{{glm::mat3(1.f)}};
 
-	/// The current viewing uniforms data block read for shader upload.
+	/// Cached viewing uniform block for the current stack tops; empty when not yet computed.
 	std::optional<ViewingUniforms> m_viewingUniforms;
 };
 
 
 
-/** @} */
+/// @}
+
+
 
 //////
 //
 // Namespaces close
 //
 
-// namespace fcg
-}
+} // namespace fcg
 
 
 #endif  // ifndef __FCG_RENDER_STATE_H__

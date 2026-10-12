@@ -3,6 +3,7 @@ add_subdirectory(resources)
 add_subdirectory(buffers)
 add_subdirectory(textures)
 add_subdirectory(cameras)
+add_subdirectory(guides)
 
 # ---------------------------------------------------------------------------
 # Tier 1 - app lifecycle: run a trivial probe applet through fcg::run()

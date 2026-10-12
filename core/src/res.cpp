@@ -55,8 +55,11 @@ auto tryOpen (const cpp_embedlib::EmbeddedFS &resources, std::string_view path)
 // Module namespace open
 //
 
-/// Our module namespace.
-namespace fcg::res {
+// The library top-level namespace.
+namespace fcg {
+
+// The library's namespace for embedded resources.
+namespace res {
 
 
 
@@ -127,8 +130,11 @@ auto shader (const cpp_embedlib::EmbeddedFS &resources, std::string_view name) -
 
 //////
 //
-// Namespaces close
+// Module namespace close
 //
 
-// Our module namespace
+// namespace res
+}
+
+// namespace fcg
 }

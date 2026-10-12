@@ -8,6 +8,7 @@ set(SOURCES
 # Collect headers
 set(HEADERS
 	# Public interface
+	${FCG_EXTRAS_BASE_DIR}/include/FCG/Extras/all.h
 	${FCG_EXTRAS_BASE_DIR}/include/FCG/Extras/file_dialog.h
 	${FCG_EXTRAS_BASE_DIR}/include/FCG/Extras/file_filters.h
 

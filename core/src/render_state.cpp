@@ -22,7 +22,7 @@
 // Module namespace open
 //
 
-/// The library top-level namespace.
+// The library top-level namespace.
 namespace fcg {
 
 
@@ -35,7 +35,7 @@ namespace fcg {
 ////
 // RenderState
 
-RenderState::RenderState(Device& /* right now we don't need access to the device yet */) {}
+RenderState::RenderState(Device& /* currently unused */) {}
 
 RenderState::~RenderState() = default;
 

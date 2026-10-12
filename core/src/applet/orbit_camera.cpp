@@ -30,6 +30,16 @@
 // Anonymous namespace begin
 namespace {
 
+/// \brief Rotate a vector around an axis through the origin, using Rodrigues' rotation formula.
+///
+/// \param v
+/// 	The vector to rotate.
+/// \param angle
+/// 	The rotation angle in radians, following the right-hand rule around \c axis.
+/// \param axis
+/// 	The rotation axis; must be normalized.
+///
+/// \return The rotated vector.
 [[nodiscard]] auto rotateAround (const glm::vec3 &v, float angle, const glm::vec3 &axis) -> glm::vec3 {
 	const float c = std::cos(angle), s = std::sin(angle);
 	return v * c + glm::cross(axis, v) * s + axis * glm::dot(axis, v) * (1.f - c);
@@ -45,6 +55,7 @@ namespace {
 // Module namespace open
 //
 
+// The library's namespace for ready-to-use applets.
 namespace fcg::applet {
 
 
@@ -211,7 +222,8 @@ void OrbitCamera::onEvent (const Event &event, EventContext &context, Player &pl
 		}
 		else
 			lastLeftClickTime.reset();
-		if (mouse->button == MouseButton::Left || mouse->button == MouseButton::Middle || mouse->button == MouseButton::Right) {
+		if (   mouse->button == MouseButton::Left || mouse->button == MouseButton::Middle
+		    || mouse->button == MouseButton::Right) {
 			activeDragButton = mouse->button;
 			dragStartedWithShift = shift;
 			context.markHandled();
@@ -254,7 +266,10 @@ void OrbitCamera::onEvent (const Event &event, EventContext &context, Player &pl
 			}
 		}
 		else if (activeDragButton == MouseButton::Right)
-			setEye(m_params.extrinsics.eye + (-dx * glm::normalize(glm::cross(dir, up)) + dy * up) * f * speedFactor * .001f);
+			setEye(
+				m_params.extrinsics.eye
+				+ (-dx * glm::normalize(glm::cross(dir, up)) + dy * up) * f * speedFactor * .001f
+			);
 		else if (activeDragButton == MouseButton::Middle)
 			setEye(m_params.extrinsics.eye - dy * dir * f * speedFactor * .005f);
 		context.markHandled();

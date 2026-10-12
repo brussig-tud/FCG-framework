@@ -29,10 +29,21 @@
 // Anonymous namespace begin
 namespace {
 
-/// Scoped stream owner; the bytes themselves remain borrowed during the synchronous operation.
+/// Owner that closes an SDL stream; the bytes the stream reads from remain borrowed for the duration of the call.
 using Stream = std::unique_ptr<SDL_IOStream, decltype(&SDL_CloseIO)>;
 
-/// Probe one signature and reset between attempts. False probes are normal, even when they leave an SDL diagnostic.
+/// \brief
+/// 	Runs SDL_image's signature probes on the stream in SDL_image's own order and returns the first matching type.
+///
+/// The stream is rewound before each probe. A failing probe is not an error, even if it leaves a message in
+/// \c SDL_GetError.
+///
+/// \param stream
+/// 	Seekable stream over the encoded bytes.
+///
+/// \return
+/// 	The SDL_image type name of the first matching format, \c nullptr if no signature matched, or
+/// 	\c fcg::ImageErrorCode::SDLFailure if rewinding the stream failed.
 auto detectedType (SDL_IOStream *stream) -> std::expected<const char*, fcg::ImageError>
 {
 	struct Probe {
@@ -58,7 +69,15 @@ auto detectedType (SDL_IOStream *stream) -> std::expected<const char*, fcg::Imag
 	return nullptr;
 }
 
-/// Recognized extensions permit a decode attempt, even when an optional codec cannot probe in this build.
+/// \brief
+/// 	Checks whether a normalized hint is an extension of a format SDL_image knows.
+///
+/// A recognized extension permits a decode attempt even when the format cannot be probed in this build.
+///
+/// \param hint
+/// 	Normalized extension hint.
+///
+/// \return Whether \c hint is one of the known extensions.
 auto recognizedHint (std::string_view hint) -> bool {
 	static constexpr std::string_view extensions[] {
 		"avif", "cur", "ico", "bmp", "gif", "jpg", "jpeg", "jxl", "lbm", "iff", "pcx", "png",
@@ -67,7 +86,7 @@ auto recognizedHint (std::string_view hint) -> bool {
 	return std::ranges::find(extensions, hint) != std::end(extensions);
 }
 
-/// Static registration is retained in archive links by `linkSDLImageHandler` below.
+/// Registers the handler with \c fcg::ImageLoader::global; \c linkSDLImageHandler keeps it in static links.
 const fcg::FormatHandlerRegistration sdlImageRegistration {
 	"sdl_image", std::make_unique<fcg::SDLImageFormatHandler>(), -100
 };
@@ -82,8 +101,26 @@ const fcg::FormatHandlerRegistration sdlImageRegistration {
 // Module namespace open
 //
 
-/// The library top-level namespace.
+// The library top-level namespace.
 namespace fcg {
+
+
+
+//////
+//
+// Function implementations
+//
+
+// Private implementation helpers shared within the Image library.
+namespace detail {
+
+void linkSDLImageHandler () {
+	// Referencing a TU-local object also ensures deferred dynamic initialization precedes this function.
+	(void) &sdlImageRegistration;
+}
+
+// namespace detail
+}
 
 
 
@@ -194,24 +231,6 @@ auto SDLImageFormatHandler::load (std::span<const std::byte> bytes, std::string_
 	if (image)
 		surface.release();
 	return image;
-}
-
-
-
-//////
-//
-// Functions
-//
-
-// Private interface namespace
-namespace detail {
-
-void linkSDLImageHandler () {
-	// Referencing a TU-local object also ensures deferred dynamic initialization precedes this function.
-	(void) &sdlImageRegistration;
-}
-
-// namespace detail
 }
 
 
