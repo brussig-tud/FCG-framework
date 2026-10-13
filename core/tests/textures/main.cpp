@@ -286,6 +286,12 @@ void images (fcg::Device &device)
 		require(SDL_WriteSurfacePixel(image.handle(), 1, 1, 255, 255, 255, 0), SDL_GetError());
 		const auto bytes = std::span<const std::byte>((const std::byte*)image.handle()->pixels, image.pitch() * image.height());
 		const std::vector<std::byte> saved(bytes.begin(), bytes.end());
+		{
+			auto convertedForAccess = take(image.converted(SDL_PIXELFORMAT_RGBA32));
+			auto guard = take(convertedForAccess.mapPixels<SDL_PIXELFORMAT_RGBA32>());
+			auto rejected = convertedForAccess.upload(device);
+			require(!rejected && rejected.error().code == fcg::ImageErrorCode::InvalidState, "Upload accepted conflicting pixel access");
+		}
 		auto texture = take(image.upload(device));
 		auto pixels = sample(device, texture, {4, 4});
 		near(pixels[0].r, .2158605f, srgbTol);

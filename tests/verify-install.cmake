@@ -38,6 +38,7 @@ endforeach()
 foreach (header run.h window.h applet.h event.h export.h buffer.h texture.h fullscreen.h
     viewing.h camera_focus.h applet/orbit_camera.h applet/camera_2d.h
     Image/export.h Image/image.h Image/image_loader.h Image/sdl_image.h
+    Image/error.h Image/pixel_format.h Image/pixel_access.h
     Extras/export.h Extras/file_dialog.h
     render_target.h Render/export.h Render/error.h Render/primitive_attributes.h
     Render/primitive_renderer.h Render/quad_renderer.h Render/box_renderer.h)

@@ -59,6 +59,13 @@ struct EncodedImage
 // Functions
 //
 
+/// Expand locked indexed pixels into encoding-preserving floating RGBA, validating every palette index.
+///
+/// \param source Locked indexed source with a valid attached palette.
+///
+/// \return Independently owned surface, or a palette, storage or allocation error.
+[[nodiscard]] auto expandIndexedPixels (SDL_Surface &source) -> std::expected<SDL_Surface*, ImageError>;
+
 /// \brief
 /// 	Reads a file completely into memory.
 ///
