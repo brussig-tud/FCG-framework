@@ -174,6 +174,9 @@ FCG_FRAMEWORK_EXPORT auto run (
 			};
 			std::unique_ptr<Window, decltype(releaseClaim)> windowClaim(nullptr, releaseClaim);
 			std::vector<std::unique_ptr<Applet>> applets = std::move(_applets);
+			// Clear captures while applet state and the claimed device are still alive, also on unwinding.
+			auto clearPresentation = [&] (Player *owner) { owner->clearPresentationCallback(); };
+			std::unique_ptr<Player, decltype(clearPresentation)> presentationOwner(&player, clearPresentation);
 
 			// Claim the window for the GPU device, then create the framework GUI on top of it. The GUI instance is
 			// destroyed before releasing the window claim, including during exception unwinding.
@@ -314,7 +317,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 							);
 						player.frame->endRenderPass();
 					}
-					if (auto result = player.frame->present(); !result)
+					if (auto result = player.presentFrame(); !result)
 						throw std::runtime_error(result.error().message);
 					if (auto *overlayPass = player.frame->beginOverlayRenderPass()) {
 						gui->renderDrawData(player.frame->commandBuffer(), overlayPass);
@@ -331,6 +334,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 
 			// Clean up
 			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: shutting down...");
+			player.clearPresentationCallback();
 			for (auto &applet : std::views::reverse(applets)) {
 				SDL_LogInfo(
 					SDL_LOG_CATEGORY_APPLICATION, "Player: ending applet %p (\"%s\")",

@@ -36,7 +36,7 @@ namespace fcg {
 
 Frame::~Frame()
 {
-	if (m_commandBuffer || m_targetTexture)
+	if (m_commandBuffer || presentationColorTarget)
 	{
 		// This is a logic bug
 		const auto msg = std::format("Frame is being destroyed while in flight");
@@ -50,13 +50,15 @@ Frame::~Frame()
 void Frame::end ()
 {
 	// Can't end the frame if a render pass is being recorded
-	if (m_renderPass) {
+	if (renderPass) {
 		const auto msg = std::format("Frame is being ended while a render pass is being recorded");
 		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 		throw std::logic_error(msg);
 	}
 
-	if (!m_presented)
+	if (presentationState == PresentationState::Recording)
+		throw std::logic_error("Cannot finish a frame during presentation recording");
+	if (presentationState == PresentationState::Pending)
 		if (auto result = present(); !result)
 			throw std::runtime_error(result.error().message);
 
@@ -64,105 +66,143 @@ void Frame::end ()
 	if (!SDL_SubmitGPUCommandBuffer(m_commandBuffer))
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Submitting the GPU command buffer failed: %s", SDL_GetError());
 	m_commandBuffer = nullptr;
-	m_targetTexture = nullptr;
+	presentationColorTarget = nullptr;
 }
 
 auto Frame::present () -> std::expected<void, FullscreenError> {
-	return present(m_scene);
+	return present(sceneTex);
 }
 
 auto Frame::present (const Texture &source) -> std::expected<void, FullscreenError>
 {
-	if (!m_commandBuffer || m_renderPass || m_presented || m_overlay)
-		return std::unexpected(FullscreenError{FullscreenErrorCode::InvalidState,
-			"Frame presentation requires a completed scene pass and cannot be repeated or follow an overlay"});
+	if (!m_commandBuffer || !presentationColorTarget || renderPass ||
+		presentationState != PresentationState::Pending || overlayStarted)
+		return std::unexpected(FullscreenError{
+			FullscreenErrorCode::InvalidState, "Frame presentation requires a completed scene pass and"
+			" cannot be repeated or follow an overlay"
+		});
 	if (!source.handle() || source.info().type != SDL_GPU_TEXTURETYPE_2D)
-		return std::unexpected(FullscreenError{FullscreenErrorCode::InvalidArgument,
-			"Frame presentation requires a sampled 2D texture"});
+		return std::unexpected(FullscreenError{
+			FullscreenErrorCode::InvalidArgument, "Frame presentation requires a sampled 2D texture"
+		});
 	FullscreenTarget target;
-	target.color.texture = m_targetTexture;
+	target.color.texture = presentationColorTarget;
 	target.color.load_op = SDL_GPU_LOADOP_DONT_CARE;
 	target.color.store_op = SDL_GPU_STOREOP_STORE;
-	target.format = m_encoder.outputFormat();
+	target.format = scenePresentationPass.outputFormat();
 	target.extent = m_extent;
-	target.device = m_encoder.device();
-	const FullscreenTextureBinding binding{&source, &m_sampler};
-	auto result = m_encoder.record(m_commandBuffer, target, {.samplers={&binding, 1}});
+	target.device = scenePresentationPass.device();
+	const FullscreenTextureBinding binding{&source, &sampler};
+	auto result = scenePresentationPass.record(
+		m_commandBuffer, target, {.samplers={&binding, 1}}
+	);
 	if (result)
-		m_presented = true;
+		presentationState = PresentationState::Presented;
 	return result;
+}
+
+auto Frame::present (PresentationCallback &callback) -> std::expected<void, FullscreenError>
+{
+	if (!m_commandBuffer || !presentationColorTarget || renderPass ||
+		presentationState != PresentationState::Pending || overlayStarted)
+		return std::unexpected(FullscreenError{FullscreenErrorCode::InvalidState,
+			"Custom presentation requires a completed scene pass and cannot be repeated"});
+	if (!callback)
+		return std::unexpected(FullscreenError{FullscreenErrorCode::InvalidArgument,
+			"Custom presentation requires a non-empty callback"});
+	FullscreenTarget target;
+	target.color.texture = presentationColorTarget;
+	target.color.load_op = SDL_GPU_LOADOP_DONT_CARE;
+	target.color.store_op = SDL_GPU_STOREOP_STORE;
+	target.format = scenePresentationPass.outputFormat();
+	target.extent = m_extent;
+	target.device = scenePresentationPass.device();
+	presentationState = PresentationState::Recording;
+	try {
+		auto result = callback(
+			PresentationContext{sceneTex, sampler, m_commandBuffer, target}
+		);
+		presentationState = result ? PresentationState::Presented : PresentationState::Failed;
+		return result;
+	} catch (...) {
+		presentationState = PresentationState::Failed;
+		throw;
+	}
 }
 
 auto Frame::beginRenderPass (const glm::fvec4 &clearColor) -> SDL_GPURenderPass*
 {
 	// Don't begin another render pass while one is still active
-	if (m_renderPass) {
+	if (renderPass) {
 		constexpr auto msg =
 			"Trying to begin a new frame render pass to the frame target while one is already being recorded";
 		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, msg);
 		throw std::logic_error(msg);
 	}
 
-	if (m_presented || m_overlay)
+	if (!m_commandBuffer || presentationState != PresentationState::Pending || overlayStarted)
 		throw std::logic_error("Scene rendering cannot follow presentation");
 
 	// Set up the render pass targeting the linear scene, with a depth buffer using the most common
 	// defaults: cleared to the far plane and no stencil testing.
 	SDL_GPUColorTargetInfo colorTarget = { };
-	colorTarget.texture = m_scene.handle();
+	colorTarget.texture = sceneTex.handle();
 	colorTarget.clear_color = { clearColor.r, clearColor.g, clearColor.b, clearColor.a };
 	colorTarget.load_op = SDL_GPU_LOADOP_CLEAR;
 	colorTarget.store_op = SDL_GPU_STOREOP_STORE;
 	SDL_GPUDepthStencilTargetInfo depthStencilTarget = { };
-	depthStencilTarget.texture = m_depthTexture;
+	depthStencilTarget.texture = sceneDepthTarget;
 	depthStencilTarget.clear_depth = 1.f;
 	depthStencilTarget.load_op = SDL_GPU_LOADOP_CLEAR;
 	depthStencilTarget.store_op = SDL_GPU_STOREOP_STORE;
 	depthStencilTarget.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
 	depthStencilTarget.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
-	m_renderPass = SDL_BeginGPURenderPass(m_commandBuffer, &colorTarget, 1, &depthStencilTarget);
-	if (!m_renderPass)
+	renderPass = SDL_BeginGPURenderPass(m_commandBuffer, &colorTarget, 1, &depthStencilTarget);
+	if (!renderPass)
 		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Beginning the frame render pass failed: %s", SDL_GetError());
-	return m_renderPass;
+	return renderPass;
 }
 
 auto Frame::beginOverlayRenderPass () -> SDL_GPURenderPass*
 {
 	// Don't begin another render pass while one is still active
-	if (m_renderPass) {
+	if (renderPass) {
 		constexpr auto msg = "Trying to begin an overlay render pass while another one is still being recorded";
 		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg);
 		throw std::logic_error(msg);
 	}
 
-	if (!m_presented)
+	if (!m_commandBuffer || presentationState == PresentationState::Recording ||
+		presentationState == PresentationState::Failed)
+		throw std::logic_error("Overlay rendering requires an active frame without failed presentation");
+	if (presentationState == PresentationState::Pending)
 		if (auto result = present(); !result)
 			throw std::runtime_error(result.error().message);
-	m_overlay = true;
+	overlayStarted = true;
 
 	// Set up a render pass targeting the current swapchain texture without a depth buffer, preserving the color
 	// contents already rendered by the applets. This matches the render-pass layout of the ImGui SDL GPU backend,
 	// which creates pipelines without a depth-stencil target.
 	SDL_GPUColorTargetInfo colorTarget = { };
-	colorTarget.texture = m_targetTexture;
+	colorTarget.texture = presentationColorTarget;
 	colorTarget.load_op = SDL_GPU_LOADOP_LOAD;
 	colorTarget.store_op = SDL_GPU_STOREOP_STORE;
-	m_renderPass = SDL_BeginGPURenderPass(m_commandBuffer, &colorTarget, 1, nullptr);
-	if (!m_renderPass)
+	renderPass = SDL_BeginGPURenderPass(m_commandBuffer, &colorTarget, 1, nullptr);
+	if (!renderPass)
 		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Beginning the overlay render pass failed: %s", SDL_GetError());
-	return m_renderPass;
+	return renderPass;
 }
 
 void Frame::endRenderPass ()
 {
 	// Can't end the current render pass if there is none
-	if (!m_renderPass) {
+	if (!renderPass) {
 		constexpr auto msg = "Trying to end a frame render pass when none is active";
 		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, msg);
 		throw std::logic_error(msg);
 	}
-	SDL_EndGPURenderPass(m_renderPass);
-	m_renderPass = nullptr;
+	SDL_EndGPURenderPass(renderPass);
+	renderPass = nullptr;
 }
 
 

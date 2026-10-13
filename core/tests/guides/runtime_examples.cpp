@@ -4,11 +4,24 @@
 // Includes
 //
 
+// [presentation_includes]
 // C++ STL
+#include <expected>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <utility>
+
+// Dear ImGui
+#include <imgui.h>
 
 // FCG Framework
+#include <FCG/applet.h>
+#include <FCG/fullscreen.h>
+#include <FCG/player.h>
+#include <FCG/presentation.h>
+// [presentation_includes]
+
 // [includes]
 #include <FCG/run.h>
 // [includes]
@@ -21,18 +34,78 @@
 //
 
 // [applet_declaration]
+/// An applet that installs a presentation pass and offers a reset action.
 class ExampleApplet : public fcg::Applet
 {
 public:
+	////
+	// Interface: Applet
+
+	/// Return the applet's stable name.
 	[[nodiscard]] auto name () const -> const std::string& override {
 		static const std::string instanceName = "Example";
 		return instanceName;
 	}
 
-	void init (fcg::Device &device, fcg::Player &player) override {}
+	/// \brief Install a move-only presentation pass during applet initialization.
+	///
+	/// \param device The application's GPU device.
+	/// \param player The player that owns the callback.
+	///
+	/// \throws std::runtime_error If creating the presentation pass fails.
+	/// \throws std::bad_alloc If allocating callback ownership fails.
+	// [presentation_install]
+	void init (fcg::Device &device, fcg::Player &player) override
+	{
+		auto pass = fcg::FullscreenPass::linearToSRGB (player.device(), player.swapchainFormat());
+		if (!pass)
+			throw std::runtime_error (pass.error().message);
+		player.setPresentationCallback (
+			[pass = std::move (*pass)] (const fcg::PresentationContext &context)
+				-> std::expected<void, fcg::FullscreenError>
+			{
+				const fcg::FullscreenTextureBinding sceneBindings[] = {
+					{&context.scene, &context.sceneSampler}
+				};
+				const fcg::FullscreenBindings bindings{.samplers = sceneBindings};
+				return pass.record (context.commandBuffer, context.target, bindings);
+			}
+		);
+	}
+	// [presentation_install]
+
+	/// \brief Receive viewport changes; bindings are rebuilt during presentation.
+	///
+	/// \param device The application's GPU device.
+	/// \param oldViewportSize The previous viewport extent in pixels.
+	/// \param player The application's player.
 	void onViewportResize (fcg::Device &device, const glm::uvec2 &oldViewportSize, fcg::Player &player) override {}
-	void gui (fcg::Device &device, fcg::Player &player) override {}
+
+	/// \brief Offer a button that restores the built-in scene conversion.
+	///
+	/// \param device The application's GPU device.
+	/// \param player The player whose presentation callback is cleared.
+	// [presentation_reset]
+	void gui (fcg::Device &device, fcg::Player &player) override {
+		if (ImGui::Button ("Restore default presentation"))
+			player.clearPresentationCallback ();
+	}
+	// [presentation_reset]
+
+	/// \brief Receive an update without changing scene state.
+	///
+	/// \param device The application's GPU device.
+	/// \param player The application's player.
+	/// \param dt Elapsed time in seconds.
 	void update (fcg::Device &device, fcg::Player &player, float dt) override {}
+
+	/// \brief Leave the scene at its clear color for the presentation example.
+	///
+	/// \param device The application's GPU device.
+	/// \param renderState The shared scene render state.
+	/// \param renderPass The active scene pass.
+	/// \param commandBuffer The command buffer containing the scene pass.
+	/// \param player The application's player.
 	void render (
 		fcg::Device &device, fcg::RenderState &renderState, SDL_GPURenderPass *renderPass,
 		SDL_GPUCommandBuffer *commandBuffer, fcg::Player &player
@@ -48,15 +121,19 @@ public:
 //
 
 // [run_single]
-int main ()
-{
+/// \brief Run the presentation example.
+///
+/// \return The application's exit status.
+auto main () -> int {
 	return fcg::run<ExampleApplet>();
 }
 // [run_single]
 
 // [run_settings]
-int runWithSettings ()
-{
+/// \brief Run the presentation example with a custom window title.
+///
+/// \return The application's exit status.
+[[nodiscard]] auto runWithSettings () -> int {
 	fcg::PlayerSettings settings{.mainWindowTitle = "My application"};
 	return fcg::run(std::move(settings), std::make_unique<ExampleApplet>());
 }

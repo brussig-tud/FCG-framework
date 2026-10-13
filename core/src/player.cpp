@@ -41,6 +41,7 @@ Player::Player(Device &device, Window *mainWindow, std::span<std::unique_ptr<App
 {}
 
 Player::~Player() {
+	m_presentationCallback = {};
 	depthMapping.reset();
 	depthReadback.reset();
 }
@@ -62,6 +63,35 @@ void Player::pushContinuousRedraw () {
 	if (m_numContinuousRedrawRequests == 0)
 		SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: starting continuous redraw");
 	++m_numContinuousRedrawRequests;
+}
+
+void Player::setPresentationCallback (PresentationCallback callback) {
+	if (m_presenting)
+		throw std::logic_error("Cannot replace presentation during callback invocation");
+	m_presentationCallback = std::move(callback);
+}
+
+void Player::clearPresentationCallback () {
+	if (m_presenting)
+		throw std::logic_error("Cannot clear presentation during callback invocation");
+	m_presentationCallback = {};
+}
+
+auto Player::presentFrame () -> std::expected<void, FullscreenError>
+{
+	if (!frame)
+		return std::unexpected(FullscreenError{FullscreenErrorCode::InvalidState, "No acquired frame to present"});
+	if (!m_presentationCallback)
+		return frame->present();
+	m_presenting = true;
+	try {
+		auto result = frame->present(m_presentationCallback);
+		m_presenting = false;
+		return result;
+	} catch (...) {
+		m_presenting = false;
+		throw;
+	}
 }
 
 void Player::popContinuousRedraw ()

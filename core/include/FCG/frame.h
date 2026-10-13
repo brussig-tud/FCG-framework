@@ -18,6 +18,7 @@
 #include "FCG/export.h"
 #include "FCG/device.h"
 #include "FCG/fullscreen.h"
+#include "FCG/presentation.h"
 
 
 
@@ -71,7 +72,9 @@ namespace fcg {
 ///    <tt>\ref beginOverlayRenderPass</tt> and ended with <tt>\ref endRenderPass</tt>.
 /// 4. Call <tt>\ref Window::endFrame</tt>.
 ///
-/// Steps 3 and 4 present the scene automatically if \c present was not called before. When using \c fcg::run, the
+/// Steps 3 and 4 present the scene automatically if presentation has not been attempted successfully or through a
+/// custom callback. A failed custom callback permits only frame completion, without another presentation attempt.
+/// When using \c fcg::run, the
 /// main loop performs all these steps, and \c Applet::render records into the scene pass.
 class FCG_FRAMEWORK_EXPORT Frame
 {
@@ -121,8 +124,8 @@ public:
 		SDL_GPUTexture *depthTexture, const Texture &scene, const FullscreenPass &encoder, const Sampler &sampler,
 		glm::uvec2 extent
 	)
-		: m_commandBuffer(commandBuffer), m_targetTexture(targetTexture), m_depthTexture(depthTexture),
-		  m_scene(scene), m_encoder(encoder), m_sampler(sampler), m_extent(extent)
+		: m_commandBuffer(commandBuffer), presentationColorTarget(targetTexture), sceneDepthTarget(depthTexture),
+		  sceneTex(scene), scenePresentationPass(encoder), sampler(sampler), m_extent(extent)
 	{}
 
 	/// \brief
@@ -162,7 +165,7 @@ public:
 	///
 	/// \return The scene texture handle, valid until \c Window::endFrame.
 	[[nodiscard]] auto colorTarget () const -> SDL_GPUTexture* {
-		return m_scene.handle();
+		return sceneTex.handle();
 	}
 
 	/// \brief
@@ -173,7 +176,7 @@ public:
 	/// is the color format reported by \c Window::renderTargetInfo.
 	///
 	/// \return The scene texture, owned by the window. The reference stays valid until \c Window::endFrame.
-	[[nodiscard]] auto sceneTarget () const -> const Texture& { return m_scene; }
+	[[nodiscard]] auto sceneTarget () const -> const Texture& { return sceneTex; }
 
 	/// \brief
 	/// 	The window image that is shown in the window when the frame is finished.
@@ -182,7 +185,7 @@ public:
 	/// reported by \c Window::swapchainFormat.
 	///
 	/// \return The window image, owned by the window. The handle stays valid until \c Window::endFrame.
-	[[nodiscard]] auto presentationTarget () const -> SDL_GPUTexture* { return m_targetTexture; }
+	[[nodiscard]] auto presentationTarget () const -> SDL_GPUTexture* { return presentationColorTarget; }
 
 	/// \brief
 	/// 	The depth texture used by the scene pass.
@@ -191,7 +194,7 @@ public:
 	///
 	/// \return The depth texture, never \c nullptr. The handle stays valid until \c Window::endFrame.
 	[[nodiscard]] auto depthTexture () const -> SDL_GPUTexture* {
-		return m_depthTexture;
+		return sceneDepthTarget;
 	}
 
 	/// The size, in pixels, of the window image and of the scene and depth textures of this frame.
@@ -235,6 +238,26 @@ public:
 	/// 	- \c FullscreenErrorCode::SDLFailure if SDL fails to begin the presentation pass.
 	[[nodiscard]] auto present (const Texture &source) -> std::expected<void, FullscreenError>;
 
+	/// \brief Record custom presentation after scene rendering and before overlays.
+	///
+	/// The callback owns every pass it records and must end all passes even on error or exception. It writes final
+	/// display-encoded window colors; no default conversion follows success. Leave command-buffer submission,
+	/// frame completion and acquisition to the caller. The callback and context are borrowed only during this call.
+	/// Obtain fresh scene and target resources each invocation, including after resize.
+	///
+	/// \pre Call after ending the scene pass, before presentation or overlays, with a non-empty callback.
+	///
+	/// \param callback The recording callback; it is invoked once and is not retained.
+	///
+	/// \return
+	/// 	Nothing on success, the callback's error on failure, or \c FullscreenErrorCode::InvalidState for invalid
+	/// 	frame state and \c FullscreenErrorCode::InvalidArgument for an empty callback. Invalid preconditions record
+	/// 	nothing. Callback failure rejects further scene, presentation and overlay work; finish the frame with
+	/// 	\c Window::endFrame to submit without retrying presentation. Failed window contents are unspecified.
+	///
+	/// \throws ... Exceptions from the callback propagate unchanged; complete the failed frame as for returned errors.
+	[[nodiscard]] auto present (PresentationCallback &callback) -> std::expected<void, FullscreenError>;
+
 	/// \brief
 	/// 	Begin a render pass that draws into the scene texture.
 	///
@@ -250,7 +273,7 @@ public:
 	/// 	\c endRenderPass for a \c nullptr result.
 	///
 	/// \throws std::logic_error
-	/// 	If another render pass is still active, or if the frame was already presented or an overlay pass was begun.
+	/// 	If another render pass is still active, the frame is finished, presentation has begun, or an overlay pass was begun.
 	auto beginRenderPass (const glm::fvec4 &clearColor) -> SDL_GPURenderPass*;
 
 	/// \brief
@@ -266,7 +289,7 @@ public:
 	/// 	\c endRenderPass for a \c nullptr result.
 	///
 	/// \throws std::logic_error
-	/// 	If another render pass is still active.
+	/// 	If another render pass is still active, the frame is finished, or custom presentation is recording or failed.
 	/// \throws std::runtime_error
 	/// 	If the automatic presentation of the scene fails.
 	auto beginOverlayRenderPass () -> SDL_GPURenderPass*;
@@ -285,6 +308,26 @@ public:
 private:
 
 	////
+	// Types
+
+	/// Tracks presentation recording and prevents retries after custom recording has begun.
+	enum class PresentationState
+	{
+		/// No presentation has been recorded.
+		Pending,
+
+		/// A callback is currently recording.
+		Recording,
+
+		/// Presentation completed successfully.
+		Presented,
+
+		/// Custom recording failed; only completion is permitted.
+		Failed
+	};
+
+
+	////
 	// Methods
 
 	/// Present the scene if necessary, then submit the command buffer and mark the frame as finished. Throws
@@ -300,36 +343,33 @@ private:
 	SDL_GPUCommandBuffer *m_commandBuffer = nullptr;
 
 	/// The swapchain texture of this frame.
-	SDL_GPUTexture *m_targetTexture = nullptr;
+	SDL_GPUTexture *presentationColorTarget = nullptr;
 
 	/// The depth buffer to use for this frame's render passes.
-	SDL_GPUTexture *m_depthTexture = nullptr;
+	SDL_GPUTexture *sceneDepthTarget = nullptr;
 
 	/// The scene texture, owned by the creating window.
-	const Texture &m_scene;
+	const Texture &sceneTex;
 
 	/// The window-owned fullscreen pass that converts the linear scene to the swapchain format.
-	const FullscreenPass &m_encoder;
+	const FullscreenPass &scenePresentationPass;
 
 	/// The window-owned sampler used for presentation.
-	const Sampler &m_sampler;
+	const Sampler &sampler;
 
 	/// The dimensions of the acquired swapchain texture, in pixels.
 	glm::uvec2 m_extent{0};
 
-	/// Whether explicit or automatic presentation has completed.
-	bool m_presented = false;
+	/// Current presentation lifecycle state.
+	PresentationState presentationState = PresentationState::Pending;
 
 	/// Whether overlay rendering has begun.
-	bool m_overlay = false;
+	bool overlayStarted = false;
 
 	/// The ongoing render pass, if any.
-	SDL_GPURenderPass *m_renderPass = nullptr;
+	SDL_GPURenderPass *renderPass = nullptr;
 };
 
-
-
-/// @}
 
 
 
@@ -337,6 +377,8 @@ private:
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace fcg
 }

@@ -27,6 +27,7 @@
 /// - Display image files: load them with the Image library (\ref fcg_images) and hand them to the GPU with
 ///   <tt>\ref fcg::Image::upload "Image::upload"</tt>; for textures created on the GPU, see \ref fcg_textures.
 /// - Render a full-screen effect such as an sRGB conversion: \ref fcg_fullscreen.
+/// - Replace the main window's final scene conversion: \ref fcg_runtime_workflows_presentation.
 /// - Add a camera with orbit, pan and zoom controls: \ref fcg_viewing, \ref fcg_orbit_camera and
 ///   \ref fcg_camera_2d.
 /// - Show Dear ImGui widgets: \ref fcg_gui.
@@ -86,6 +87,9 @@
 /// Record the draw calls that should appear in the scene; do not end or re-begin the pass. Create pipelines compatible
 /// with <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt>, and push uniform data through
 /// the command buffer that is passed alongside the pass.
+/// To apply an effect after all applets have drawn the scene and before Dear ImGui rendering, install a presentation
+/// callback through <tt>\ref fcg::Player::setPresentationCallback "Player::setPresentationCallback"</tt>;
+/// see \ref fcg_runtime_workflows_presentation for a complete example.
 ///
 /// \section fcg_applets_lifetime Ownership and lifetime
 /// <tt>\ref fcg::run "run"</tt> takes ownership of the applets and destroys them in reverse order after the main loop

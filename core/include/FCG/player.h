@@ -25,6 +25,7 @@
 #include "FCG/run.h"
 #include "FCG/applet.h"
 #include "FCG/texture.h"
+#include "FCG/presentation.h"
 
 
 
@@ -66,7 +67,7 @@ namespace fcg {
 /// \c fcg::run creates one player and passes it to every callback of every running <tt>\ref Applet</tt>. Through it,
 /// applets can change the main window title, request continuous redrawing (e.g. while animating), ask the application
 /// to close, look up cameras provided by other applets, query the main window's render-target formats and viewport
-/// size, and read back the depth buffer of the main viewport.
+/// size, replace scene presentation with a recording callback, and read back the depth buffer of the main viewport.
 ///
 /// All callbacks run on the main thread, so the player is meant to be used from there.
 class FCG_FRAMEWORK_EXPORT Player
@@ -202,6 +203,31 @@ public:
 	/// 	The new window title.
 	void setWindowTitle (const std::string &title);
 
+	/// \brief Replace application-wide scene presentation with an owned recording callback.
+	///
+	/// The latest registration wins, destroying the previous captures. Changes before the next presentation point
+	/// affect that frame, after all applet scene draws and before ImGui rendering. An empty callback restores default
+	/// conversion. Move-only and mutable callables are supported. Owned captures live until replacement, clearing
+	/// or shutdown; \c fcg::run clears them before applet destruction. Failed callable construction leaves the
+	/// previous registration intact. See <tt>\ref fcg_runtime_workflows_presentation</tt> for recording requirements.
+	///
+	/// \pre Use on the main thread. Captured references must remain valid while registered.
+	///
+	/// \param callback The callback to move into ownership, or an empty wrapper to restore default presentation.
+	///
+	/// \throws std::logic_error If registration is attempted during callback invocation.
+	void setPresentationCallback (PresentationCallback callback);
+
+	/// \brief Restore default scene conversion, destroying the registered callback's captures.
+	///
+	/// Takes effect at the next presentation point and never restores an earlier registration. Clearing an empty
+	/// registration has no effect. Registrations are also cleared before applets are destroyed by \c fcg::run.
+	///
+	/// \pre Use on the main thread; referenced capture state must stay alive until clearing finishes.
+	///
+	/// \throws std::logic_error If clearing is attempted during callback invocation.
+	void clearPresentationCallback ();
+
 	/// \brief
 	/// 	Add a continuous redraw request.
 	///
@@ -301,6 +327,9 @@ private:
 	////
 	// Methods
 
+	/// Select custom or default presentation for an acquired frame; guard registration during custom invocation.
+	[[nodiscard]] auto presentFrame () -> std::expected<void, FullscreenError>;
+
 	/// Destroy the current depth readback and its mapping (mapping first), invalidating all outstanding tokens. Called
 	/// by \c fcg::run at startup and whenever the viewport size changes.
 	void invalidateReadbacks ();
@@ -312,6 +341,12 @@ private:
 
 	////
 	// Fields
+
+	/// Application-wide owning presentation callback, cleared before applet teardown by the runtime.
+	PresentationCallback m_presentationCallback;
+
+	/// Whether the callback is currently invoked; prevents destruction of its executing callable.
+	bool m_presenting = false;
 
 	/// The main rendering device.
 	Device &m_device;

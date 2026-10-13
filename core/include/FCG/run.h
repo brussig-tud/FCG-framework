@@ -16,7 +16,7 @@
 /// initializes SDL, the GPU device, the main window and the GUI, runs the main loop until the application is closed,
 /// and cleans everything up. While the loop runs, applets interact with the application through the
 /// <tt>\ref fcg::Player "Player"</tt> that every callback receives: they change the window title, request continuous
-/// redraws, request shutdown, look up cameras, and query the viewport.
+/// redraws, request shutdown, look up cameras, query the viewport, and customize scene presentation.
 ///
 /// \section fcg_runtime_usage Getting started
 /// The simplest way to run applets is the template overload, which default-constructs one applet of each given type:
@@ -45,17 +45,59 @@
 ///   (<tt>\ref fcg::Player::viewportSize "viewportSize"</tt>,
 ///   <tt>\ref fcg::Player::mainRenderTargetInfo "mainRenderTargetInfo"</tt>);
 /// - read back the depth buffer (<tt>\ref fcg::Player::scheduleDepthReadback "scheduleDepthReadback"</tt>), e.g. for
-///   focus picking as done by <tt>\ref fcg::CameraFocus "CameraFocus"</tt>.
+///   focus picking as done by <tt>\ref fcg::CameraFocus "CameraFocus"</tt>;
+/// - replace the main window's scene presentation
+///   (<tt>\ref fcg::Player::setPresentationCallback "setPresentationCallback"</tt>).
+///
+/// \subsection fcg_runtime_workflows_presentation Custom scene presentation
+/// By default, the runtime converts the scene's linear colors to sRGB for display. To replace this step, install one
+/// application-wide <tt>\ref fcg::PresentationCallback "PresentationCallback"</tt> through
+/// <tt>\ref fcg::Player::setPresentationCallback "Player::setPresentationCallback"</tt>. Each rendered frame runs
+/// all <tt>\ref fcg::Applet::render "Applet::render"</tt> scene draws, then the registered presentation callback,
+/// then Dear ImGui rendering. The callback is not invoked when no window image has been acquired.
+///
+/// Scene pipelines use <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt>;
+/// the final presentation pass instead uses the window format from
+/// <tt>\ref fcg::Player::swapchainFormat "Player::swapchainFormat"</tt>. The callback must write display-encoded
+/// colors into the supplied window target: a successful callback replaces the default conversion entirely.
+/// This complete minimal example installs the built-in
+/// <tt>\ref fcg::FullscreenPass::linearToSRGB "FullscreenPass::linearToSRGB"</tt> without additional shader assets.
+/// Include the public headers and create the pass in <tt>\ref fcg::Applet::init "Applet::init"</tt>:
+/// \snippet runtime_examples.cpp presentation_includes
+/// \snippet runtime_examples.cpp presentation_install
+/// For a custom effect, replace the factory with
+/// <tt>\ref fcg::FullscreenPass::create "FullscreenPass::create"</tt> and a shader that supplies the final display
+/// encoding. Intermediate passes may precede the final window draw in the same callback.
+///
+/// The supplied <tt>\ref fcg::PresentationContext "PresentationContext"</tt> borrows the current scene, sampler,
+/// command buffer and window target for this invocation only. Use these fresh resources each time, including after
+/// resize; target extents are in pixels. Rebuild bindings locally as above rather than retaining scene or window-image
+/// handles. <tt>\ref fcg::FullscreenPass::record "FullscreenPass::record"</tt> begins and ends its own pass;
+/// callback-local binding arrays remain valid for the recording call. End every GPU pass even on error or exception.
+/// Leave command-buffer submission or cancellation, frame completion and frame acquisition to the runtime.
+///
+/// Registration and clearing are main-thread operations. Changes before presentation affect that frame; the latest
+/// registration wins. An empty callback clears the registration. Restore the default from an applet action, such as
+/// a button in <tt>\ref fcg::Applet::gui "Applet::gui"</tt>:
+/// \snippet runtime_examples.cpp presentation_reset
+/// Clearing restores the built-in conversion, not a previous callback. Do not replace or clear a callback from inside
+/// its invocation; either operation throws \c std::logic_error in that situation.
 ///
 /// \section fcg_runtime_lifetime Ownership and lifetime
 /// <tt>\ref fcg::run "run"</tt> takes ownership of the applets it is given. Run one application at a time, from the
 /// main thread; the call blocks until the application shuts down.
+/// Presentation callbacks own their captures, including move-only passes. Captures are destroyed on replacement,
+/// clearing or shutdown. On normal shutdown and exception unwinding, the runtime clears the callback before destroying
+/// applets, while the device is still alive. References captured from applet state must remain valid while registered.
 ///
 /// \section fcg_runtime_errors Handling errors
 /// <tt>\ref fcg::run "run"</tt> returns \c EXIT_FAILURE if SDL, the GPU device, the window or the GUI could not be
 /// initialized, or if waiting for events failed; the reason is written to the SDL log and no applet callback is
 /// invoked. With an empty applet list it returns \c EXIT_SUCCESS after logging a warning. GPU failures while acquiring
 /// or presenting a frame throw \c std::runtime_error, and exceptions from applet callbacks propagate out of the call.
+/// A presentation callback's returned <tt>\ref fcg::FullscreenError "FullscreenError"</tt> becomes
+/// \c std::runtime_error; exceptions thrown by the callback propagate unchanged. Either failure stops the run without
+/// falling back to default presentation. The failed frame's displayed contents are unspecified.
 ///
 /// \see \ref fcg_applets, \ref fcg_events, \ref fcg_windows
 
