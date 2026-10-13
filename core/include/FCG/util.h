@@ -10,7 +10,11 @@
 
 /// \defgroup fcg_utilities Utilities
 /// \ingroup fcg_modules
-/// \brief A generic finite state machine whose states are types and whose behavior comes from a controller object.
+/// \brief Move-only callable ownership and state machines driven by controller objects.
+///
+/// Use <tt>\ref fcg::MoveOnlyFunction "MoveOnlyFunction"</tt> to store a callable whose captures may own resources,
+/// such as a <tt>std::unique_ptr</tt>. Its function signature specifies the result and argument types; invocation
+/// can update captured state. Include <tt>\#include &lt;FCG/util.h&gt;</tt> to use either utility.
 ///
 /// <tt>\ref fcg::StateMachine "StateMachine"</tt> holds exactly one state object at a time, of one of the state types
 /// given as template arguments. All behavior lives in a separate controller object: it provides an \c on handler for
@@ -18,6 +22,12 @@
 /// in the state types and transition logic in one place.
 ///
 /// \section fcg_utilities_usage Getting started
+/// \subsection fcg_utilities_usage_callables Owning a callable
+/// Specify a signature such as <tt>int()</tt> and move the lambda into the wrapper. This counter owns its initial
+/// value and keeps a mutable offset between calls:
+/// \snippet utility_examples.cpp callable_ownership
+///
+/// \subsection fcg_utilities_usage_states Defining a state machine
 /// Define the state types:
 /// \snippet utility_examples.cpp states
 /// Define a controller with handlers for the events it cares about:
@@ -26,6 +36,14 @@
 /// \snippet utility_examples.cpp state_machine
 ///
 /// \section fcg_utilities_workflows Common tasks
+/// \subsection fcg_utilities_workflows_callables Passing arguments and results
+/// <tt>\ref fcg::MoveOnlyFunction "MoveOnlyFunction"</tt> accepts ordinary function signatures. Use reference
+/// arguments to borrow existing objects, and value arguments to transfer values, including move-only objects.
+/// The callable must return exactly the declared result type, including reference qualifications; a \c void
+/// signature requires a \c void result. Callables may be lambdas, function pointers, member pointers, or other
+/// invocable objects. Invocation requires a non-const wrapper.
+/// \snippet utility_examples.cpp callable_arguments
+///
 /// \subsection fcg_utilities_workflows_hooks Controller hooks
 /// The controller may provide, for any subset of the states:
 /// - <tt>void on(State&, const Event&, StateMachine&)</tt> to handle events delivered through
@@ -40,11 +58,21 @@
 /// accesses the current state object.
 ///
 /// \section fcg_utilities_lifetime Ownership and lifetime
+/// Moving a callable wrapper transfers its captures and leaves the source empty. Assigning \c nullptr clears it;
+/// replacement, clearing and destruction release owned captures. Captured references remain borrowed and must
+/// outlive their use. Reference results remain valid only while the objects they refer to remain alive.
+/// Do not replace or destroy a wrapper while its callable is executing.
+///
 /// The state machine stores a reference to its controller, which must outlive the machine. Each state object lives
 /// until the next transition replaces it; references obtained through <tt>\ref fcg::StateMachine::get "get"</tt> are
 /// invalid afterwards.
 ///
 /// \section fcg_utilities_errors Handling errors
+/// Test a callable wrapper in a condition before invoking it if it might be empty. Default construction and null
+/// function or member pointers produce empty wrappers; empty invocation throws \c std::bad_function_call.
+/// Callable construction and invocation exceptions propagate unchanged. If constructing a replacement throws,
+/// the previous callable remains owned. Incompatible signatures are rejected at compile time.
+///
 /// Calling <tt>\ref fcg::StateMachine::transition "transition"</tt> with a state type outside the machine's state
 /// types is rejected at compile time. <tt>\ref fcg::StateMachine::get "get"</tt> throws \c std::bad_variant_access if
 /// the machine is not currently in the requested state.
@@ -58,6 +86,9 @@
 
 // C++ STL
 #include <concepts>
+#include <cstddef>
+#include <functional>
+#include <memory>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -85,6 +116,197 @@ namespace fcg {
 //
 // Classes
 //
+
+/// \brief Own a callable with a specified signature, including callables with move-only captures.
+///
+/// Use an ordinary function signature such as <tt>int(int)</tt> or <tt>void()</tt>. Invocation may modify the owned
+/// callable. The result type must match the signature exactly, including reference qualifications; a \c void
+/// signature requires a callable returning \c void. Qualified function signatures are not supported.
+///
+/// Owned captures live until replacement, clearing or destruction. Captured references remain borrowed and must
+/// outlive their use. Default construction and construction from \c nullptr produce an empty wrapper. Invoking an
+/// empty wrapper throws \c std::bad_function_call. Moving transfers ownership and leaves the source empty.
+///
+/// See \ref fcg_move_only_function_signature for construction and invocation contracts.
+///
+/// \tparam Signature An unqualified function type describing the result and arguments.
+template <typename Signature>
+class MoveOnlyFunction;
+
+/// \anchor fcg_move_only_function_signature
+/// \brief Own and invoke a callable returning \c R with arguments of types <tt>Args...</tt>.
+///
+/// Arguments follow the signature's value and reference semantics. Reference results remain borrowed from the
+/// callable; their validity depends on the referenced object's lifetime. Const wrappers cannot be invoked.
+///
+/// \tparam R The exact result type, which may be \c void or a reference type.
+/// \tparam Args The argument types, including any reference qualifications.
+template <typename R, typename... Args>
+class MoveOnlyFunction<R(Args...)>
+{
+public:
+	////
+	// Object construction/destruction
+
+	/// Create an empty wrapper.
+	MoveOnlyFunction() noexcept = default;
+
+	/// \brief Create an empty wrapper from a null pointer literal.
+	///
+	/// \param empty The null pointer literal.
+	MoveOnlyFunction([[maybe_unused]] std::nullptr_t empty) noexcept {}
+
+	/// \brief Own a callable by moving an rvalue or copying a copyable lvalue; mutable invocation is supported.
+	///
+	/// Null function and member pointers produce an empty wrapper. Other callables are stored as supplied, including
+	/// wrappers that may themselves be empty. Replacement through assignment constructs the new wrapper first;
+	/// construction failure leaves the previous callable intact.
+	///
+	/// \tparam Callable A callable constructible from the argument and invocable with the exact result type \c R.
+	///
+	/// \param callable The callable to own. Referenced objects remain borrowed and must outlive their use.
+	///
+	/// \throws std::bad_alloc If allocating callable ownership fails.
+	/// \throws ... Exceptions from constructing the owned callable propagate unchanged.
+	template <typename Callable>
+		requires (!std::same_as<std::remove_cvref_t<Callable>, MoveOnlyFunction>)
+			&& std::constructible_from<std::decay_t<Callable>, Callable>
+			&& requires (std::decay_t<Callable> &callable, Args&&... args) {
+				{ std::invoke (callable, std::forward<Args> (args)...) } -> std::same_as<R>;
+			}
+	MoveOnlyFunction(Callable &&callable)
+	{
+		if constexpr (std::is_pointer_v<std::decay_t<Callable>> || std::is_member_pointer_v<std::decay_t<Callable>>)
+			if (callable == nullptr)
+				return;
+		m_callable = std::make_unique<Model<std::decay_t<Callable>>> (std::forward<Callable> (callable));
+	}
+
+	/// Destroy the callable and its owned captures.
+	~MoveOnlyFunction() = default;
+
+	/// \brief Copy construction is not supported.
+	///
+	/// \param other The wrapper that cannot be copied.
+	MoveOnlyFunction(const MoveOnlyFunction &other) = delete;
+
+	/// \brief Copy assignment is not supported.
+	///
+	/// \param other The wrapper that cannot be copied.
+	///
+	/// \return Assignment is unavailable.
+	auto operator = (const MoveOnlyFunction &other) -> MoveOnlyFunction & = delete;
+
+	/// \brief Transfer ownership, leaving the source empty.
+	///
+	/// \param other The wrapper to move from.
+	MoveOnlyFunction(MoveOnlyFunction &&other) noexcept = default;
+
+	/// \brief Destroy the previous callable and transfer ownership, leaving a distinct source empty.
+	///
+	/// \param other The wrapper to move from. Self-assignment preserves ownership.
+	///
+	/// \return This wrapper.
+	auto operator = (MoveOnlyFunction &&other) noexcept -> MoveOnlyFunction & = default;
+
+
+	////
+	// Accessors
+
+	/// Return whether a callable is owned; empty and moved-from wrappers return \c false.
+	[[nodiscard]] explicit operator bool () const noexcept {
+		return bool(m_callable);
+	}
+
+
+	////
+	// Methods
+
+	/// \brief Invoke the owned callable, allowing it to modify its captures.
+	///
+	/// \pre Do not replace or destroy this wrapper during invocation. Borrowed objects remain valid during their use.
+	///
+	/// \param args Arguments passed by value or reference according to the signature.
+	///
+	/// \return The callable's result unchanged, or nothing for a \c void signature.
+	///
+	/// \throws std::bad_function_call If this wrapper is empty.
+	/// \throws ... Exceptions from the callable or argument transfer propagate unchanged.
+	auto operator () (Args... args) -> R {
+		if (!m_callable)
+			throw std::bad_function_call();
+		return m_callable->invoke (std::forward<Args> (args)...);
+	}
+
+
+private:
+
+	////
+	// Types
+
+	/// Virtual invocation and destruction interface; reference parameters avoid additional argument copies.
+	class Interface
+	{
+	public:
+		////
+		// Object construction/destruction
+
+		/// Destroy the concrete callable through its erased interface.
+		virtual ~Interface() = default;
+
+
+		////
+		// Methods
+
+		/// Forward arguments according to the public signature and propagate the callable's result or exception.
+		virtual auto invoke (Args&&... args) -> R = 0;
+	};
+
+	/// \brief Store and invoke one concrete callable type.
+	///
+	/// \tparam Callable The decayed type of the owned callable.
+	template <typename Callable>
+	class Model final : public Interface
+	{
+	public:
+		////
+		// Object construction
+
+		/// \brief Forward construction to the stored callable, propagating construction exceptions.
+		///
+		/// \tparam Source The forwarded constructor argument type.
+		///
+		/// \param callable The callable to copy or move into storage.
+		template <typename Source>
+		Model(Source &&callable) : m_value(std::forward<Source> (callable)) {}
+
+
+		////
+		// Interface: Interface
+
+		/// Invoke the mutable stored callable with the forwarded arguments.
+		auto invoke (Args&&... args) -> R override {
+			return std::invoke (m_value, std::forward<Args> (args)...);
+		}
+
+
+	private:
+
+		////
+		// Fields
+
+		/// The concrete callable and its captures, owned until model destruction.
+		Callable m_value;
+	};
+
+
+	////
+	// Fields
+
+	/// The uniquely owned erased callable; null represents an empty wrapper.
+	std::unique_ptr<Interface> m_callable;
+};
+
 
 /// Auxiliaries of the <tt>\ref fcg::StateMachine "StateMachine"</tt> facility.
 namespace fsm {

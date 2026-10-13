@@ -5,11 +5,11 @@ add_subdirectory(textures)
 add_subdirectory(cameras)
 add_subdirectory(guides)
 
-# Portable callback ownership and compile contracts; no SDL or GPU initialization.
-add_executable(presentation-callback-smoke lifecycle/presentation_callback.cpp)
-target_link_libraries(presentation-callback-smoke PRIVATE Core)
-add_test(NAME presentation-callback-smoke COMMAND presentation-callback-smoke)
-set_tests_properties(presentation-callback-smoke PROPERTIES TIMEOUT 10)
+# Portable callable ownership, invocation and compile contracts; no SDL or GPU initialization.
+add_executable(move-only-function-smoke utilities/move_only_function.cpp)
+target_link_libraries(move-only-function-smoke PRIVATE Core)
+add_test(NAME move-only-function-smoke COMMAND move-only-function-smoke)
+set_tests_properties(move-only-function-smoke PROPERTIES TIMEOUT 10)
 
 # ---------------------------------------------------------------------------
 # Tier 1 - app lifecycle: run a trivial probe applet through fcg::run()
@@ -42,7 +42,7 @@ set_tests_properties(runtime-contract-smoke PROPERTIES TIMEOUT 60
 # Real runtime presentation registration, failure handling and capture lifetimes.
 add_executable(presentation-smoke lifecycle/presentation.cpp)
 target_link_libraries(presentation-smoke PRIVATE Core)
-foreach(scenario lifecycle mutation error throw init minimized)
+foreach(scenario lifecycle mutation error throw init minimized default empty close)
 	add_test(NAME presentation-${scenario}-smoke COMMAND presentation-smoke ${scenario})
 	set_tests_properties(presentation-${scenario}-smoke PROPERTIES TIMEOUT 60
 		FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")

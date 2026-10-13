@@ -19,20 +19,31 @@
 /// pass they receive in <tt>\ref fcg::Applet::render "Applet::render"</tt>. Read on when managing a loop yourself, or
 /// to query window properties.
 ///
+/// <tt>\ref fcg::PresentationRecorder "PresentationRecorder"</tt> records the final window colors using the resources
+/// supplied in <tt>\ref fcg::PresentationContext "PresentationContext"</tt>. Both types are declared in
+/// <tt>\#include &lt;FCG/frame.h&gt;</tt> and are used for standalone frame loops and custom presentation through
+/// <tt>\ref fcg::Player::setPresentationRecorder "Player::setPresentationRecorder"</tt>.
+///
 /// \section fcg_windows_usage Getting started
-/// Create a window, claim it, and run a minimal frame loop:
+/// Include the window, device and frame interfaces:
+/// \snippet window_examples.cpp includes
+/// Create a window and claim it for a device:
 /// \snippet window_examples.cpp window_setup
+/// Create a recorder once after claiming the window, and retain it across frames. This recorder converts the
+/// sampled linear scene colors to sRGB for display:
+/// \snippet window_examples.cpp presentation_setup
+/// Pass the recorder to each iteration of your frame loop:
 /// \snippet window_examples.cpp frame_loop
 ///
 /// \section fcg_windows_workflows Common tasks
 /// \subsection fcg_windows_workflows_frame Recording a frame
-/// One frame consists of a scene pass, an optional presentation, and an optional overlay pass. Start the scene pass
-/// with <tt>\ref fcg::Frame::beginRenderPass "Frame::beginRenderPass"</tt>, which clears the scene color and depth,
+/// A displayed scene frame consists of a scene pass, explicit presentation, and an optional overlay pass. Start
+/// the scene pass with <tt>\ref fcg::Frame::beginRenderPass "Frame::beginRenderPass"</tt>, which clears the scene color and depth,
 /// and end it with <tt>\ref fcg::Frame::endRenderPass "endRenderPass"</tt>. Call
-/// <tt>\ref fcg::Frame::present "present"</tt> to show the scene (or another texture) on the window; it also happens
-/// automatically at <tt>\ref fcg::Window::endFrame "endFrame"</tt> if you did not present yourself. Draw the GUI, or
-/// anything else that should appear on top of the presented image, in the depth-free overlay pass from
-/// <tt>\ref fcg::Frame::beginOverlayRenderPass "beginOverlayRenderPass"</tt>.
+/// <tt>\ref fcg::Frame::present "present"</tt> with a recorder that writes the final window colors. After successful
+/// presentation, draw the GUI, or anything else that should appear on top of the presented image, in the depth-free
+/// overlay pass from <tt>\ref fcg::Frame::beginOverlayRenderPass "beginOverlayRenderPass"</tt>. Finish with
+/// <tt>\ref fcg::Window::endFrame "endFrame"</tt> to submit the recorded commands.
 ///
 /// \subsection fcg_windows_workflows_formats Querying formats
 /// <tt>\ref fcg::Window::renderTargetInfo "Window::renderTargetInfo"</tt> returns the color format, depth format and
@@ -56,8 +67,11 @@
 /// \section fcg_windows_errors Handling errors
 /// <tt>\ref fcg::Window::create "create"</tt> returns \c nullptr on failure, logged to the SDL log.
 /// <tt>\ref fcg::Window::beginFrame "beginFrame"</tt> returns \c nullptr when no frame could be acquired (e.g. while
-/// the window is minimized); skip rendering in that case. Misuse such as overlapping passes or ending an unfinished
-/// frame throws \c std::logic_error, and GPU-level acquisition or presentation failures throw \c std::runtime_error.
+/// the window is minimized); skip rendering in that case. Misuse such as overlapping passes or ending a frame with
+/// an active pass throws \c std::logic_error, and GPU-level acquisition failures throw \c std::runtime_error.
+/// <tt>\ref fcg::Frame::present "Frame::present"</tt> returns presentation errors and propagates recorder exceptions.
+/// After a recorder fails, finish the frame with <tt>\ref fcg::Window::endFrame "endFrame"</tt>; its displayed contents
+/// are unspecified. Ending a frame without presenting also leaves its displayed contents unspecified.
 ///
 /// \see \ref fcg_devices, \ref fcg_render_state, \ref fcg_runtime
 
@@ -284,17 +298,15 @@ public:
 	/// \brief
 	/// 	Finish the current frame and submit it to the GPU for display.
 	///
-	/// If the scene has not been presented, presents it first (see \c Frame::present). Afterwards, the
-	/// <tt>\ref Frame</tt> returned by <tt>\ref beginFrame</tt> is invalid. Submission failures are logged to the SDL
+	/// Submission displays the window image recorded by \c Frame::present. If presentation was omitted or failed,
+	/// the displayed contents are unspecified. Afterwards, the <tt>\ref Frame</tt> returned by <tt>\ref beginFrame</tt> is invalid. Submission failures are logged to the SDL
 	/// log. If an exception is thrown, the frame remains in progress.
 	///
 	/// \pre
 	/// 	A frame of this window is in progress and has no active render pass.
 	///
 	/// \throws std::logic_error
-	/// 	If no frame is in progress or a render pass of the frame is still active.
-	/// \throws std::runtime_error
-	/// 	If the automatic presentation of the scene fails.
+	/// 	If no frame is in progress, a render pass is still active, or a presentation recorder is executing.
 	void endFrame ();
 
 	/// \brief
@@ -339,12 +351,12 @@ private:
 	////
 	// Methods
 
-	/// Claim the window for the given device and create the presentation resources. Returns \c false if SDL or
+	/// Claim the window for the given device and create the shared scene sampler. Returns \c false if SDL or
 	/// resource creation fails, and throws \c std::logic_error if the window is already claimed.
 	auto claim (Device &device) -> bool;
 
 	/// Remove the claim of the given device to this window. Waits for the GPU to become idle, then releases the
-	/// depth texture, scene texture and presentation resources. Throws \c std::logic_error if \c device does not
+	/// depth texture, scene texture and shared scene sampler. Throws \c std::logic_error if \c device does not
 	/// claim this window.
 	void unclaim (Device &device);
 
@@ -367,9 +379,6 @@ private:
 	/// The scene color texture in sRGB-encoded RGBA8 storage; rendering writes and sampling reads linear values.
 	/// Recreated together with the depth texture whenever the swapchain size changes.
 	std::optional<Texture> sceneTexture;
-
-	/// Fullscreen pass converting the linear scene to sRGB-encoded values in the UNORM swapchain format.
-	std::optional<FullscreenPass> presentation;
 
 	/// Nearest-neighbor, clamp-to-edge sampler used for presentation.
 	std::optional<Sampler> presentationSampler;

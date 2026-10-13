@@ -17,9 +17,9 @@
 
 // FCG Framework
 #include <FCG/applet.h>
+#include <FCG/frame.h>
 #include <FCG/fullscreen.h>
 #include <FCG/player.h>
-#include <FCG/presentation.h>
 // [presentation_includes]
 
 // [includes]
@@ -50,17 +50,17 @@ public:
 	/// \brief Install a move-only presentation pass during applet initialization.
 	///
 	/// \param device The application's GPU device.
-	/// \param player The player that owns the callback.
+	/// \param player The player that owns the recorder.
 	///
 	/// \throws std::runtime_error If creating the presentation pass fails.
-	/// \throws std::bad_alloc If allocating callback ownership fails.
+	/// \throws std::bad_alloc If allocating recorder ownership fails.
 	// [presentation_install]
 	void init (fcg::Device &device, fcg::Player &player) override
 	{
 		auto pass = fcg::FullscreenPass::linearToSRGB (player.device(), player.swapchainFormat());
 		if (!pass)
 			throw std::runtime_error (pass.error().message);
-		player.setPresentationCallback (
+		player.setPresentationRecorder (
 			[pass = std::move (*pass)] (const fcg::PresentationContext &context)
 				-> std::expected<void, fcg::FullscreenError>
 			{
@@ -68,7 +68,7 @@ public:
 					{&context.scene, &context.sceneSampler}
 				};
 				const fcg::FullscreenBindings bindings{.samplers = sceneBindings};
-				return pass.record (context.commandBuffer, context.target, bindings);
+				return pass.record (context.cmdBuffer, context.target, bindings);
 			}
 		);
 	}
@@ -84,11 +84,11 @@ public:
 	/// \brief Offer a button that restores the built-in scene conversion.
 	///
 	/// \param device The application's GPU device.
-	/// \param player The player whose presentation callback is cleared.
+	/// \param player The player whose presentation recorder is cleared.
 	// [presentation_reset]
 	void gui (fcg::Device &device, fcg::Player &player) override {
 		if (ImGui::Button ("Restore default presentation"))
-			player.clearPresentationCallback ();
+			player.clearPresentationRecorder ();
 	}
 	// [presentation_reset]
 

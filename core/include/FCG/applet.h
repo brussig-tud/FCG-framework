@@ -33,7 +33,7 @@
 /// - Show Dear ImGui widgets: \ref fcg_gui.
 /// - Compile shaders and create pipelines: \ref fcg_devices and \ref fcg_resources.
 /// - Transform geometry between model, view and clip space: \ref fcg_render_state.
-/// - Structure applet behavior as states and transitions: \ref fcg_utilities.
+/// - Store callables with owned resources, or structure behavior as states and transitions: \ref fcg_utilities.
 
 
 
@@ -88,7 +88,7 @@
 /// with <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt>, and push uniform data through
 /// the command buffer that is passed alongside the pass.
 /// To apply an effect after all applets have drawn the scene and before Dear ImGui rendering, install a presentation
-/// callback through <tt>\ref fcg::Player::setPresentationCallback "Player::setPresentationCallback"</tt>;
+/// recorder through <tt>\ref fcg::Player::setPresentationRecorder "Player::setPresentationRecorder"</tt>;
 /// see \ref fcg_runtime_workflows_presentation for a complete example.
 ///
 /// \section fcg_applets_lifetime Ownership and lifetime

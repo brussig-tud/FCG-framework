@@ -18,7 +18,7 @@
 #include "FCG/export.h"
 #include "FCG/device.h"
 #include "FCG/fullscreen.h"
-#include "FCG/presentation.h"
+#include "FCG/util.h"
 
 
 
@@ -51,6 +51,45 @@ namespace fcg {
 
 //////
 //
+// Structs and enums
+//
+
+/// \brief Borrowed resources for recording a frame's presentation.
+///
+/// All resources are valid only during the recorder invocation. Obtain scene and window-image handles anew on each
+/// invocation, including after a resize; never retain them across frames.
+struct PresentationContext
+{
+	/// The current scene texture, whose sampled colors are linear. Borrowed for this invocation only.
+	const Texture &scene;
+
+	/// The default scene sampler. Borrowed for this invocation only.
+	const Sampler &sceneSampler;
+
+	/// The command buffer to record into. Borrowed for this invocation; leave submission and cancellation to the
+	/// caller.
+	SDL_GPUCommandBuffer *cmdBuffer;
+
+	/// The borrowed window image with its actual format, device and extent in pixels, discard/load and store
+	/// operations. Its texture handle is valid only for this invocation.
+	FullscreenTarget target;
+};
+
+/// \brief An owning, move-only recorder of GPU commands for presenting a frame.
+///
+/// The callable accepts <tt>const PresentationContext &</tt> and returns <tt>std::expected<void, FullscreenError></tt>.
+/// Mutable and move-only captures are supported. Owned captures live until replacement, clearing or destruction;
+/// captured references must remain valid while used. Default-constructed and moved-from recorders are empty.
+/// Each invocation must finish every GPU pass, even on error or exception, and write display-encoded window colors.
+/// Scene and target resources are borrowed only for the invocation. Leave frame completion and acquisition to the
+/// caller. Pass a non-empty recorder to \c Frame::present; direct invocation of an empty recorder throws
+/// \c std::bad_function_call. Callable construction and invocation exceptions propagate unchanged.
+using PresentationRecorder = MoveOnlyFunction<std::expected<void, FullscreenError>(const PresentationContext &)>;
+
+
+
+//////
+//
 // Classes
 //
 
@@ -67,15 +106,14 @@ namespace fcg {
 ///
 /// A frame is typically recorded in this order:
 /// 1. Render the scene in a pass begun with <tt>\ref beginRenderPass</tt> and ended with <tt>\ref endRenderPass</tt>.
-/// 2. Optionally call <tt>\ref present</tt> to copy the scene, or another texture, into the window image.
+/// 2. Call <tt>\ref present</tt> with a recorder that writes display-encoded colors into the window image.
 /// 3. Optionally draw overlays such as the GUI on top of the window image in a pass begun with
 ///    <tt>\ref beginOverlayRenderPass</tt> and ended with <tt>\ref endRenderPass</tt>.
 /// 4. Call <tt>\ref Window::endFrame</tt>.
 ///
-/// Steps 3 and 4 present the scene automatically if presentation has not been attempted successfully or through a
-/// custom callback. A failed custom callback permits only frame completion, without another presentation attempt.
-/// When using \c fcg::run, the
-/// main loop performs all these steps, and \c Applet::render records into the scene pass.
+/// Overlays require successful presentation. Frame completion submits the recorded commands; without successful
+/// presentation, the displayed contents are unspecified. A failed recorder permits only frame completion.
+/// When using \c fcg::run, the main loop performs all these steps, and \c Applet::render records into the scene pass.
 class FCG_FRAMEWORK_EXPORT Frame
 {
 	////
@@ -113,19 +151,21 @@ public:
 	/// 	The depth texture used by the scene pass.
 	/// \param scene
 	/// 	The scene texture.
-	/// \param encoder
-	/// 	The fullscreen pass that converts linear scene colors for display in the window image.
+	/// \param device
+	/// 	The device that owns the frame resources.
+	/// \param presentationFormat
+	/// 	The format of the acquired window image.
 	/// \param sampler
 	/// 	The sampler used to read the presented texture.
 	/// \param extent
 	/// 	The size of the window image in pixels.
 	explicit Frame(
 		PrivateConstructorKey, SDL_GPUCommandBuffer *commandBuffer, SDL_GPUTexture *targetTexture,
-		SDL_GPUTexture *depthTexture, const Texture &scene, const FullscreenPass &encoder, const Sampler &sampler,
-		glm::uvec2 extent
+		SDL_GPUTexture *depthTexture, const Texture &scene, Device &device, SDL_GPUTextureFormat presentationFormat,
+		const Sampler &sampler, glm::uvec2 extent
 	)
 		: m_commandBuffer(commandBuffer), presentationColorTarget(targetTexture), sceneDepthTarget(depthTexture),
-		  sceneTex(scene), scenePresentationPass(encoder), sampler(sampler), m_extent(extent)
+		  sceneTex(scene), device(device), presentationFormat(presentationFormat), sampler(sampler), m_extent(extent)
 	{}
 
 	/// \brief
@@ -206,57 +246,25 @@ public:
 	////
 	// Methods
 
-	/// \brief
-	/// 	Present the scene texture in the window image.
+	/// \brief Record presentation after scene rendering and before overlays.
 	///
-	/// Equivalent to <tt>present(sceneTarget())</tt>. Calling this is optional, since
-	/// <tt>\ref beginOverlayRenderPass</tt> and \c Window::endFrame present the scene automatically if no texture was
-	/// presented before.
+	/// The recorder owns every pass it records and must end all passes even on error or exception. It writes final
+	/// display-encoded window colors. Leave command-buffer submission, frame completion and acquisition to the caller.
+	/// The recorder and context are borrowed only during this call. Obtain fresh scene and target resources each
+	/// invocation, including after resize.
 	///
-	/// \return Nothing on success, or an error as described for the overload taking a source texture.
-	[[nodiscard]] auto present () -> std::expected<void, FullscreenError>;
-
-	/// \brief
-	/// 	Present the given texture in the window image.
+	/// \pre Call after ending the scene pass, before presentation or overlays, with a non-empty recorder.
 	///
-	/// Overwrites the whole window image with \c source, converted from linear colors for display. Color values are
-	/// clamped to [0, 1] and alpha is copied unchanged. The texture is stretched to the window image if the sizes
-	/// differ, using nearest-neighbor filtering. Call this after the scene pass has ended and before
-	/// <tt>\ref beginOverlayRenderPass</tt>. Each frame can be presented only once; after a successful call, the
-	/// automatic presentation by \c beginOverlayRenderPass and \c Window::endFrame is skipped. On failure, nothing is
-	/// recorded.
-	///
-	/// \param source
-	/// 	A 2D texture created with \c SDL_GPU_TEXTUREUSAGE_SAMPLER on the same device, without multisampling. Its
-	/// 	sampled values are interpreted as linear colors.
+	/// \param recorder The presentation recorder; it is invoked once and is not retained.
 	///
 	/// \return
-	/// 	Nothing on success, or an error with one of these codes:
-	/// 	- \c FullscreenErrorCode::InvalidState if a render pass is active, the frame was already presented, or an
-	/// 	  overlay pass was begun;
-	/// 	- \c FullscreenErrorCode::InvalidArgument if \c source does not meet the requirements above;
-	/// 	- \c FullscreenErrorCode::SDLFailure if SDL fails to begin the presentation pass.
-	[[nodiscard]] auto present (const Texture &source) -> std::expected<void, FullscreenError>;
-
-	/// \brief Record custom presentation after scene rendering and before overlays.
-	///
-	/// The callback owns every pass it records and must end all passes even on error or exception. It writes final
-	/// display-encoded window colors; no default conversion follows success. Leave command-buffer submission,
-	/// frame completion and acquisition to the caller. The callback and context are borrowed only during this call.
-	/// Obtain fresh scene and target resources each invocation, including after resize.
-	///
-	/// \pre Call after ending the scene pass, before presentation or overlays, with a non-empty callback.
-	///
-	/// \param callback The recording callback; it is invoked once and is not retained.
-	///
-	/// \return
-	/// 	Nothing on success, the callback's error on failure, or \c FullscreenErrorCode::InvalidState for invalid
-	/// 	frame state and \c FullscreenErrorCode::InvalidArgument for an empty callback. Invalid preconditions record
-	/// 	nothing. Callback failure rejects further scene, presentation and overlay work; finish the frame with
+	/// 	Nothing on success, the recorder's error on failure, or \c FullscreenErrorCode::InvalidState for invalid
+	/// 	frame state and \c FullscreenErrorCode::InvalidArgument for an empty recorder. Invalid preconditions record
+	/// 	nothing. Recorder failure rejects further scene, presentation and overlay work; finish the frame with
 	/// 	\c Window::endFrame to submit without retrying presentation. Failed window contents are unspecified.
 	///
-	/// \throws ... Exceptions from the callback propagate unchanged; complete the failed frame as for returned errors.
-	[[nodiscard]] auto present (PresentationCallback &callback) -> std::expected<void, FullscreenError>;
+	/// \throws ... Exceptions from the recorder propagate unchanged; complete the failed frame as for returned errors.
+	[[nodiscard]] auto present (PresentationRecorder &recorder) -> std::expected<void, FullscreenError>;
 
 	/// \brief
 	/// 	Begin a render pass that draws into the scene texture.
@@ -279,8 +287,8 @@ public:
 	/// \brief
 	/// 	Begin a render pass for drawing overlays, such as the GUI, on top of the window image.
 	///
-	/// Presents the scene first unless a texture was presented before (see <tt>\ref present</tt>). The pass draws into
-	/// the window image, keeping its presented contents, and has no depth texture. Pipelines used in it must therefore
+	/// Call after successful presentation with <tt>\ref present</tt>. The pass draws into the window image, keeping
+	/// its presented contents, and has no depth texture. Pipelines used in it must therefore
 	/// be created for the format reported by \c Window::swapchainFormat and without a depth attachment. End the pass
 	/// with <tt>\ref endRenderPass</tt> before finishing the frame. No scene pass can be begun afterwards.
 	///
@@ -289,9 +297,7 @@ public:
 	/// 	\c endRenderPass for a \c nullptr result.
 	///
 	/// \throws std::logic_error
-	/// 	If another render pass is still active, the frame is finished, or custom presentation is recording or failed.
-	/// \throws std::runtime_error
-	/// 	If the automatic presentation of the scene fails.
+	/// 	If another render pass is still active, the frame is finished, or presentation has not completed successfully.
 	auto beginOverlayRenderPass () -> SDL_GPURenderPass*;
 
 	/// \brief
@@ -310,19 +316,19 @@ private:
 	////
 	// Types
 
-	/// Tracks presentation recording and prevents retries after custom recording has begun.
+	/// Tracks presentation recording and prevents retries after recording has begun.
 	enum class PresentationState
 	{
 		/// No presentation has been recorded.
 		Pending,
 
-		/// A callback is currently recording.
+		/// A recorder is currently recording.
 		Recording,
 
 		/// Presentation completed successfully.
 		Presented,
 
-		/// Custom recording failed; only completion is permitted.
+		/// Presentation recording failed; only completion is permitted.
 		Failed
 	};
 
@@ -330,9 +336,8 @@ private:
 	////
 	// Methods
 
-	/// Present the scene if necessary, then submit the command buffer and mark the frame as finished. Throws
-	/// \c std::logic_error if a render pass is active and \c std::runtime_error if the presentation fails. Called by
-	/// \c Window::endFrame.
+	/// Submit the command buffer and mark the frame as finished. Throws \c std::logic_error if a render pass or
+	/// presentation recorder is active. Called by \c Window::endFrame, including for unpresented and failed frames.
 	void end ();
 
 
@@ -351,8 +356,11 @@ private:
 	/// The scene texture, owned by the creating window.
 	const Texture &sceneTex;
 
-	/// The window-owned fullscreen pass that converts the linear scene to the swapchain format.
-	const FullscreenPass &scenePresentationPass;
+	/// The device owning the frame resources.
+	Device &device;
+
+	/// The acquired window image format.
+	SDL_GPUTextureFormat presentationFormat;
 
 	/// The window-owned sampler used for presentation.
 	const Sampler &sampler;
@@ -362,9 +370,6 @@ private:
 
 	/// Current presentation lifecycle state.
 	PresentationState presentationState = PresentationState::Pending;
-
-	/// Whether overlay rendering has begun.
-	bool overlayStarted = false;
 
 	/// The ongoing render pass, if any.
 	SDL_GPURenderPass *renderPass = nullptr;

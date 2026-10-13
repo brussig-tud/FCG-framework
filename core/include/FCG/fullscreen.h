@@ -37,15 +37,15 @@
 /// The built-in <tt>\ref fcg::FullscreenPass::linearToSRGB "linearToSRGB"</tt> shader converts sampled linear colors
 /// to sRGB encoding. The standard application loop performs this conversion by default after all applets draw the
 /// scene and before Dear ImGui rendering. Applets can replace that step with
-/// <tt>\ref fcg::Player::setPresentationCallback "Player::setPresentationCallback"</tt>; see
+/// <tt>\ref fcg::Player::setPresentationRecorder "Player::setPresentationRecorder"</tt>; see
 /// \ref fcg_runtime_workflows_presentation for the compiled installation and reset example. A replacement must supply
 /// the final display encoding itself.
 ///
 /// In a caller-controlled frame loop, record directly into a target of your choice with
 /// <tt>\ref fcg::FullscreenPass::record "record"</tt>, which begins and ends its own render pass, or into an active
-/// pass with <tt>\ref fcg::FullscreenPass::draw "draw"</tt>. Use the custom
-/// <tt>\ref fcg::Frame::present "Frame::present"</tt> overload to replace that frame's conversion while preserving
-/// the output for its overlay; the default overload supplies the built-in conversion.
+/// pass with <tt>\ref fcg::FullscreenPass::draw "draw"</tt>. For a window frame, supply a presentation recorder to
+/// <tt>\ref fcg::Frame::present "Frame::present"</tt> before drawing overlays. The recorder selects the conversion;
+/// see \ref fcg_windows_usage for a complete sRGB presenter and frame loop.
 ///
 /// \subsection fcg_fullscreen_workflows_chaining Effect chains
 /// Chain effects by rendering each pass into an intermediate texture that the next pass samples. The compose example

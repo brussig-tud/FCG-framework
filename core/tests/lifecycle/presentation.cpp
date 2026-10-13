@@ -12,6 +12,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <type_traits>
 
 // SDL3 library
 #include <SDL3/SDL.h>
@@ -23,7 +24,7 @@
 #include <FCG/device.h>
 #include <FCG/fullscreen.h>
 #include <FCG/player.h>
-#include <FCG/presentation.h>
+#include <FCG/frame.h>
 #include <FCG/run.h>
 
 
@@ -36,6 +37,14 @@
 // Anonymous namespace begin
 namespace {
 
+static_assert(std::is_same_v<fcg::PresentationRecorder,
+	fcg::MoveOnlyFunction<std::expected<void, fcg::FullscreenError>(const fcg::PresentationContext &)>>);
+static_assert(!std::is_constructible_v<fcg::PresentationRecorder, decltype([] (const fcg::PresentationContext &) {})>);
+static_assert(std::is_same_v<
+	std::invoke_result_t<fcg::PresentationRecorder &, const fcg::PresentationContext &>,
+	std::expected<void, fcg::FullscreenError>>);
+static_assert(!std::is_invocable_v<const fcg::PresentationRecorder &, const fcg::PresentationContext &>);
+
 /// Fail a probe without depending on assertions being enabled.
 void require (bool condition, const char *message) {
 	if (!condition)
@@ -45,7 +54,7 @@ void require (bool condition, const char *message) {
 /// Counters retained after applet and capture destruction.
 struct Results
 {
-	/// Callback invocations for the initial and replacement registrations.
+	/// Recorder invocations for the initial and replacement registrations.
 	std::array<unsigned, 2> calls{};
 
 	/// Exactly-once destruction counts for owned captures.
@@ -60,7 +69,7 @@ struct Results
 	/// Number of scene frames with drawable ImGui output.
 	unsigned drawableOverlays = 0;
 
-	/// Number of rejected callback mutations.
+	/// Number of rejected recorder mutations.
 	unsigned rejected = 0;
 
 	/// Whether every capture was released while its applet was alive.
@@ -98,14 +107,14 @@ private:
 	////
 	// Fields
 
-	/// Counters that outlive the callback and applet.
+	/// Counters that outlive the recorder and applet.
 	Results &results;
 
 	/// Registration whose lifetime is being measured.
 	unsigned index;
 };
 
-/// Distinguishable exception that must propagate unchanged from the callback.
+/// Distinguishable exception that must propagate unchanged from the recorder.
 class PresentationFailure final : public std::runtime_error
 {
 public:
@@ -130,8 +139,8 @@ public:
 	/// Mark applet destruction after checking capture release.
 	~PresentationProbe() override
 	{
-		results.ordered = results.ordered && results.destroyed[0] == 1;
-		if (scenario == "lifecycle")
+		results.ordered = results.ordered && results.destroyed[0] == (scenario == "default" ? 0u : 1u);
+		if (scenario == "lifecycle" || scenario == "empty")
 			results.ordered = results.ordered && results.destroyed[1] == 1;
 		results.ended = true;
 	}
@@ -154,13 +163,25 @@ public:
 		require(window, "Expected one runtime window");
 		initialExtent = player.viewportSize();
 		player.pushContinuousRedraw();
-		install(player, 0);
+		if (scenario != "default")
+			install(player, 0);
+		if (scenario == "close")
+		{
+			SDL_Event event{};
+			event.type = SDL_EVENT_KEY_DOWN;
+			event.key.windowID = SDL_GetWindowID(window);
+			event.key.key = SDLK_SPACE;
+			require(SDL_PushEvent(&event), "Could not queue early-close event");
+		}
 		if (scenario == "init")
 			throw PresentationFailure();
 	}
 
-	/// Leave synthetic resize and minimize events to the runtime.
-	void onEvent (const fcg::Event&, fcg::EventContext&, fcg::Player&) override {}
+	/// Close from event dispatch, after acquisition but before scene rendering, in the early-exit scenario.
+	void onEvent (const fcg::Event&, fcg::EventContext&, fcg::Player &player) override {
+		if (scenario == "close")
+			player.requestClose();
+	}
 
 	/// Track the current viewport announced before presentation.
 	void onViewportResize (fcg::Device&, const glm::uvec2&, fcg::Player &player) override {
@@ -181,7 +202,7 @@ public:
 	void update (fcg::Device&, fcg::Player &player, float) override
 	{
 		++updates;
-		if (scenario == "lifecycle")
+		if (scenario == "lifecycle" || scenario == "empty")
 		{
 			if (phase == 0 && results.calls[0] >= 3) {
 				install(player, 1);
@@ -192,8 +213,12 @@ public:
 				require(SDL_SetWindowSize(window, 480, 320), "Could not resize presentation window");
 				phase = 2;
 			}
-			else if (phase == 2 && results.resized) {
-				player.clearPresentationCallback();
+			else if (phase == 2 && results.resized)
+			{
+				if (scenario == "empty")
+					player.setPresentationRecorder({});
+				else
+					player.clearPresentationRecorder();
 				require(results.destroyed[1] == 1, "Reset did not destroy replacement capture");
 				resetRenders = results.renders;
 				phase = 3;
@@ -221,13 +246,15 @@ public:
 			previousRenders = results.renders;
 			previousCalls = results.calls[0];
 		}
+		else if (scenario == "default" && results.renders >= 3)
+			player.requestClose();
 		else if (scenario == "mutation" && results.calls[0] >= 3)
 			player.requestClose();
 		if (updates > 120)
 			throw std::runtime_error("Presentation probe exceeded iteration bound");
 	}
 
-	/// Count scene rendering before the presentation callback.
+	/// Count scene rendering before the presentation recorder.
 	void render (
 		fcg::Device&, fcg::RenderState&, SDL_GPURenderPass*, SDL_GPUCommandBuffer*, fcg::Player&
 	) override
@@ -251,13 +278,13 @@ private:
 		auto pass = fcg::FullscreenPass::linearToSRGB(player.device(), player.swapchainFormat());
 		if (!pass)
 			throw std::runtime_error(pass.error().message);
-		player.setPresentationCallback([
+		player.setPresentationRecorder([
 			this, &player, index, pass = std::move(*pass), owned = std::make_unique<Capture>(results, index), count = 0u
 		] (const fcg::PresentationContext &context) mutable -> std::expected<void, fcg::FullscreenError>
 		{
 			require(++count == ++results.calls[index], "Mutable capture state was not preserved");
 			require(results.renders == results.calls[0] + results.calls[1], "Presentation preceded scene rendering");
-			require(context.commandBuffer && context.target.color.texture, "Missing presentation handles");
+			require(context.cmdBuffer && context.target.color.texture, "Missing presentation handles");
 			require(context.target.device == &player.device(), "Wrong target device");
 			require(context.target.format == player.swapchainFormat(), "Wrong target format");
 			require(context.scene.device() == &player.device(), "Wrong scene device");
@@ -279,15 +306,15 @@ private:
 				throw PresentationFailure();
 			if (scenario == "mutation")
 			{
-				try { player.clearPresentationCallback(); }
+				try { player.clearPresentationRecorder(); }
 				catch (const std::logic_error&) { ++results.rejected; }
-				try { player.setPresentationCallback({}); }
+				try { player.setPresentationRecorder({}); }
 				catch (const std::logic_error&) { ++results.rejected; }
 				require(results.rejected == count * 2, "Self-mutation was not rejected");
 				require(results.destroyed[0] == 0, "Self-mutation destroyed executing capture");
 			}
 			const std::array bindings{fcg::FullscreenTextureBinding{&context.scene, &context.sceneSampler}};
-			return pass.record(context.commandBuffer, context.target, {.samplers = bindings});
+			return pass.record(context.cmdBuffer, context.target, {.samplers = bindings});
 		});
 	}
 
@@ -347,7 +374,8 @@ auto main (int argc, char **argv) -> int
 		require(argc == 2, "Expected one presentation scenario");
 		const std::string scenario = argv[1];
 		require(scenario == "lifecycle" || scenario == "mutation" || scenario == "error"
-			|| scenario == "throw" || scenario == "init" || scenario == "minimized", "Unknown scenario");
+			|| scenario == "throw" || scenario == "init" || scenario == "minimized"
+			|| scenario == "default" || scenario == "empty" || scenario == "close", "Unknown scenario");
 		Results results;
 		bool expectedFailure = false;
 		try {
@@ -369,12 +397,16 @@ auto main (int argc, char **argv) -> int
 		}
 		else if (scenario == "init")
 			require(expectedFailure && results.calls[0] == 0 && results.renders == 0, "Init failure rendered a frame");
+		else if (scenario == "close")
+			require(!expectedFailure && results.calls[0] == 0 && results.renders == 0 && results.overlays == 0,
+				"Early close recorded presentation or rendering");
 		else
 		{
-			require(!expectedFailure && results.calls[0] >= 3, "Too few successful presentations");
+			require(!expectedFailure && (scenario == "default" ? results.calls[0] == 0 && results.renders >= 3
+				: results.calls[0] >= 3), "Too few successful presentations");
 			require(results.drawableOverlays > 0 && results.overlays == results.drawableOverlays,
 				"Successful presentation skipped drawable GUI rendering");
-			if (scenario == "lifecycle") {
+			if (scenario == "lifecycle" || scenario == "empty") {
 				require(results.calls[1] >= 3 && results.resized, "Replacement or resize was not exercised");
 				require(results.renders >= results.calls[0] + results.calls[1] + 3, "Reset did not render default frames");
 			}

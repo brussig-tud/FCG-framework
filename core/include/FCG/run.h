@@ -47,19 +47,23 @@
 /// - read back the depth buffer (<tt>\ref fcg::Player::scheduleDepthReadback "scheduleDepthReadback"</tt>), e.g. for
 ///   focus picking as done by <tt>\ref fcg::CameraFocus "CameraFocus"</tt>;
 /// - replace the main window's scene presentation
-///   (<tt>\ref fcg::Player::setPresentationCallback "setPresentationCallback"</tt>).
+///   (<tt>\ref fcg::Player::setPresentationRecorder "setPresentationRecorder"</tt>).
 ///
 /// \subsection fcg_runtime_workflows_presentation Custom scene presentation
 /// By default, the runtime converts the scene's linear colors to sRGB for display. To replace this step, install one
-/// application-wide <tt>\ref fcg::PresentationCallback "PresentationCallback"</tt> through
-/// <tt>\ref fcg::Player::setPresentationCallback "Player::setPresentationCallback"</tt>. Each rendered frame runs
-/// all <tt>\ref fcg::Applet::render "Applet::render"</tt> scene draws, then the registered presentation callback,
-/// then Dear ImGui rendering. The callback is not invoked when no window image has been acquired.
+/// application-wide <tt>\ref fcg::PresentationRecorder "PresentationRecorder"</tt> through
+/// <tt>\ref fcg::Player::setPresentationRecorder "Player::setPresentationRecorder"</tt>. Each rendered frame runs
+/// all <tt>\ref fcg::Applet::render "Applet::render"</tt> scene draws, then the registered presentation recorder,
+/// then Dear ImGui rendering. Without a registration, the player uses its own sRGB presentation recorder.
+/// Presentation is skipped when no window image has been acquired.
+///
+/// Include <tt>\#include &lt;FCG/frame.h&gt;</tt> for the recorder and the
+/// <tt>\ref fcg::PresentationContext "PresentationContext"</tt> supplied on each invocation.
 ///
 /// Scene pipelines use <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt>;
 /// the final presentation pass instead uses the window format from
-/// <tt>\ref fcg::Player::swapchainFormat "Player::swapchainFormat"</tt>. The callback must write display-encoded
-/// colors into the supplied window target: a successful callback replaces the default conversion entirely.
+/// <tt>\ref fcg::Player::swapchainFormat "Player::swapchainFormat"</tt>. The recorder must write display-encoded
+/// colors into the supplied window target: a successful recorder replaces the default conversion entirely.
 /// This complete minimal example installs the built-in
 /// <tt>\ref fcg::FullscreenPass::linearToSRGB "FullscreenPass::linearToSRGB"</tt> without additional shader assets.
 /// Include the public headers and create the pass in <tt>\ref fcg::Applet::init "Applet::init"</tt>:
@@ -67,36 +71,37 @@
 /// \snippet runtime_examples.cpp presentation_install
 /// For a custom effect, replace the factory with
 /// <tt>\ref fcg::FullscreenPass::create "FullscreenPass::create"</tt> and a shader that supplies the final display
-/// encoding. Intermediate passes may precede the final window draw in the same callback.
+/// encoding. Intermediate passes may precede the final window draw in the same recorder.
 ///
 /// The supplied <tt>\ref fcg::PresentationContext "PresentationContext"</tt> borrows the current scene, sampler,
 /// command buffer and window target for this invocation only. Use these fresh resources each time, including after
 /// resize; target extents are in pixels. Rebuild bindings locally as above rather than retaining scene or window-image
 /// handles. <tt>\ref fcg::FullscreenPass::record "FullscreenPass::record"</tt> begins and ends its own pass;
-/// callback-local binding arrays remain valid for the recording call. End every GPU pass even on error or exception.
+/// recorder-local binding arrays remain valid for the recording call. End every GPU pass even on error or exception.
 /// Leave command-buffer submission or cancellation, frame completion and frame acquisition to the runtime.
 ///
 /// Registration and clearing are main-thread operations. Changes before presentation affect that frame; the latest
-/// registration wins. An empty callback clears the registration. Restore the default from an applet action, such as
+/// registration wins. An empty recorder clears the registration. Restore the default from an applet action, such as
 /// a button in <tt>\ref fcg::Applet::gui "Applet::gui"</tt>:
 /// \snippet runtime_examples.cpp presentation_reset
-/// Clearing restores the built-in conversion, not a previous callback. Do not replace or clear a callback from inside
+/// Clearing restores the built-in conversion, not a previous recorder. Do not replace or clear a recorder from inside
 /// its invocation; either operation throws \c std::logic_error in that situation.
 ///
 /// \section fcg_runtime_lifetime Ownership and lifetime
 /// <tt>\ref fcg::run "run"</tt> takes ownership of the applets it is given. Run one application at a time, from the
 /// main thread; the call blocks until the application shuts down.
-/// Presentation callbacks own their captures, including move-only passes. Captures are destroyed on replacement,
-/// clearing or shutdown. On normal shutdown and exception unwinding, the runtime clears the callback before destroying
+/// Presentation recorders own their captures, including move-only passes. Captures are destroyed on replacement,
+/// clearing or shutdown. On normal shutdown and exception unwinding, the runtime clears the recorder before destroying
 /// applets, while the device is still alive. References captured from applet state must remain valid while registered.
 ///
 /// \section fcg_runtime_errors Handling errors
-/// <tt>\ref fcg::run "run"</tt> returns \c EXIT_FAILURE if SDL, the GPU device, the window or the GUI could not be
+/// <tt>\ref fcg::run "run"</tt> returns \c EXIT_FAILURE if SDL, the GPU device, the window, the default presentation
+/// pass or the GUI could not be
 /// initialized, or if waiting for events failed; the reason is written to the SDL log and no applet callback is
 /// invoked. With an empty applet list it returns \c EXIT_SUCCESS after logging a warning. GPU failures while acquiring
 /// or presenting a frame throw \c std::runtime_error, and exceptions from applet callbacks propagate out of the call.
-/// A presentation callback's returned <tt>\ref fcg::FullscreenError "FullscreenError"</tt> becomes
-/// \c std::runtime_error; exceptions thrown by the callback propagate unchanged. Either failure stops the run without
+/// A presentation recorder's returned <tt>\ref fcg::FullscreenError "FullscreenError"</tt> becomes
+/// \c std::runtime_error; exceptions thrown by the recorder propagate unchanged. Either failure stops the run without
 /// falling back to default presentation. The failed frame's displayed contents are unspecified.
 ///
 /// \see \ref fcg_applets, \ref fcg_events, \ref fcg_windows
@@ -174,8 +179,8 @@ struct PlayerSettings
 ///
 /// \return
 /// 	\c EXIT_SUCCESS after a normal shutdown, and also when \p applets is empty (in which case a warning is logged and
-/// 	nothing else happens). \c EXIT_FAILURE if SDL, the GPU device, the main window or the GUI could not be
-/// 	initialized, or if waiting for events failed. The reason is logged to the SDL log. If initialization fails, no
+/// 	nothing else happens). \c EXIT_FAILURE if SDL, the GPU device, the main window, the default presentation pass
+/// 	or the GUI could not be initialized, or if waiting for events failed. The reason is logged to the SDL log. If initialization fails, no
 /// 	applet callbacks are invoked.
 ///
 /// \throws std::runtime_error

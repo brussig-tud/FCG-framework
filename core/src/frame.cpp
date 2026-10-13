@@ -58,9 +58,6 @@ void Frame::end ()
 
 	if (presentationState == PresentationState::Recording)
 		throw std::logic_error("Cannot finish a frame during presentation recording");
-	if (presentationState == PresentationState::Pending)
-		if (auto result = present(); !result)
-			throw std::runtime_error(result.error().message);
 
 	// Submit the frame's command buffer, which also presents the swapchain texture
 	if (!SDL_SubmitGPUCommandBuffer(m_commandBuffer))
@@ -69,57 +66,25 @@ void Frame::end ()
 	presentationColorTarget = nullptr;
 }
 
-auto Frame::present () -> std::expected<void, FullscreenError> {
-	return present(sceneTex);
-}
-
-auto Frame::present (const Texture &source) -> std::expected<void, FullscreenError>
+auto Frame::present (PresentationRecorder &recorder) -> std::expected<void, FullscreenError>
 {
 	if (!m_commandBuffer || !presentationColorTarget || renderPass ||
-		presentationState != PresentationState::Pending || overlayStarted)
-		return std::unexpected(FullscreenError{
-			FullscreenErrorCode::InvalidState, "Frame presentation requires a completed scene pass and"
-			" cannot be repeated or follow an overlay"
-		});
-	if (!source.handle() || source.info().type != SDL_GPU_TEXTURETYPE_2D)
-		return std::unexpected(FullscreenError{
-			FullscreenErrorCode::InvalidArgument, "Frame presentation requires a sampled 2D texture"
-		});
-	FullscreenTarget target;
-	target.color.texture = presentationColorTarget;
-	target.color.load_op = SDL_GPU_LOADOP_DONT_CARE;
-	target.color.store_op = SDL_GPU_STOREOP_STORE;
-	target.format = scenePresentationPass.outputFormat();
-	target.extent = m_extent;
-	target.device = scenePresentationPass.device();
-	const FullscreenTextureBinding binding{&source, &sampler};
-	auto result = scenePresentationPass.record(
-		m_commandBuffer, target, {.samplers={&binding, 1}}
-	);
-	if (result)
-		presentationState = PresentationState::Presented;
-	return result;
-}
-
-auto Frame::present (PresentationCallback &callback) -> std::expected<void, FullscreenError>
-{
-	if (!m_commandBuffer || !presentationColorTarget || renderPass ||
-		presentationState != PresentationState::Pending || overlayStarted)
+		presentationState != PresentationState::Pending)
 		return std::unexpected(FullscreenError{FullscreenErrorCode::InvalidState,
-			"Custom presentation requires a completed scene pass and cannot be repeated"});
-	if (!callback)
+			"Presentation requires a completed scene pass and cannot be repeated"});
+	if (!recorder)
 		return std::unexpected(FullscreenError{FullscreenErrorCode::InvalidArgument,
-			"Custom presentation requires a non-empty callback"});
+			"Presentation requires a non-empty recorder"});
 	FullscreenTarget target;
 	target.color.texture = presentationColorTarget;
 	target.color.load_op = SDL_GPU_LOADOP_DONT_CARE;
 	target.color.store_op = SDL_GPU_STOREOP_STORE;
-	target.format = scenePresentationPass.outputFormat();
+	target.format = presentationFormat;
 	target.extent = m_extent;
-	target.device = scenePresentationPass.device();
+	target.device = &device;
 	presentationState = PresentationState::Recording;
 	try {
-		auto result = callback(
+		auto result = recorder(
 			PresentationContext{sceneTex, sampler, m_commandBuffer, target}
 		);
 		presentationState = result ? PresentationState::Presented : PresentationState::Failed;
@@ -140,7 +105,7 @@ auto Frame::beginRenderPass (const glm::fvec4 &clearColor) -> SDL_GPURenderPass*
 		throw std::logic_error(msg);
 	}
 
-	if (!m_commandBuffer || presentationState != PresentationState::Pending || overlayStarted)
+	if (!m_commandBuffer || presentationState != PresentationState::Pending)
 		throw std::logic_error("Scene rendering cannot follow presentation");
 
 	// Set up the render pass targeting the linear scene, with a depth buffer using the most common
@@ -172,13 +137,8 @@ auto Frame::beginOverlayRenderPass () -> SDL_GPURenderPass*
 		throw std::logic_error(msg);
 	}
 
-	if (!m_commandBuffer || presentationState == PresentationState::Recording ||
-		presentationState == PresentationState::Failed)
-		throw std::logic_error("Overlay rendering requires an active frame without failed presentation");
-	if (presentationState == PresentationState::Pending)
-		if (auto result = present(); !result)
-			throw std::runtime_error(result.error().message);
-	overlayStarted = true;
+	if (!m_commandBuffer || presentationState != PresentationState::Presented)
+		throw std::logic_error("Overlay rendering requires successful presentation");
 
 	// Set up a render pass targeting the current swapchain texture without a depth buffer, preserving the color
 	// contents already rendered by the applets. This matches the render-pass layout of the ImGui SDL GPU backend,

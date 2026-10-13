@@ -175,16 +175,24 @@ FCG_FRAMEWORK_EXPORT auto run (
 			std::unique_ptr<Window, decltype(releaseClaim)> windowClaim(nullptr, releaseClaim);
 			std::vector<std::unique_ptr<Applet>> applets = std::move(_applets);
 			// Clear captures while applet state and the claimed device are still alive, also on unwinding.
-			auto clearPresentation = [&] (Player *owner) { owner->clearPresentationCallback(); };
+			auto clearPresentation = [&] (Player *owner) { owner->shutdownPresentation(); };
 			std::unique_ptr<Player, decltype(clearPresentation)> presentationOwner(&player, clearPresentation);
 
 			// Claim the window for the GPU device, then create the framework GUI on top of it. The GUI instance is
 			// destroyed before releasing the window claim, including during exception unwinding.
 			std::unique_ptr<Gui> gui;
-			if (device.claimWindow(window)) {
+			if (device.claimWindow(window))
+			{
 				windowClaim.reset(window.get());
-				gui = Gui::create(device, *window);
-				if (!gui) {
+				if (auto result = player.initializePresentation(); !result) {
+					SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "Initializing presentation failed: %s",
+						result.error().message.c_str());
+					exitCode = EXIT_FAILURE;
+					player.requestClose();
+				}
+				else
+					gui = Gui::create(device, *window);
+				if (!gui && !player.shouldClose()) {
 					SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "Initializing the framework GUI failed");
 					exitCode = EXIT_FAILURE;
 					player.requestClose();
@@ -323,8 +331,8 @@ FCG_FRAMEWORK_EXPORT auto run (
 						gui->renderDrawData(player.frame->commandBuffer(), overlayPass);
 						player.frame->endRenderPass();
 					}
-					player.frame = nullptr;
 					window->endFrame();
+					player.frame = nullptr;
 				}
 			}
 			if (player.frame) {
@@ -334,7 +342,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 
 			// Clean up
 			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: shutting down...");
-			player.clearPresentationCallback();
+			player.shutdownPresentation();
 			for (auto &applet : std::views::reverse(applets)) {
 				SDL_LogInfo(
 					SDL_LOG_CATEGORY_APPLICATION, "Player: ending applet %p (\"%s\")",

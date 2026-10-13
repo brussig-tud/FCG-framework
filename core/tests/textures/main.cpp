@@ -24,7 +24,6 @@
 // Framework
 #include <FCG/texture.h>
 #include <FCG/fullscreen.h>
-#include <FCG/presentation.h>
 #include <FCG/render_state.h>
 #include <FCG/window.h>
 #include <FCG/Image/image.h>
@@ -533,38 +532,6 @@ void sceneAndPresentation (fcg::Device &device)
 	auto window = fcg::Window::create({.width=16, .height=16});
 	require(window && device.claimWindow(window), "Presentation window creation failed");
 	require(window->renderTargetInfo()->colorFormat == scene.info().format, "Window does not report canonical scene format");
-	auto *frame = window->beginFrame(device);
-	require(frame && frame->colorTarget() == frame->sceneTarget().handle()
-		&& frame->presentationTarget() != frame->colorTarget(), "Scene and presentation targets are not distinct");
-	pass = frame->beginRenderPass({.1f, .2f, .3f, .4f});
-	require(pass, SDL_GetError());
-	require(!frame->present(), "Presentation accepted an active scene pass");
-	frame->endRenderPass();
-	auto unsampled = take(fcg::Texture::create(device, descriptor(scene.info().format,
-		{2, 2, 1}, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)));
-	const auto invalidSource = frame->present(unsampled);
-	require(!invalidSource && invalidSource.error().code == fcg::FullscreenErrorCode::InvalidArgument,
-		"Default presentation accepted a texture without sampler usage");
-	check(frame->present(scene));
-	require(!frame->present(), "Duplicate presentation accepted");
-	pass = frame->beginOverlayRenderPass();
-	require(pass, SDL_GetError());
-	frame->endRenderPass();
-	require(!frame->present(scene), "Presentation accepted after overlay rendering");
-	window->endFrame();
-	// Presentation also occurs when callers omit it before overlays or before frame completion.
-	frame = window->beginFrame(device);
-	require(frame->beginRenderPass({0.f, 0.f, 0.f, 1.f}), SDL_GetError());
-	frame->endRenderPass();
-	require(frame->beginOverlayRenderPass(), SDL_GetError());
-	frame->endRenderPass();
-	window->endFrame();
-	frame = window->beginFrame(device);
-	require(frame->beginRenderPass({0.f, 0.f, 0.f, 1.f}), SDL_GetError());
-	frame->endRenderPass();
-	window->endFrame();
-
-	// Custom recording uses current borrowed resources and rejects nested frame work.
 	const auto rejectsRecording = [] (auto &&operation)
 	{
 		bool rejected = false;
@@ -576,8 +543,66 @@ void sceneAndPresentation (fcg::Device &device)
 		}
 		require(rejected, "Frame recording was not rejected with a logic error");
 	};
+	fcg::PresentationRecorder presentation = [encoding=take(fcg::FullscreenPass::linearToSRGB(
+		device, window->swapchainFormat()))] (const fcg::PresentationContext &context)
+		-> std::expected<void, fcg::FullscreenError> {
+		const fcg::FullscreenTextureBinding binding{&context.scene, &context.sceneSampler};
+		return encoding.record(context.cmdBuffer, context.target, {.samplers={&binding, 1}});
+	};
+	auto *frame = window->beginFrame(device);
+	require(frame && frame->colorTarget() == frame->sceneTarget().handle()
+		&& frame->presentationTarget() != frame->colorTarget(), "Scene and presentation targets are not distinct");
+	pass = frame->beginRenderPass({.1f, .2f, .3f, .4f});
+	require(pass, SDL_GetError());
+	require(!frame->present(presentation), "Presentation accepted an active scene pass");
+	frame->endRenderPass();
+	rejectsRecording([&] { (void)frame->beginOverlayRenderPass(); });
+	check(frame->present(presentation));
+	require(!frame->present(presentation), "Duplicate presentation accepted");
+	pass = frame->beginOverlayRenderPass();
+	require(pass, SDL_GetError());
+	frame->endRenderPass();
+	require(!frame->present(presentation), "Presentation accepted after overlay rendering");
+	window->endFrame();
+
+	// Completion submits an unpresented frame, including one acquired just before shutdown.
+	frame = window->beginFrame(device);
+	require(frame, "Unpresented frame acquisition failed");
+	rejectsRecording([&] { (void)frame->beginOverlayRenderPass(); });
+	window->endFrame();
+	frame = window->beginFrame(device);
+	require(frame && frame->beginRenderPass({0.f, 0.f, 0.f, 1.f}), SDL_GetError());
+	frame->endRenderPass();
+	rejectsRecording([&] { (void)frame->beginOverlayRenderPass(); });
+	window->endFrame();
+
+	// A recorder may select another source. Even validation errors become terminal once it is invoked.
+	auto unsampled = take(fcg::Texture::create(device, descriptor(scene.info().format,
+		{2, 2, 1}, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)));
+	const fcg::Texture *presentationSource = &unsampled;
+	fcg::PresentationRecorder alternate = [&, encoding=take(fcg::FullscreenPass::linearToSRGB(
+		device, window->swapchainFormat()))] (const fcg::PresentationContext &context)
+		-> std::expected<void, fcg::FullscreenError> {
+		const fcg::FullscreenTextureBinding binding{presentationSource, &context.sceneSampler};
+		return encoding.record(context.cmdBuffer, context.target, {.samplers={&binding, 1}});
+	};
+	frame = window->beginFrame(device);
+	require(frame, "Alternate source frame acquisition failed");
+	const auto invalidSource = frame->present(alternate);
+	require(!invalidSource && invalidSource.error().code == fcg::FullscreenErrorCode::InvalidArgument,
+		"Presentation accepted a texture without sampler usage");
+	require(!frame->present(presentation), "Failed recording allowed another presenter");
+	rejectsRecording([&] { (void)frame->beginOverlayRenderPass(); });
+	window->endFrame();
+	presentationSource = &scene;
+	frame = window->beginFrame(device);
+	require(frame, "Alternate source retry frame acquisition failed");
+	check(frame->present(alternate));
+	window->endFrame();
+
+	// Custom recording uses current borrowed resources and rejects nested frame work.
 	unsigned invocations = 0;
-	fcg::PresentationCallback custom;
+	fcg::PresentationRecorder custom;
 	custom = [&, encoding=take(fcg::FullscreenPass::linearToSRGB(device, window->swapchainFormat()))]
 		(const fcg::PresentationContext &context) -> std::expected<void, fcg::FullscreenError>
 	{
@@ -588,7 +613,7 @@ void sceneAndPresentation (fcg::Device &device)
 			"Custom presentation scene metadata differs");
 		require(context.sceneSampler.handle() && context.sceneSampler.device() == &device,
 			"Custom presentation sampler is invalid");
-		require(context.commandBuffer == frame->commandBuffer(), "Custom presentation command buffer differs");
+		require(context.cmdBuffer == frame->commandBuffer(), "Custom presentation command buffer differs");
 		require(context.target.color.texture == frame->presentationTarget()
 			&& context.target.format == window->swapchainFormat() && context.target.device == &device
 			&& context.target.extent == frame->extent(), "Custom presentation target metadata differs");
@@ -599,11 +624,13 @@ void sceneAndPresentation (fcg::Device &device)
 		const auto recursive = frame->present(custom);
 		require(!recursive && recursive.error().code == fcg::FullscreenErrorCode::InvalidState,
 			"Recursive custom presentation accepted");
-		require(!frame->present() && !frame->present(scene), "Default presentation accepted during custom recording");
+		require(!frame->present(presentation) && !frame->present(alternate),
+			"Another presenter was accepted during recording");
 		rejectsRecording([&] { (void)frame->beginRenderPass({0.f, 0.f, 0.f, 1.f}); });
 		rejectsRecording([&] { (void)frame->beginOverlayRenderPass(); });
+		rejectsRecording([&] { window->endFrame(); });
 		const fcg::FullscreenTextureBinding binding{&context.scene, &context.sceneSampler};
-		return encoding.record(context.commandBuffer, context.target, {.samplers={&binding, 1}});
+		return encoding.record(context.cmdBuffer, context.target, {.samplers={&binding, 1}});
 	};
 	frame = window->beginFrame(device);
 	require(frame, "Custom presentation frame acquisition failed");
@@ -612,7 +639,7 @@ void sceneAndPresentation (fcg::Device &device)
 	require(!active && active.error().code == fcg::FullscreenErrorCode::InvalidState && invocations == 0,
 		"Custom presentation invoked during an active scene pass");
 	frame->endRenderPass();
-	fcg::PresentationCallback empty;
+	fcg::PresentationRecorder empty;
 	const auto missing = frame->present(empty);
 	require(!missing && missing.error().code == fcg::FullscreenErrorCode::InvalidArgument && invocations == 0,
 		"Empty custom presentation accepted");
@@ -620,8 +647,9 @@ void sceneAndPresentation (fcg::Device &device)
 	require(invocations == 1, "Custom presentation was not invoked exactly once");
 	const auto duplicate = frame->present(custom);
 	require(!duplicate && duplicate.error().code == fcg::FullscreenErrorCode::InvalidState && invocations == 1,
-		"Duplicate custom presentation invoked the callback");
-	require(!frame->present() && !frame->present(scene), "Default presentation accepted after custom success");
+		"Duplicate custom presentation invoked the recorder");
+	require(!frame->present(presentation) && !frame->present(alternate),
+		"Another presenter was accepted after success");
 	require(frame->beginOverlayRenderPass(), SDL_GetError());
 	frame->endRenderPass();
 	require(!frame->present(custom) && invocations == 1, "Custom presentation accepted after overlay rendering");
@@ -633,13 +661,13 @@ void sceneAndPresentation (fcg::Device &device)
 	frame->endRenderPass();
 	check(frame->present(custom));
 	window->endFrame();
-	require(invocations == 2, "Custom presentation completion without overlay repeated the callback");
+	require(invocations == 2, "Custom presentation completion without overlay repeated the recorder");
 
 	// Returned errors and exceptions leave a terminal frame that can still be submitted.
 	for (const bool throwing : {false, true})
 	{
 		unsigned failures = 0;
-		fcg::PresentationCallback failing = [&] (const fcg::PresentationContext &)
+		fcg::PresentationRecorder failing = [&] (const fcg::PresentationContext &)
 			-> std::expected<void, fcg::FullscreenError>
 		{
 			++failures;
@@ -665,27 +693,29 @@ void sceneAndPresentation (fcg::Device &device)
 		}
 		require(caught == throwing && failures == 1, "Failed presentation invocation count or exception differs");
 		const auto retry = frame->present(failing);
-		const auto fallback = frame->present();
-		const auto alternate = frame->present(scene);
+		const auto fallback = frame->present(presentation);
+		const auto other = frame->present(alternate);
 		require(!retry && retry.error().code == fcg::FullscreenErrorCode::InvalidState
 			&& !fallback && fallback.error().code == fcg::FullscreenErrorCode::InvalidState
-			&& !alternate && alternate.error().code == fcg::FullscreenErrorCode::InvalidState,
+			&& !other && other.error().code == fcg::FullscreenErrorCode::InvalidState,
 			"Failed presentation accepted further presentation work");
 		rejectsRecording([&] { (void)frame->beginRenderPass({0.f, 0.f, 0.f, 1.f}); });
 		rejectsRecording([&] { (void)frame->beginOverlayRenderPass(); });
 		window->endFrame();
 		require(failures == 1 && invocations == 2, "Failed frame completion retried presentation");
 	}
-	// An empty callback remains retryable, and later frames retain automatic default presentation.
+	// Empty-recorder preconditions remain retryable; the caller explicitly selects a presenter.
 	frame = window->beginFrame(device);
 	require(frame, "Default regression frame acquisition failed");
 	require(frame->beginRenderPass({0.f, 0.f, 0.f, 1.f}), SDL_GetError());
 	frame->endRenderPass();
-	require(!frame->present(empty), "Empty callback accepted on a later frame");
+	require(!frame->present(empty), "Empty recorder accepted on a later frame");
+	rejectsRecording([&] { (void)frame->beginOverlayRenderPass(); });
+	check(frame->present(presentation));
 	require(frame->beginOverlayRenderPass(), SDL_GetError());
 	frame->endRenderPass();
 	window->endFrame();
-	require(invocations == 2, "Default regression frame invoked a previous custom callback");
+	require(invocations == 2, "Default regression frame invoked a previous custom recorder");
 	device.unclaimWindow(window);
 }
 

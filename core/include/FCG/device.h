@@ -301,7 +301,7 @@ public:
 	///
 	/// \return
 	/// 	\c true if the window was claimed, \c false if SDL failed to claim the window or to create the resources
-	/// 	needed for presenting to it. Failures are written to the SDL log.
+	/// 	for its shared scene sampler. Failures are written to the SDL log.
 	///
 	/// \throws std::logic_error
 	/// 	If the window is already claimed by this or another device.

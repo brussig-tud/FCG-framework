@@ -111,22 +111,18 @@ auto Window::claim (Device &device) -> bool
 		);
 		return false;
 	}
-	auto presentPass = FullscreenPass::linearToSRGB(
-		device, SDL_GetGPUSwapchainTextureFormat(device.handle(), m_handle)
-	);
 	SDL_GPUSamplerCreateInfo samplerInfo{};
 	samplerInfo.min_filter = SDL_GPU_FILTER_NEAREST;
 	samplerInfo.mag_filter = SDL_GPU_FILTER_NEAREST;
 	samplerInfo.address_mode_u = samplerInfo.address_mode_v = samplerInfo.address_mode_w =
 		SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
 	auto sampler = Sampler::create(device, samplerInfo);
-	if (!presentPass || !sampler) {
-		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Creating presentation resources failed: %s",
-			!presentPass ? presentPass.error().message.c_str() : sampler.error().message.c_str());
+	if (!sampler) {
+		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Creating the scene sampler failed: %s",
+			sampler.error().message.c_str());
 		SDL_ReleaseWindowFromGPUDevice(device.handle(), m_handle);
 		return false;
 	}
-	presentation = std::move(*presentPass);
 	presentationSampler = std::move(*sampler);
 	m_device = &device;
 	return true;
@@ -151,7 +147,6 @@ void Window::unclaim (Device &device)
 		m_depthTextureSize = glm::uvec2(0);
 	}
 	sceneTexture.reset();
-	presentation.reset();
 	presentationSampler.reset();
 	SDL_ReleaseWindowFromGPUDevice(device.handle(), m_handle);
 	m_device = nullptr;
@@ -252,7 +247,7 @@ auto Window::beginFrame (Device &device) -> Frame*
 	// Begin frame and return
 	m_frame.emplace(
 		Frame::PrivateConstructorKey{}, cmdBuffer, swapchainTexture, depthTexture, *sceneTexture,
-		*presentation, *presentationSampler, swapchainSize
+		device, swapchainFormat(), *presentationSampler, swapchainSize
 	);
 	auto _notOwnedAnyLonger = submission.release();
 	return &m_frame.value();

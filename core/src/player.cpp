@@ -41,7 +41,7 @@ Player::Player(Device &device, Window *mainWindow, std::span<std::unique_ptr<App
 {}
 
 Player::~Player() {
-	m_presentationCallback = {};
+	shutdownPresentation();
 	depthMapping.reset();
 	depthReadback.reset();
 }
@@ -65,27 +65,47 @@ void Player::pushContinuousRedraw () {
 	++m_numContinuousRedrawRequests;
 }
 
-void Player::setPresentationCallback (PresentationCallback callback) {
+void Player::setPresentationRecorder (PresentationRecorder recorder) {
 	if (m_presenting)
-		throw std::logic_error("Cannot replace presentation during callback invocation");
-	m_presentationCallback = std::move(callback);
+		throw std::logic_error("Cannot replace presentation during recorder invocation");
+	m_presentationRecorder = std::move(recorder);
 }
 
-void Player::clearPresentationCallback () {
+void Player::clearPresentationRecorder () {
 	if (m_presenting)
-		throw std::logic_error("Cannot clear presentation during callback invocation");
-	m_presentationCallback = {};
+		throw std::logic_error("Cannot clear presentation during recorder invocation");
+	m_presentationRecorder = {};
+}
+
+auto Player::initializePresentation () -> std::expected<void, FullscreenError>
+{
+	if (!m_window)
+		return std::unexpected(FullscreenError{FullscreenErrorCode::InvalidState, "No main window to present"});
+	auto pass = FullscreenPass::linearToSRGB(m_device, m_window->swapchainFormat());
+	if (!pass)
+		return std::unexpected(pass.error());
+	PresentationRecorder recorder = [pass = std::move(*pass)] (const PresentationContext &context)
+		-> std::expected<void, FullscreenError> {
+		const FullscreenTextureBinding binding{&context.scene, &context.sceneSampler};
+		return pass.record(context.cmdBuffer, context.target, {.samplers = {&binding, 1}});
+	};
+	m_defaultPresentationRecorder = std::move(recorder);
+	return {};
+}
+
+void Player::shutdownPresentation () noexcept {
+	m_presentationRecorder = {};
+	m_defaultPresentationRecorder = {};
 }
 
 auto Player::presentFrame () -> std::expected<void, FullscreenError>
 {
 	if (!frame)
 		return std::unexpected(FullscreenError{FullscreenErrorCode::InvalidState, "No acquired frame to present"});
-	if (!m_presentationCallback)
-		return frame->present();
+	auto &recorder = m_presentationRecorder ? m_presentationRecorder : m_defaultPresentationRecorder;
 	m_presenting = true;
 	try {
-		auto result = frame->present(m_presentationCallback);
+		auto result = frame->present(recorder);
 		m_presenting = false;
 		return result;
 	} catch (...) {
