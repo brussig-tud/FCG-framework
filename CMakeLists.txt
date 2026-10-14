@@ -45,6 +45,7 @@ option(FCG_USE_SHARED_SDL "Use shared SDL3 library" "${SDL_SHARED_DEFAULT}")
 string(COMPARE EQUAL "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}" is_top_level)
 option(FCG_INCLUDE_PACKAGING "Include packaging rules for the FCG Framework library" "${is_top_level}")
 option(FCG_BUILD_DOCUMENTATION "Enable the optional framework documentation target" "${is_top_level}")
+option(FCG_BUILD_TESTS "Build the framework test suite" "${is_top_level}")
 
 # Resolve all build dependencies and optional tools before configuring any consumers.
 include(cmake/Dependencies.cmake)
@@ -58,8 +59,10 @@ set(FCG_INCLUDED_LIBS Core ${FCG_ADDITIONAL_LIBS})
 add_subdirectory(app)
 
 # Setup testing
-enable_testing()
-add_subdirectory(tests)
+if (FCG_BUILD_TESTS)
+	enable_testing()
+	add_subdirectory(tests)
+endif()
 
 # Documentation registrations are independent of library build options.
 include(cmake/Documentation.cmake)
