@@ -30,7 +30,10 @@
 /// being edited.
 ///
 /// \subsection fcg_gui_workflows_scaling Display scaling
-/// The GUI style is adapted automatically when the display's content scale changes.
+/// On platforms with logical window coordinates, widgets keep their size relative to the window and rendering uses the
+/// additional framebuffer pixels automatically. On platforms whose window coordinates are physical pixels, the GUI
+/// follows the operating system's content scale. The scalable default font is selected whenever the combined display
+/// scale is greater than 1.
 ///
 /// \section fcg_gui_lifetime Ownership and lifetime
 /// The <tt>\ref fcg::Gui "Gui"</tt> instance is created by <tt>\ref fcg::run "run"</tt> after the main window has been
@@ -49,6 +52,9 @@
 // C++ STL
 #include <memory>
 
+// Dear ImGui
+#include <imgui.h>
+
 // Local includes
 #include "FCG/export.h"
 
@@ -61,6 +67,7 @@
 
 // Opaque SDL3 types
 union SDL_Event;
+struct SDL_Window;
 struct SDL_GPUCommandBuffer;
 struct SDL_GPUDevice;
 struct SDL_GPURenderPass;
@@ -122,8 +129,8 @@ public:
 	/// \brief
 	/// 	Creates the GUI for the given main window. Called by \c fcg::run; applications normally don't call this.
 	///
-	/// The GUI is set up for the dark ImGui style with keyboard navigation enabled, scaled to the display content
-	/// scale of the window (see <tt>\ref updateContentScale "updateContentScale"</tt>).
+	/// The GUI is set up for the dark ImGui style with keyboard navigation enabled. Its style scale and default font
+	/// follow the window's display scale and are updated automatically when it changes.
 	///
 	/// \pre
 	/// 	\p mainWindow is claimed by \p device (see <tt>\ref fcg::Device::claimWindow "Device::claimWindow"</tt>). No
@@ -198,16 +205,6 @@ public:
 	/// \param event The SDL event to process.
 	void processEvent (const SDL_Event &event);
 
-	/// \brief
-	/// 	Scales the GUI fonts and style sizes to the display content scale of the monitor the window is currently on.
-	/// 	Called by \c fcg::run whenever the display or its scale changes; applications normally don't call this.
-	///
-	/// Does nothing if the scale has not changed since the last call. If the scale cannot be determined, a scale of 1
-	/// is used.
-	///
-	/// \param window The window whose display content scale to apply.
-	void updateContentScale (const Window &window);
-
 	/// Begins a new ImGui frame. Called by \c fcg::run once per main-loop iteration, before the applets'
 	/// <tt>\ref fcg::Applet::gui "Applet::gui"</tt> callbacks; applications normally don't call this.
 	void newFrame ();
@@ -246,16 +243,40 @@ private:
 
 
 	////
+	// Methods
+
+	/// Applies the content scale required by the window's coordinate model and selects the matching default font.
+	void updateDisplayScale ();
+
+
+	////
 	// Fields
 
 	/// The GPU device the renderer backend was initialized with. Referenced, not owned; the device must outlive the
 	/// GUI.
 	SDL_GPUDevice *m_device = nullptr;
 
-	/// The display content scale most recently applied to the ImGui style. Used by
-	/// <tt>\ref updateContentScale "updateContentScale"</tt> to detect changes and to rescale style sizes by the
-	/// correct ratio.
-	float m_contentScale = 1.0f;
+	/// The main window. Referenced, not owned; the window must outlive the GUI.
+	SDL_Window *m_window = nullptr;
+
+	/// The pixel-snapped default font selected for a display scale of 1. Referenced, not owned; the font atlas owns
+	/// it.
+	ImFont *m_bitmapFont = nullptr;
+
+	/// The scalable default font selected for display scales greater than 1. Referenced, not owned; the font atlas
+	/// owns it.
+	ImFont *m_vectorFont = nullptr;
+
+	/// The style before the framework's display scaling. Captured on the first frame after applet initialization, and
+	/// re-captured from the live style on every frame while the applied scale is 1, so applet customizations remain
+	/// the baseline for later scale changes.
+	ImGuiStyle m_referenceStyle{};
+
+	/// Whether \c m_referenceStyle has been captured yet.
+	bool m_referenceStyleCaptured = false;
+
+	/// The style scale most recently applied by the framework.
+	float m_styleScale = 1.0f;
 };
 
 

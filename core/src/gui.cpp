@@ -53,6 +53,16 @@ auto Gui::create (Device &device, Window &mainWindow) -> std::unique_ptr<Gui>
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // enable keyboard controls
 	ImGui::StyleColorsDark();
 
+	// Keep the pixel-snapped bitmap font for 1x output, but use the scalable font for scaled displays.
+	ImFont *bitmapFont = io.Fonts->AddFontDefaultBitmap();
+	ImFont *vectorFont = io.Fonts->AddFontDefaultVector();
+	if (!bitmapFont || !vectorFont) {
+		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Loading the default ImGui fonts failed");
+		ImGui::DestroyContext();
+		return nullptr;
+	}
+	io.FontDefault = SDL_GetWindowDisplayScale(mainWindow.handle()) > 1.0f ? vectorFont : bitmapFont;
+
 	// Initialize the SDL3 platform backend
 	if (!ImGui_ImplSDL3_InitForSDLGPU(mainWindow.handle())) {
 		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Initializing the ImGui SDL3 platform backend failed");
@@ -75,7 +85,9 @@ auto Gui::create (Device &device, Window &mainWindow) -> std::unique_ptr<Gui>
 	// Assemble and return the object
 	std::unique_ptr<Gui> gui(new Gui());
 	gui->m_device = device.handle();
-	gui->updateContentScale(mainWindow);
+	gui->m_window = mainWindow.handle();
+	gui->m_bitmapFont = bitmapFont;
+	gui->m_vectorFont = vectorFont;
 	return gui;
 }
 
@@ -94,30 +106,47 @@ void Gui::processEvent (const SDL_Event &event) {
 	ImGui_ImplSDL3_ProcessEvent(&event);
 }
 
-void Gui::updateContentScale (const Window &window)
+void Gui::updateDisplayScale ()
 {
-	// Query the content scale of the monitor the window is currently on. A failing query (e.g. no display
-	// information available yet) reports 0, which we treat as "no scaling".
-	float scale = SDL_GetWindowDisplayScale(window.handle());
-	if (scale <= 0.0f)
-		scale = 1.0f;
+	float pixelDensity = SDL_GetWindowPixelDensity(m_window);
+	if (pixelDensity <= 0.0f)
+		pixelDensity = 1.0f;
+	float displayScale = SDL_GetWindowDisplayScale(m_window);
+	if (displayScale <= 0.0f)
+		displayScale = pixelDensity;
+	float styleScale = displayScale / pixelDensity;
+	if (styleScale <= 0.0f)
+		styleScale = 1.0f;
+	else if (styleScale > 0.999f && styleScale < 1.001f)
+		styleScale = 1.0f;
 
-	// Only touch the ImGui style when the scale actually changed
-	if (scale == m_contentScale)
-		return;
-
-	// Apply the new scale: ImGui 1.92 bakes fonts dynamically, so setting FontScaleDpi is all that is needed to
-	// scale text. Style sizes (paddings, spacings, thicknesses) are rescaled by the ratio relative to the
-	// previously applied scale, keeping repeated changes idempotent.
 	ImGuiStyle &style = ImGui::GetStyle();
-	style.FontScaleDpi = scale;
-	style.ScaleAllSizes(scale / m_contentScale);
-	m_contentScale = scale;
+	if (!m_referenceStyleCaptured) {
+		m_referenceStyle = style;
+		m_referenceStyleCaptured = true;
+	}
+	else if (m_styleScale == 1.0f)
+		m_referenceStyle = style;
+
+	if (styleScale < m_styleScale - 0.001f || styleScale > m_styleScale + 0.001f)
+	{
+		ImGuiStyle scaledStyle = m_referenceStyle;
+		scaledStyle.FontScaleDpi = styleScale;
+		if (styleScale != 1.0f)
+			scaledStyle.ScaleAllSizes(styleScale);
+		style = scaledStyle;
+		m_styleScale = styleScale;
+	}
+
+	ImGuiIO &io = ImGui::GetIO();
+	if (!io.FontDefault || io.FontDefault == m_bitmapFont || io.FontDefault == m_vectorFont)
+		io.FontDefault = displayScale > 1.0f ? m_vectorFont : m_bitmapFont;
 }
 
 void Gui::newFrame () {
 	ImGui_ImplSDLGPU3_NewFrame();
 	ImGui_ImplSDL3_NewFrame();
+	updateDisplayScale();
 	ImGui::NewFrame();
 }
 

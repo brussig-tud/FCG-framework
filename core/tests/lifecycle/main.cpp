@@ -7,12 +7,16 @@
 // C++ STL
 #include <array>
 #include <cstdlib>
+#include <cstring>
 #include <format>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+// Dear ImGui
+#include <imgui.h>
 
 // SDL3 library
 #include <SDL3/SDL.h>
@@ -24,6 +28,7 @@
 #include <FCG/render_state.h>
 #include <FCG/res.h>
 #include <FCG/run.h>
+#include <FCG/window.h>
 
 
 
@@ -148,8 +153,42 @@ public:
 		readbackCooldown = 2;
 	}
 
-	/// This probe needs no user interface.
-	void gui (fcg::Device&, fcg::Player&) override {}
+	/// Verify the style scale required by the window's coordinate model and the matching default font.
+	void gui (fcg::Device&, fcg::Player &player) override
+	{
+		SDL_Window *window = player.mainWindow()->handle();
+		float pixelDensity = SDL_GetWindowPixelDensity(window);
+		if (pixelDensity <= 0.0f)
+			pixelDensity = 1.0f;
+		float displayScale = SDL_GetWindowDisplayScale(window);
+		if (displayScale <= 0.0f)
+			displayScale = pixelDensity;
+		float expectedScale = displayScale / pixelDensity;
+		if (expectedScale <= 0.0f || (expectedScale > 0.999f && expectedScale < 1.001f))
+			expectedScale = 1.0f;
+
+		ImGuiStyle expected;
+		expected.FontScaleDpi = expectedScale;
+		if (expectedScale != 1.0f)
+			expected.ScaleAllSizes(expectedScale);
+		const ImGuiStyle &style = ImGui::GetStyle();
+		if (   style.FontScaleDpi != expected.FontScaleDpi
+		    || style.WindowPadding.x != expected.WindowPadding.x || style.WindowPadding.y != expected.WindowPadding.y
+		    || style.FramePadding.x != expected.FramePadding.x || style.FramePadding.y != expected.FramePadding.y
+		    || style.ItemSpacing.x != expected.ItemSpacing.x || style.ItemSpacing.y != expected.ItemSpacing.y
+		    || style.ScrollbarSize != expected.ScrollbarSize || style.GrabMinSize != expected.GrabMinSize)
+			throw std::runtime_error(std::format(
+				"GUI style scale differs from the expected {:.3f}", expectedScale
+			));
+
+		const char *expectedFont = displayScale > 1.0f ? "ProggyForever.ttf" : "ProggyClean.ttf";
+		const ImFont *font = ImGui::GetFont();
+		const char *fontName = font ? font->GetDebugName() : nullptr;
+		if (!fontName || std::strcmp(fontName, expectedFont))
+			throw std::runtime_error(std::format(
+				"GUI selected font '{}', expected '{}'", fontName ? fontName : "<none>", expectedFont
+			));
+	}
 
 	/// Collect downloads, request two resizes and stop after the configured number of updates.
 	void update (fcg::Device&, fcg::Player &player, float) override

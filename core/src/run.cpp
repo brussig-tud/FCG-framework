@@ -35,7 +35,7 @@
 namespace {
 
 /// Handle a single SDL event: feed it to the GUI, dispatch main-window input events to the applets unless the GUI
-/// captures them, and react to close requests, Escape and display scale changes.
+/// captures them, and react to close requests and Escape.
 void handleEvent (
 	const SDL_Event &event, fcg::Window &window, fcg::Gui &gui, fcg::Player &player,
 	std::vector<std::unique_ptr<fcg::Applet>> &applets
@@ -86,14 +86,6 @@ void handleEvent (
 			if (   event.key.windowID == window.id() && event.key.key == SDLK_ESCAPE && !handledByApplet
 			    && !gui.wantsTextInput())
 				player.requestClose();
-			break;
-
-		// The display scale changed (system DPI setting or window moved to a monitor with different scaling) –
-		// re-apply the content scale to the GUI style
-		case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
-		case SDL_EVENT_WINDOW_DISPLAY_CHANGED:
-			if (event.window.windowID == window.id())
-				gui.updateContentScale(window);
 			break;
 
 		default:
