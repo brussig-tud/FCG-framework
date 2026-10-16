@@ -297,7 +297,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 				const auto dt = (float)(double(frameDur.count()) / 1000000000.);
 
 				// Begin the GUI frame, then update applet state and let them define their GUI
-				gui->newFrame();
+				gui->newFrame(player.frame);
 				for (auto &applet : applets) {
 					applet->gui(device, player);
 					applet->update(device, player, dt);
