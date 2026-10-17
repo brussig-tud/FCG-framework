@@ -43,6 +43,8 @@ set(HEADERS
 	${FCG_CORE_BASE_DIR}/include/FCG/window.h
 
 	# Internal
+	gui_scaling.h
+	window_scaling.h
 	camera_utils.h
 )
 

@@ -37,6 +37,17 @@
 }
 // [window_setup]
 
+/// \brief Create a window with native screen-coordinate dimensions and automatic resizing disabled.
+///
+/// \return The new window, or \c nullptr if creation failed.
+[[nodiscard]] auto createNativeSizeWindow () -> std::unique_ptr<fcg::Window>
+{
+	// [native_size]
+	auto window = fcg::Window::create({.width = 800, .height = 600, .scaleToDisplay = false});
+	// [native_size]
+	return window;
+}
+
 /// \brief Create a reusable scene presentation command recorder for a claimed window.
 ///
 /// \param device The device claiming the window; it must outlive the recorder.

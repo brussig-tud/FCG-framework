@@ -30,7 +30,20 @@
 /// being edited.
 ///
 /// \subsection fcg_gui_workflows_scaling Display scaling
-/// The GUI style is adapted automatically when the display's content scale changes.
+/// On platforms with logical window coordinates, widgets keep their size relative to the window and rendering uses the
+/// additional framebuffer pixels automatically. On platforms whose window coordinates are physical pixels, the GUI
+/// follows the operating system's content scale. Existing GUI windows scale with their contents when moving between
+/// displays. The bitmap default font is used at its native size on a 1x framebuffer; other sizes use a scalable font.
+///
+/// Customize the ImGui style in <tt>\ref fcg::Applet::init "Applet::init"</tt> using unscaled dimensions. Later changes
+/// to dimensions use the current window-coordinate scale and are preserved when moving between displays. Colors and
+/// other style settings can be edited directly at any scale. Use <tt>ImGui::GetStyle().FontScaleMain</tt> for user font
+/// enlargement; <tt>ImGui::GetStyle().FontScaleDpi</tt> is managed by the framework.
+///
+/// Express widget sizes and positions relative to font or style dimensions, as in this example:
+/// \snippet gui_examples.cpp gui_relative_size
+/// Sizes and positions explicitly supplied by an applet take precedence over automatic window scaling. Temporary
+/// style overrides must be balanced before the end of the frame.
 ///
 /// \section fcg_gui_lifetime Ownership and lifetime
 /// The <tt>\ref fcg::Gui "Gui"</tt> instance is created by <tt>\ref fcg::run "run"</tt> after the main window has been
@@ -61,15 +74,22 @@
 
 // Opaque SDL3 types
 union SDL_Event;
+struct SDL_Window;
 struct SDL_GPUCommandBuffer;
 struct SDL_GPUDevice;
 struct SDL_GPURenderPass;
 
 // Framework types
+/// The library top-level namespace.
 namespace fcg {
-	class Device;
-	class Window;
-	class Frame;
+class Device;
+class Window;
+class Frame;
+
+/// Implementation details of the framework.
+namespace detail {
+class GuiScaling;
+}
 }
 
 
@@ -122,8 +142,8 @@ public:
 	/// \brief
 	/// 	Creates the GUI for the given main window. Called by \c fcg::run; applications normally don't call this.
 	///
-	/// The GUI is set up for the dark ImGui style with keyboard navigation enabled, scaled to the display content
-	/// scale of the window (see <tt>\ref updateContentScale "updateContentScale"</tt>).
+	/// The GUI is set up for the dark ImGui style with keyboard navigation enabled. Its style scale and default font
+	/// follow the window's display scale and are updated automatically when it changes.
 	///
 	/// \pre
 	/// 	\p mainWindow is claimed by \p device (see <tt>\ref fcg::Device::claimWindow "Device::claimWindow"</tt>). No
@@ -179,8 +199,7 @@ public:
 	[[nodiscard]] auto wantsMouse () const -> bool;
 
 	/// \brief
-	/// 	Whether the GUI needs to be redrawn periodically even without input, which is the case while a text field
-	/// 	with a blinking caret is being edited.
+	/// 	Whether the GUI needs periodic redraws for a blinking text caret or a pending display-scale query retry.
 	///
 	/// While this is \c true, \c fcg::run redraws at least every
 	/// <tt>\ref periodicRedrawIntervalMs "periodicRedrawIntervalMs"</tt> milliseconds.
@@ -199,18 +218,13 @@ public:
 	void processEvent (const SDL_Event &event);
 
 	/// \brief
-	/// 	Scales the GUI fonts and style sizes to the display content scale of the monitor the window is currently on.
-	/// 	Called by \c fcg::run whenever the display or its scale changes; applications normally don't call this.
+	/// 	Begins a new ImGui frame. Called by \c fcg::run once per main-loop iteration, before the applets'
+	/// 	<tt>\ref fcg::Applet::gui "Applet::gui"</tt> callbacks; applications normally don't call this.
 	///
-	/// Does nothing if the scale has not changed since the last call. If the scale cannot be determined, a scale of 1
-	/// is used.
-	///
-	/// \param window The window whose display content scale to apply.
-	void updateContentScale (const Window &window);
-
-	/// Begins a new ImGui frame. Called by \c fcg::run once per main-loop iteration, before the applets'
-	/// <tt>\ref fcg::Applet::gui "Applet::gui"</tt> callbacks; applications normally don't call this.
-	void newFrame ();
+	/// \param frame
+	/// 	The frame into which this GUI will be rendered, or \c nullptr when none is available. Its framebuffer extent
+	/// 	is used for text rasterization. The frame must remain alive until <tt>\ref prepareRender "prepareRender"</tt>.
+	void newFrame (Frame *frame = nullptr);
 
 	/// \brief
 	/// 	Ends the current ImGui frame and prepares its draw data for rendering. Called by \c fcg::run after all
@@ -242,7 +256,7 @@ private:
 	// Object construction
 
 	/// Private default constructor. GUIs are created via <tt>\ref create "create"</tt>.
-	Gui() = default;
+	Gui();
 
 
 	////
@@ -252,10 +266,11 @@ private:
 	/// GUI.
 	SDL_GPUDevice *m_device = nullptr;
 
-	/// The display content scale most recently applied to the ImGui style. Used by
-	/// <tt>\ref updateContentScale "updateContentScale"</tt> to detect changes and to rescale style sizes by the
-	/// correct ratio.
-	float m_contentScale = 1.0f;
+	/// The main window. Referenced, not owned; the window must outlive the GUI.
+	SDL_Window *m_window = nullptr;
+
+	/// Display scaling, borrowed default fonts and normalized GUI geometry, owned by this GUI.
+	std::unique_ptr<detail::GuiScaling> m_scaling;
 };
 
 

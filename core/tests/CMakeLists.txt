@@ -5,6 +5,20 @@ add_subdirectory(textures)
 add_subdirectory(cameras)
 add_subdirectory(guides)
 
+# Display scaling policy and real ImGui layout/font behavior without SDL initialization or a GPU.
+add_executable(gui-scaling-smoke gui/scaling.cpp)
+target_include_directories(gui-scaling-smoke PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+target_link_libraries(gui-scaling-smoke PRIVATE Core)
+add_test(NAME gui-scaling-smoke COMMAND gui-scaling-smoke)
+set_tests_properties(gui-scaling-smoke PROPERTIES TIMEOUT 10)
+
+# Window sizing policy and SDL dummy-driver integration without a display server or GPU.
+add_executable(window-scaling-smoke gui/window_scaling.cpp)
+target_include_directories(window-scaling-smoke PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+target_link_libraries(window-scaling-smoke PRIVATE Core)
+add_test(NAME window-scaling-smoke COMMAND window-scaling-smoke)
+set_tests_properties(window-scaling-smoke PROPERTIES TIMEOUT 10)
+
 # Portable callable ownership, invocation and compile contracts; no SDL or GPU initialization.
 add_executable(move-only-function-smoke utilities/move_only_function.cpp)
 target_link_libraries(move-only-function-smoke PRIVATE Core)

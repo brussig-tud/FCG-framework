@@ -26,7 +26,10 @@
 ///
 /// \section fcg_runtime_workflows Common tasks
 /// \subsection fcg_runtime_workflows_settings Window settings
-/// <tt>\ref fcg::PlayerSettings "PlayerSettings"</tt> holds the initial settings, the main window title for now.
+/// <tt>\ref fcg::PlayerSettings "PlayerSettings"</tt> holds the main window title and display-scaling preference.
+/// The main window scales its client dimensions with the display at startup and when the display scale changes.
+/// Set <tt>\ref fcg::PlayerSettings::mainWindowScaleToDisplay "PlayerSettings::mainWindowScaleToDisplay"</tt> to
+/// false to keep its dimensions in native screen coordinates. See \ref fcg_windows for sizing and restoration.
 /// Applets can change the title later with
 /// <tt>\ref fcg::Player::setWindowTitle "Player::setWindowTitle"</tt>.
 ///
@@ -143,12 +146,15 @@ namespace fcg {
 // Structs and enums
 //
 
-/// Initial settings of the applet player, passed to <tt>\ref fcg::run "run"</tt>. Applets can change the
-/// corresponding properties at runtime through the <tt>\ref fcg::Player "Player"</tt>.
+/// Initial settings of the applet player, passed to <tt>\ref fcg::run "run"</tt>.
 struct PlayerSettings
 {
 	/// The initial title of the main window. If not set, the title is <tt>"FCG Player"</tt>.
 	std::optional<std::string> mainWindowTitle = std::nullopt;
+
+	/// Scale the main window's initial and normal client dimensions with the display, as described by
+	/// \c WindowSettings::scaleToDisplay.
+	bool mainWindowScaleToDisplay = true;
 };
 
 

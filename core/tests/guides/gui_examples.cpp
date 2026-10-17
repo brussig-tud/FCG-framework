@@ -56,6 +56,9 @@ public:
 // [gui_widgets]
 void ExampleApplet::gui (fcg::Device &device, fcg::Player &player)
 {
+	// [gui_relative_size]
+	ImGui::SetNextWindowSize(ImVec2(30.f * ImGui::GetFontSize(), 0.f), ImGuiCond_FirstUseEver);
+	// [gui_relative_size]
 	ImGui::Begin("Example");
 	static float intensity = 0.5f;
 	ImGui::SliderFloat("Intensity", &intensity, 0.f, 1.f);

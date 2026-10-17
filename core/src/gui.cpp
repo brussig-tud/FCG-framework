@@ -20,6 +20,7 @@
 #include "FCG/device.h"
 #include "FCG/frame.h"
 #include "FCG/window.h"
+#include "gui_scaling.h"
 
 
 
@@ -41,6 +42,8 @@ namespace fcg {
 ////
 // Gui
 
+Gui::Gui() = default;
+
 auto Gui::create (Device &device, Window &mainWindow) -> std::unique_ptr<Gui>
 {
 	// Set up the framework-wide ImGui context
@@ -52,6 +55,16 @@ auto Gui::create (Device &device, Window &mainWindow) -> std::unique_ptr<Gui>
 	ImGuiIO &io = ImGui::GetIO();
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // enable keyboard controls
 	ImGui::StyleColorsDark();
+
+	// Keep the pixel-snapped bitmap font for 1x output, but use the scalable font for scaled displays.
+	ImFont *bitmapFont = io.Fonts->AddFontDefaultBitmap();
+	ImFont *vectorFont = io.Fonts->AddFontDefaultVector();
+	if (!bitmapFont || !vectorFont) {
+		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Loading the default ImGui fonts failed");
+		ImGui::DestroyContext();
+		return nullptr;
+	}
+	io.FontDefault = bitmapFont;
 
 	// Initialize the SDL3 platform backend
 	if (!ImGui_ImplSDL3_InitForSDLGPU(mainWindow.handle())) {
@@ -75,7 +88,8 @@ auto Gui::create (Device &device, Window &mainWindow) -> std::unique_ptr<Gui>
 	// Assemble and return the object
 	std::unique_ptr<Gui> gui(new Gui());
 	gui->m_device = device.handle();
-	gui->updateContentScale(mainWindow);
+	gui->m_window = mainWindow.handle();
+	gui->m_scaling = std::make_unique<detail::GuiScaling>(mainWindow.id(), bitmapFont, vectorFont);
 	return gui;
 }
 
@@ -91,33 +105,25 @@ Gui::~Gui ()
 }
 
 void Gui::processEvent (const SDL_Event &event) {
+	m_scaling->processEvent(event);
 	ImGui_ImplSDL3_ProcessEvent(&event);
 }
 
-void Gui::updateContentScale (const Window &window)
+void Gui::newFrame (Frame *frame)
 {
-	// Query the content scale of the monitor the window is currently on. A failing query (e.g. no display
-	// information available yet) reports 0, which we treat as "no scaling".
-	float scale = SDL_GetWindowDisplayScale(window.handle());
-	if (scale <= 0.0f)
-		scale = 1.0f;
-
-	// Only touch the ImGui style when the scale actually changed
-	if (scale == m_contentScale)
-		return;
-
-	// Apply the new scale: ImGui 1.92 bakes fonts dynamically, so setting FontScaleDpi is all that is needed to
-	// scale text. Style sizes (paddings, spacings, thicknesses) are rescaled by the ratio relative to the
-	// previously applied scale, keeping repeated changes idempotent.
-	ImGuiStyle &style = ImGui::GetStyle();
-	style.FontScaleDpi = scale;
-	style.ScaleAllSizes(scale / m_contentScale);
-	m_contentScale = scale;
-}
-
-void Gui::newFrame () {
 	ImGui_ImplSDLGPU3_NewFrame();
 	ImGui_ImplSDL3_NewFrame();
+	m_scaling->refresh([this] {
+		return detail::GuiScaling::DisplayScale{
+			SDL_GetWindowDisplayScale(m_window), SDL_GetWindowPixelDensity(m_window)
+		};
+	});
+	ImGuiIO &io = ImGui::GetIO();
+	const auto extent = frame ? frame->extent() : glm::uvec2(0);
+	io.DisplayFramebufferScale = detail::GuiScaling::framebufferScale(
+		io.DisplaySize, ImVec2((float)extent.x, (float)extent.y), io.DisplayFramebufferScale
+	);
+	m_scaling->selectFont();
 	ImGui::NewFrame();
 }
 
@@ -137,13 +143,10 @@ void Gui::prepareRender (Frame *frame)
 		// every scissor rectangle within the render pass (out-of-bounds scissors abort under graphics API validation).
 		ImDrawData *drawData = ImGui::GetDrawData();
 		const glm::uvec2 extent = frame->extent();
-		if (drawData && drawData->DisplaySize.x > 0.f && drawData->DisplaySize.y > 0.f && extent.x > 0 && extent.y > 0)
-		{
-			drawData->FramebufferScale = ImVec2(
-				(float)extent.x / drawData->DisplaySize.x,
-				(float)extent.y / drawData->DisplaySize.y
+		if (drawData)
+			drawData->FramebufferScale = detail::GuiScaling::framebufferScale(
+				drawData->DisplaySize, ImVec2((float)extent.x, (float)extent.y), drawData->FramebufferScale
 			);
-		}
 		ImGui_ImplSDLGPU3_PrepareDrawData(drawData, frame->commandBuffer());
 	}
 }
@@ -161,10 +164,10 @@ auto Gui::wantsTextInput () const -> bool {
 
 auto Gui::needsPeriodicRedraw () const -> bool
 {
-	// The only GUI element that changes over time without user input is the blinking text input caret. Only ask
-	// the main loop for periodic redraws while a text field is actually being edited.
 	const ImGuiIO &io = ImGui::GetIO();
-	return io.ConfigInputTextCursorBlink && ImGui::IsAnyItemActive() && io.WantTextInput;
+	const bool visible = !(SDL_GetWindowFlags(m_window) & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN));
+	return (visible && m_scaling->retryPending())
+		|| (io.ConfigInputTextCursorBlink && ImGui::IsAnyItemActive() && io.WantTextInput);
 }
 
 

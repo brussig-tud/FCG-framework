@@ -116,7 +116,11 @@ public:
 	void gui (fcg::Device &device, fcg::Player &player) override
 	{
 		// Start our widget
-		ImGui::SetNextWindowSize({ 400, 0 }, ImGuiCond_FirstUseEver);
+		const auto &workPos = ImGui::GetMainViewport()->WorkPos,
+		           &padding = ImGui::GetStyle().WindowPadding;
+		const auto workSizeX = ImGui::GetMainViewport()->WorkSize.x;
+		ImGui::SetNextWindowSize({ 296, 0 }, ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowPos(ImVec2{workSizeX-296 - padding.x, workPos.y + padding.y}, ImGuiCond_FirstUseEver);
 		ImGui::Begin("Image Loader");
 
 		// File selection

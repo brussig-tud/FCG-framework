@@ -7,12 +7,16 @@
 // C++ STL
 #include <array>
 #include <cstdlib>
+#include <cmath>
 #include <format>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+// Dear ImGui
+#include <imgui.h>
 
 // SDL3 library
 #include <SDL3/SDL.h>
@@ -24,6 +28,7 @@
 #include <FCG/render_state.h>
 #include <FCG/res.h>
 #include <FCG/run.h>
+#include <FCG/window.h>
 
 
 
@@ -148,8 +153,19 @@ public:
 		readbackCooldown = 2;
 	}
 
-	/// This probe needs no user interface.
-	void gui (fcg::Device&, fcg::Player&) override {}
+	/// Exercise visible widgets and validate the dimensions used for text rasterization.
+	void gui (fcg::Device&, fcg::Player &player) override
+	{
+		const auto &io = ImGui::GetIO();
+		const auto size = player.mainWindow()->viewportSize();
+		if (io.DisplaySize.x > 0.f && io.DisplaySize.y > 0.f)
+			if (std::abs(io.DisplaySize.x * io.DisplayFramebufferScale.x - size.x) > .01f
+				|| std::abs(io.DisplaySize.y * io.DisplayFramebufferScale.y - size.y) > .01f)
+				throw std::runtime_error("GUI rasterization extent differs from the acquired frame");
+		ImGui::Begin("Lifecycle probe");
+		ImGui::TextUnformatted("Framebuffer-scaled GUI");
+		ImGui::End();
+	}
 
 	/// Collect downloads, request two resizes and stop after the configured number of updates.
 	void update (fcg::Device&, fcg::Player &player, float) override
