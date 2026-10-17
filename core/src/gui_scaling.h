@@ -52,8 +52,7 @@ public:
 	// Types
 
 	/// A coherent display query result, expressed in physical pixels per base unit and per window unit.
-	struct DisplayScale
-	{
+	struct DisplayScale {
 		/// The operating system's desired content scale for the window.
 		float display = 1.f;
 
@@ -71,7 +70,7 @@ public:
 	/// \param bitmap The atlas-owned native-size default font.
 	/// \param vector The atlas-owned scalable default font.
 	GuiScaling(SDL_WindowID window, ImFont *bitmap, ImFont *vector)
-		: m_window(window), m_bitmap(bitmap), m_vector(vector)
+		: windowId(window), bitmapFont(bitmap), vectorFont(vector)
 	{}
 
 
@@ -79,7 +78,9 @@ public:
 	// Accessors
 
 	/// Whether the last requested display query failed and should be retried.
-	[[nodiscard]] auto retryPending () const -> bool { return m_retryPending; }
+	[[nodiscard]] auto retryPending () const -> bool {
+		return m_retryPending;
+	}
 
 
 	////
@@ -98,8 +99,8 @@ public:
 			case SDL_EVENT_WINDOW_RESIZED:
 			case SDL_EVENT_WINDOW_SHOWN:
 			case SDL_EVENT_WINDOW_RESTORED:
-				if (event.window.windowID == m_window)
-					m_dirty = true;
+				if (event.window.windowID == windowId)
+					dirty = true;
 				break;
 			default:
 				break;
@@ -115,32 +116,36 @@ public:
 	template <class Query>
 	void refresh (Query &&query)
 	{
-		if (!m_dirty)
+		if (!dirty)
 			return;
+
 		const DisplayScale values = query();
 		if (!positive(values.display) || !positive(values.density)) {
 			m_retryPending = true;
 			return;
 		}
-		const float scale = values.display / values.density;
-		if (!positive(scale)) {
+
+		const float newScale = values.display / values.density;
+		if (!positive(newScale)) {
 			m_retryPending = true;
 			return;
 		}
-		m_dirty = false;
+
+		dirty = false;
 		m_retryPending = false;
-		const float nextScale = std::abs(scale - 1.f) <= tolerance ? 1.f : scale;
+		const float nextScale = std::abs(newScale - 1.f) <= tolerance ? 1.f : newScale;
 		ImGuiStyle &style = ImGui::GetStyle();
-		if (!m_captured) {
-			m_reference = m_applied = style;
-			m_captured = true;
+		if (!captured) {
+			reference = applied = style;
+			captured = true;
 		}
-		if (std::abs(nextScale - m_scale) > tolerance) {
+		if (std::abs(nextScale - scale) > tolerance) {
 			scaleStyle(style, nextScale);
 			scaleWindows(nextScale);
-			m_scale = nextScale;
+			scale = nextScale;
 		}
-		style.FontScaleDpi = m_scale;
+
+		style.FontScaleDpi = scale;
 	}
 
 	/// Choose the framework font at frame boundaries, leaving custom default fonts untouched.
@@ -148,19 +153,19 @@ public:
 	{
 		ImGuiIO &io = ImGui::GetIO();
 		ImGuiStyle &style = ImGui::GetStyle();
-		style.FontScaleDpi = m_scale;
-		if (io.FontDefault && io.FontDefault != m_bitmap && io.FontDefault != m_vector)
+		style.FontScaleDpi = scale;
+		if (io.FontDefault && io.FontDefault != bitmapFont && io.FontDefault != vectorFont)
 			return;
 		const float base = style._NextFrameFontSizeBase > 0.f ? style._NextFrameFontSizeBase
 			: style.FontSizeBase > 0.f ? style.FontSizeBase : 13.f;
-		float size = base * style.FontScaleMain * m_scale;
-#ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+		float size = base * style.FontScaleMain * scale;
+	#ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 		size *= io.FontGlobalScale;
-#endif
+	#endif
 		const ImVec2 density = io.DisplayFramebufferScale;
 		const bool native = std::abs(size - 13.f) <= tolerance
 			&& std::abs(density.x - 1.f) <= tolerance && std::abs(density.y - 1.f) <= tolerance;
-		io.FontDefault = native ? m_bitmap : m_vector;
+		io.FontDefault = native ? bitmapFont : vectorFont;
 	}
 
 	/// \brief Calculate the framebuffer scale shared by font rasterization and rendering.
@@ -187,8 +192,7 @@ private:
 	// Types
 
 	/// Unrounded geometry and last displayed geometry for a single window dimension.
-	struct Geometry
-	{
+	struct Geometry {
 		/// Window units before framework scaling.
 		ImVec2 reference{};
 
@@ -217,12 +221,12 @@ private:
 	// Constants
 
 	/// Tolerance used for display-scale comparisons and native font selection.
-	static constexpr float tolerance = 0.001f;
+	static constexpr float tolerance = .001f;
 
 	/// \brief Scalar members scaled by ImGui 1.92.9's <tt>ImGuiStyle::ScaleAllSizes</tt>.
 	///
 	/// The two tab width thresholds below require sentinel-aware normalization.
-	inline static constexpr std::array scalarDimensions{
+	inline static constexpr std::array scalarDimensions {
 		&ImGuiStyle::_MainScale,
 		&ImGuiStyle::WindowRounding, &ImGuiStyle::WindowBorderSize, &ImGuiStyle::WindowBorderHoverPadding,
 		&ImGuiStyle::ChildRounding, &ImGuiStyle::ChildBorderSize,
@@ -245,7 +249,7 @@ private:
 	};
 
 	/// Vector members scaled by ImGui 1.92.9's <tt>ImGuiStyle::ScaleAllSizes</tt>.
-	inline static constexpr std::array vectorDimensions{
+	inline static constexpr std::array vectorDimensions {
 		&ImGuiStyle::WindowPadding, &ImGuiStyle::WindowMinSize, &ImGuiStyle::FramePadding,
 		&ImGuiStyle::ItemSpacing, &ImGuiStyle::ItemInnerSpacing, &ImGuiStyle::CellPadding,
 		&ImGuiStyle::TouchExtraPadding, &ImGuiStyle::SeparatorTextPadding,
@@ -258,13 +262,13 @@ private:
 
 	/// Whether a queried dimension or scale is finite and strictly positive.
 	[[nodiscard]] static auto positive (float value) -> bool {
-		return std::isfinite(value) && value > 0.f;
+		return std::isfinite(value) && value > .0f;
 	}
 
 	/// Incorporate a direct application edit without re-normalizing unchanged rounded values.
-	void remember (float &reference, float applied, float live, bool sentinel = false) const {
+	void remember (float &reference, float applied, float live, bool sentinel=false) const {
 		if (live != applied)
-			reference = sentinel ? live : live / m_scale;
+			reference = sentinel ? live : live / scale;
 	}
 
 	/// Restore only dimensional members from their unrounded reference, preserving all other live style state.
@@ -272,27 +276,28 @@ private:
 	{
 		for (auto member : scalarDimensions) {
 			const float live = style.*member;
-			const bool threshold = member == &ImGuiStyle::TabCloseButtonMinWidthSelected
-				|| member == &ImGuiStyle::TabCloseButtonMinWidthUnselected;
-			remember(m_reference.*member, m_applied.*member, live, threshold && (live <= 0.f || live == FLT_MAX));
+			const bool threshold =   member == &ImGuiStyle::TabCloseButtonMinWidthSelected
+			                      || member == &ImGuiStyle::TabCloseButtonMinWidthUnselected;
+			remember(
+				reference.*member, applied.*member, live, threshold && (live <= .0f || live == FLT_MAX)
+			);
 		}
 		for (auto member : vectorDimensions) {
-			remember((m_reference.*member).x, (m_applied.*member).x, (style.*member).x);
-			remember((m_reference.*member).y, (m_applied.*member).y, (style.*member).y);
+			remember((reference.*member).x, (applied.*member).x, (style.*member).x);
+			remember((reference.*member).y, (applied.*member).y, (style.*member).y);
 		}
-		ImGuiStyle scaled = m_reference;
+		ImGuiStyle scaled = reference;
 		if (nextScale != 1.f)
 			scaled.ScaleAllSizes(nextScale);
 		for (auto member : scalarDimensions)
 			style.*member = scaled.*member;
 		for (auto member : vectorDimensions)
 			style.*member = scaled.*member;
-		m_applied = scaled;
+		applied = scaled;
 	}
 
 	/// Preserve the unrounded reference for geometry that has not changed since the last transition.
-	void scaleGeometry (ImVec2 &live, Geometry &saved, float nextScale, bool position)
-	{
+	void scaleGeometry (ImVec2 &live, Geometry &saved, float nextScale, bool position) {
 		remember(saved.reference.x, saved.applied.x, live.x);
 		remember(saved.reference.y, saved.applied.y, live.y);
 		const float x = saved.reference.x * nextScale, y = saved.reference.y * nextScale;
@@ -309,7 +314,7 @@ private:
 		{
 			if (window->Viewport != viewport)
 				continue;
-			auto [entry, inserted] = m_windows.try_emplace(window->ID);
+			auto [entry, inserted] = trackedWindows.try_emplace(window->ID);
 			WindowGeometry &saved = entry->second;
 			ImVec2 position(window->Pos.x - viewport->Pos.x, window->Pos.y - viewport->Pos.y);
 			if (inserted) {
@@ -324,8 +329,8 @@ private:
 			scaleGeometry(window->ContentSize, saved.content, nextScale, false);
 		}
 		if (context.MovingWindow) {
-			context.ActiveIdClickOffset.x *= nextScale / m_scale;
-			context.ActiveIdClickOffset.y *= nextScale / m_scale;
+			context.ActiveIdClickOffset.x *= nextScale / scale;
+			context.ActiveIdClickOffset.y *= nextScale / scale;
 		}
 	}
 
@@ -334,34 +339,34 @@ private:
 	// Fields
 
 	/// The main window whose display events invalidate the cache.
-	SDL_WindowID m_window;
+	SDL_WindowID windowId;
 
 	/// Borrowed bitmap default font, owned by the current font atlas.
-	ImFont *m_bitmap;
+	ImFont *bitmapFont;
 
 	/// Borrowed scalable default font, owned by the current font atlas.
-	ImFont *m_vector;
+	ImFont *vectorFont;
 
 	/// Whether a display query is needed before starting a GUI frame.
-	bool m_dirty = true;
+	bool dirty = true;
 
 	/// Whether an invalid query needs a subsequent retry.
 	bool m_retryPending = false;
 
 	/// Whether initial applet style customizations have been captured.
-	bool m_captured = false;
+	bool captured = false;
 
 	/// The last successfully applied coordinate scale.
-	float m_scale = 1.f;
+	float scale = 1.f;
 
 	/// Unrounded dimensional baseline; non-dimensional fields are never restored from this copy.
-	ImGuiStyle m_reference{};
+	ImGuiStyle reference{};
 
 	/// The last scaled style, used only to identify direct dimensional edits.
-	ImGuiStyle m_applied{};
+	ImGuiStyle applied{};
 
 	/// Normalized window geometry, inspected only during coordinate-scale transitions.
-	std::unordered_map<ImGuiID, WindowGeometry> m_windows;
+	std::unordered_map<ImGuiID, WindowGeometry> trackedWindows;
 };
 
 
@@ -379,4 +384,3 @@ private:
 
 
 #endif
-

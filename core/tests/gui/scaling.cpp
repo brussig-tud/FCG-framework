@@ -14,6 +14,7 @@
 
 // Framework implementation
 #include "gui_scaling.h"
+#include "window_scaling.h"
 
 
 
@@ -247,6 +248,39 @@ void coordinateModels ()
 	check(ImGui::GetFont()->CurrentRasterizerDensity == 2.f);
 }
 
+/// Keep a panel near the lower-right corner inside a proportionally resized native client area.
+void hostWindowScaling ()
+{
+	Context test;
+	glm::ivec2 client(800, 600);
+	fcg::detail::WindowScaling host(client);
+	auto move = [&] (float scale)
+	{
+		host.refresh(scale, 1.f, client, false, [&] (glm::ivec2 size) { return client = size; });
+		ImGui::GetIO().DisplaySize = ImVec2(float(client.x), float(client.y));
+		test.move(scale);
+	};
+	move(1.f);
+	test.panel();
+	ImGui::SetWindowPos("Panel", ImVec2(450, 350));
+	test.panel();
+	auto *panel = ImGui::FindWindowByName("Panel");
+	for (float scale : {1.5f, 2.f, 1.f})
+	{
+		move(scale);
+		test.panel();
+		check(near(panel->Pos.x, 450.f * scale));
+		check(near(panel->Pos.y, 350.f * scale));
+		check(panel->Pos.x + panel->Size.x <= client.x);
+		check(panel->Pos.y + panel->Size.y <= client.y);
+		const ImVec2 position = panel->Pos, size = panel->Size;
+		move(scale);
+		test.panel();
+		check(panel->Pos.x == position.x && panel->Pos.y == position.y);
+		check(panel->Size.x == size.x && panel->Size.y == size.y);
+	}
+}
+
 /// Check window round trips, user edits, collapsed dimensions and application overrides.
 void windowGeometry ()
 {
@@ -359,6 +393,7 @@ auto main () -> int
 		eventsAndFailures();
 		stylePreservation();
 		coordinateModels();
+		hostWindowScaling();
 		windowGeometry();
 		fonts();
 		framebufferConsistency();

@@ -38,8 +38,8 @@
 /// \section fcg_windows_workflows Common tasks
 /// \subsection fcg_windows_workflows_frame Recording a frame
 /// A displayed scene frame consists of a scene pass, explicit presentation, and an optional overlay pass. Start
-/// the scene pass with <tt>\ref fcg::Frame::beginRenderPass "Frame::beginRenderPass"</tt>, which clears the scene color and depth,
-/// and end it with <tt>\ref fcg::Frame::endRenderPass "endRenderPass"</tt>. Call
+/// the scene pass with <tt>\ref fcg::Frame::beginRenderPass "Frame::beginRenderPass"</tt>, which clears the scene color
+/// and depth, and end it with <tt>\ref fcg::Frame::endRenderPass "endRenderPass"</tt>. Call
 /// <tt>\ref fcg::Frame::present "present"</tt> with a recorder that writes the final window colors. After successful
 /// presentation, draw the GUI, or anything else that should appear on top of the presented image, in the depth-free
 /// overlay pass from <tt>\ref fcg::Frame::beginOverlayRenderPass "beginOverlayRenderPass"</tt>. Finish with
@@ -55,6 +55,22 @@
 /// <tt>\ref fcg::Window::viewportSize "Window::viewportSize"</tt> returns the current viewport size in pixels. Query
 /// it each frame, or react to the size change in <tt>\ref fcg::Applet::onViewportResize
 /// "Applet::onViewportResize"</tt>; the depth buffer and scene texture are recreated automatically.
+///
+/// Initial client dimensions in <tt>\ref fcg::WindowSettings "WindowSettings"</tt> are measured at 100% display
+/// scale. For example, a requested 800-by-600 window uses a 1200-by-900 client area at 150% scale on Windows.
+/// Moving to a different display scale preserves the window's size relative to its GUI. User resizing establishes
+/// a new size to preserve. Maximized, minimized and fullscreen windows are adjusted when restored to normal mode.
+/// Set <tt>\ref fcg::WindowSettings::scaleToDisplay "WindowSettings::scaleToDisplay"</tt> to false to use native
+/// screen-coordinate dimensions and disable automatic resizing:
+/// \snippet window_examples.cpp native_size
+/// In a custom event loop, call <tt>\ref fcg::Window::updateDisplayScale "Window::updateDisplayScale"</tt> after
+/// processing SDL events and before starting the GUI frame. This call can block while a resize is synchronized.
+/// Requested sizes are subject to window-manager restrictions and can exceed the usable desktop area.
+///
+/// \note
+/// On X11, display scaling follows the desktop-wide scale reported by SDL; moving between monitors need not change
+/// that scale. On macOS and Wayland, changing pixel density can increase the viewport resolution while keeping
+/// the client dimensions in window coordinates unchanged.
 ///
 /// \section fcg_windows_lifetime Ownership and lifetime
 /// Windows are created with <tt>\ref fcg::Window::create "Window::create"</tt> and held in a
@@ -113,6 +129,9 @@ struct SDL_GPUTexture;
 namespace fcg {
 	class Device;
 	class Frame;
+	namespace detail {
+		class WindowScaling;
+	}
 }
 
 
@@ -141,14 +160,18 @@ struct WindowSettings
 	/// The text shown in the window title bar.
 	std::string title = "FCG Window";
 
-	/// The initial width of the window, in screen coordinates.
+	/// The initial client width at 100% display scale, or in screen coordinates when \c scaleToDisplay is false.
 	unsigned width = 1280;
 
-	/// The initial height of the window, in screen coordinates.
+	/// The initial client height at 100% display scale, or in screen coordinates when \c scaleToDisplay is false.
 	unsigned height = 720;
 
 	/// Whether the user should be able to resize the window.
 	bool resizable = true;
+
+	/// Scale the client dimensions with the display at creation and on display-scale changes, including for
+	/// non-resizable windows. The window manager may constrain the requested dimensions.
+	bool scaleToDisplay = true;
 };
 
 
@@ -188,7 +211,8 @@ public:
 	/// 	Create a new window.
 	///
 	/// The window is created with support for high pixel densities, so its viewport size in pixels can exceed the
-	/// size given in screen coordinates. Failures are logged to the SDL log.
+	/// size given in screen coordinates. With \c WindowSettings::scaleToDisplay enabled, initial client dimensions
+	/// are scaled for the display before showing the window. Failures are logged to the SDL log.
 	///
 	/// \param settings
 	/// 	The creation parameters.
@@ -258,6 +282,18 @@ public:
 	////
 	// Methods
 
+	/// \brief Adjust the normal window's client dimensions to the current display scale.
+	///
+	/// Call after processing SDL events and before starting a GUI frame in a custom loop. The framework calls this
+	/// automatically in \c fcg::run, \c beginFrame and \c pollViewportSize. User resizing establishes a new size to
+	/// preserve across display-scale changes. Minimized, maximized and fullscreen windows are adjusted on restoration.
+	/// The window manager may constrain the requested size. With \c WindowSettings::scaleToDisplay disabled, this
+	/// call has no effect. Failed display queries are retried on the next call; resize failures are logged.
+	/// Synchronizing a resize can block until the window manager responds or SDL times out.
+	///
+	/// \pre Call on the main thread.
+	void updateDisplayScale ();
+
 	/// \brief
 	/// 	Update the viewport size from the current size of the window in pixels.
 	///
@@ -299,8 +335,9 @@ public:
 	/// 	Finish the current frame and submit it to the GPU for display.
 	///
 	/// Submission displays the window image recorded by \c Frame::present. If presentation was omitted or failed,
-	/// the displayed contents are unspecified. Afterwards, the <tt>\ref Frame</tt> returned by <tt>\ref beginFrame</tt> is invalid. Submission failures are logged to the SDL
-	/// log. If an exception is thrown, the frame remains in progress.
+	/// the displayed contents are unspecified. Afterwards, the <tt>\ref Frame</tt> returned by <tt>\ref beginFrame</tt>
+	/// is invalid. Submission failures are logged to the SDL log. If an exception is thrown, the frame remains in
+	/// progress.
 	///
 	/// \pre
 	/// 	A frame of this window is in progress and has no active render pass.
@@ -345,7 +382,7 @@ private:
 	// Object construction
 
 	/// Private default constructor. Windows are created via <tt>\ref create</tt>.
-	Window() = default;
+	Window();
 
 
 	////
@@ -372,6 +409,9 @@ private:
 
 	/// The SDL window handle.
 	SDL_Window *m_handle = nullptr;
+
+	/// Normal-window sizing policy, absent when automatic display scaling is disabled.
+	std::unique_ptr<detail::WindowScaling> m_scaling;
 
 	/// The device currently claiming this window, if any.
 	Device *m_device = nullptr;
@@ -403,14 +443,12 @@ private:
 
 
 
-/// @}
-
-
-
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace fcg
 }

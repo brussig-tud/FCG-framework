@@ -44,6 +44,7 @@ set(HEADERS
 
 	# Internal
 	gui_scaling.h
+	window_scaling.h
 	camera_utils.h
 )
 

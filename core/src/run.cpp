@@ -141,7 +141,8 @@ FCG_FRAMEWORK_EXPORT auto run (
 
 		// Create the central window that all applets will render into
 		auto window = maybeDevice ? Window::create(WindowSettings {
-			.title = std::move(settings.mainWindowTitle).value_or("FCG Player")
+			.title = std::move(settings.mainWindowTitle).value_or("FCG Player"),
+			.scaleToDisplay = settings.mainWindowScaleToDisplay
 		}) : nullptr;
 		if (!window)
 			exitCode = EXIT_FAILURE;
@@ -295,6 +296,10 @@ FCG_FRAMEWORK_EXPORT auto run (
 				const auto frameDur = std::chrono::duration_cast<std::chrono::nanoseconds>(now - lastFrameTime);
 				lastFrameTime = now;
 				const auto dt = (float)(double(frameDur.count()) / 1000000000.);
+
+				// Events may have changed the display after frame acquisition. Resize before ImGui lays out widgets;
+				// the acquired frame's extent remains authoritative until the next acquisition.
+				window->updateDisplayScale();
 
 				// Begin the GUI frame, then update applet state and let them define their GUI
 				gui->newFrame(player.frame);

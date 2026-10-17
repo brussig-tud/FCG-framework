@@ -6,6 +6,7 @@
 
 // C++ STL
 #include <format>
+#include <limits>
 #include <stdexcept>
 
 // SDL3 library
@@ -15,6 +16,7 @@
 #include "FCG/device.h"
 #include "FCG/frame.h"
 #include "FCG/window.h"
+#include "window_scaling.h"
 
 
 
@@ -36,12 +38,20 @@ namespace fcg {
 ////
 // Window
 
+Window::Window() = default;
+
 auto Window::create (const WindowSettings &settings) -> std::unique_ptr<Window>
 {
+	if (!settings.width || !settings.height || settings.width > std::numeric_limits<int>::max()
+		|| settings.height > std::numeric_limits<int>::max()) {
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Window dimensions must be positive and fit in an int");
+		return nullptr;
+	}
 	// Create the SDL window
 	SDL_Window *handle = SDL_CreateWindow(
 		settings.title.c_str(), (int)settings.width, (int)settings.height,
-		(settings.resizable ? SDL_WINDOW_RESIZABLE : (SDL_WindowFlags)0) | SDL_WINDOW_HIGH_PIXEL_DENSITY
+		(settings.resizable ? SDL_WINDOW_RESIZABLE : (SDL_WindowFlags)0)
+			| SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN
 	);
 	if (!handle) {
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Creating the window failed: %s", SDL_GetError());
@@ -51,6 +61,13 @@ auto Window::create (const WindowSettings &settings) -> std::unique_ptr<Window>
 	// Assemble and return the object
 	std::unique_ptr<Window> window(new Window());
 	window->m_handle = handle;
+	if (settings.scaleToDisplay)
+		window->m_scaling = std::make_unique<detail::WindowScaling>(glm::ivec2(settings.width, settings.height));
+	window->updateDisplayScale();
+	if (!SDL_ShowWindow(handle)) {
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Showing the window failed: %s", SDL_GetError());
+		return nullptr;
+	}
 	return window;
 }
 
@@ -172,6 +189,8 @@ auto Window::beginFrame (Device &device) -> Frame*
 		throw std::logic_error(msg);
 	}
 
+	updateDisplayScale();
+
 	// Acquire (and potentially wait for) the swapchain texture and central command buffer for this frame
 	SDL_GPUCommandBuffer *cmdBuffer = SDL_AcquireGPUCommandBuffer(device.handle());
 	if (!cmdBuffer) {
@@ -271,8 +290,35 @@ void Window::endFrame ()
 	m_frame.reset();
 }
 
+void Window::updateDisplayScale ()
+{
+	if (!m_scaling)
+		return;
+	glm::ivec2 size;
+	if (!SDL_GetWindowSize(m_handle, &size.x, &size.y))
+		return;
+	const bool suspended = SDL_GetWindowFlags(m_handle)
+		& (SDL_WINDOW_MINIMIZED | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_FULLSCREEN);
+	m_scaling->refresh(
+		SDL_GetWindowDisplayScale(m_handle), SDL_GetWindowPixelDensity(m_handle), size, suspended,
+		[this, size] (glm::ivec2 requested)
+		{
+			if (!SDL_SetWindowSize(m_handle, requested.x, requested.y))
+				SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Scaling the window failed: %s", SDL_GetError());
+			else if (!SDL_SyncWindow(m_handle))
+				SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Waiting for the scaled window timed out: %s", SDL_GetError());
+			glm::ivec2 actual = size;
+			if (!SDL_GetWindowSize(m_handle, &actual.x, &actual.y))
+				SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Querying the scaled window size failed: %s", SDL_GetError());
+			return actual;
+		}
+	);
+}
+
 auto Window::pollViewportSize (std::optional<glm::uvec2> &oldSize) -> bool
 {
+	updateDisplayScale();
+
 	// Query the current drawable size – the size in pixels is what matches the swapchain and thus the viewport
 	glm::uvec2 newSize(0);
 	if (!SDL_GetWindowSizeInPixels(m_handle, (int*)&newSize.x, (int*)&newSize.y)) {
