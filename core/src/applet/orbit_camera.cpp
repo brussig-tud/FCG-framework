@@ -293,9 +293,9 @@ void OrbitCamera::onEvent (const Event &event, EventContext &context, Player &pl
 
 void OrbitCamera::gui (Device&, Player&)
 {
-	const auto &initialPos = ImGui::GetMainViewport()->WorkPos;
+	const auto &workPos = ImGui::GetMainViewport()->WorkPos;
 	const auto &padding = ImGui::GetStyle().WindowPadding;
-	ImGui::SetNextWindowPos(ImVec2{initialPos.x + padding.x, initialPos.y + padding.y}, ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowPos(ImVec2{workPos.x + padding.x, workPos.y + padding.y}, ImGuiCond_FirstUseEver);
 	ImGui::SetNextWindowSize({0, 0}, ImGuiCond_FirstUseEver);
 	ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
 	ImGui::Begin("Orbit Camera");
