@@ -65,14 +65,14 @@ namespace extra {
 [[nodiscard]] FCG_EXTRAS_EXPORT auto imageFileFilters (std::span<const ImageFileFormat> formats)
 	-> std::vector<FileDialogFilter>;
 
-/// @}
-
 
 
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace extra
 }

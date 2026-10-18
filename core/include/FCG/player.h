@@ -79,7 +79,6 @@ class FCG_FRAMEWORK_EXPORT Player
 	friend auto fcg::run (std::vector<std::unique_ptr<Applet>>, PlayerSettings&&) -> int;
 
 
-
 public:
 
 	////
@@ -397,14 +396,12 @@ private:
 
 
 
-/// @}
-
-
-
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace fcg
 }

@@ -1,5 +1,4 @@
 
-
 #ifndef __FCG_ORBIT_CAMERA_H__
 #define __FCG_ORBIT_CAMERA_H__
 
@@ -412,14 +411,12 @@ private:
 
 
 
-/// @}
-
-
-
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 } // namespace applet
 

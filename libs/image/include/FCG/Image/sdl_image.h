@@ -164,14 +164,14 @@ public:
 		-> std::expected<Image, ImageError> override;
 };
 
-/// @}
-
 
 
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace fcg
 }

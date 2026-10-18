@@ -422,14 +422,12 @@ FCG_FRAMEWORK_EXPORT auto makeEvent (const SDL_Event &event) -> Event;
 
 
 
-/// @}
-
-
-
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace fcg
 }

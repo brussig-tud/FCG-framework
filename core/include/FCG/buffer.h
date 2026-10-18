@@ -1410,14 +1410,12 @@ template <class T>
 
 
 
-/// @}
-
-
-
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace fcg
 }

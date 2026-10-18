@@ -220,14 +220,12 @@ private:
 
 
 
-/// @}
-
-
-
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace res
 }

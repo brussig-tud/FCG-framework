@@ -1,5 +1,4 @@
 
-
 #ifndef __FCG_CAMERA_FOCUS_H__
 #define __FCG_CAMERA_FOCUS_H__
 
@@ -321,14 +320,12 @@ private:
 
 
 
-/// @}
-
-
-
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 } // namespace fcg
 

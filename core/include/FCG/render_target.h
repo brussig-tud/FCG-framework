@@ -55,14 +55,12 @@ struct RenderTargetInfo
 
 
 
-/// @}
-
-
-
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 } // namespace fcg
 

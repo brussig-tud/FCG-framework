@@ -1,5 +1,4 @@
 
-
 #ifndef __FCG_CAMERA_2D_H__
 #define __FCG_CAMERA_2D_H__
 
@@ -462,14 +461,12 @@ private:
 
 
 
-/// @}
-
-
-
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 } // namespace applet
 

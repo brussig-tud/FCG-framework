@@ -302,14 +302,13 @@ struct PixelConversionInfo
 	-> std::expected<PixelFormatInfo, ImageError>;
 
 
-/// @}
-
-
 
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace fcg
 }

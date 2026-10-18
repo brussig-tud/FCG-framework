@@ -460,14 +460,14 @@ public:
 	auto operator= (const FormatHandlerRegistration&) -> FormatHandlerRegistration& = delete;
 };
 
-/// @}
-
 
 
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace fcg
 }

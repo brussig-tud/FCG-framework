@@ -1,5 +1,4 @@
 
-
 #ifndef __FCG_VIEWING_H__
 #define __FCG_VIEWING_H__
 
@@ -516,14 +515,12 @@ public:
 
 
 
-/// @}
-
-
-
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 } // namespace fcg
 

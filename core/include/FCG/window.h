@@ -29,12 +29,12 @@
 /// \snippet window_examples.cpp includes
 /// Create a window and claim it for a device:
 /// \snippet window_examples.cpp window_setup
-/// Create a presentation pass recorder once after claiming the window, and retain it across frames. This lambda is
+/// Create a presentation pass recorder once after claiming the window, and retain it across frames. The recorder is
 /// responsible for recording commands that should eventually present the rendered scene to the main window viewport.
 /// Here, it uses a <tt>\ref fcg::FullscreenPass</tt> and delegates the actual presentation command recording to it; in
 /// this case, linear-to-sRGB conversion:
 /// \snippet window_examples.cpp presentation_setup
-/// Pass the recorder to <tt>fcg::Frame::present</tt> at then end of each iteration of your frame loop:
+/// Pass the recorder to <tt>fcg::Frame::present</tt> at the end of each iteration of your frame loop:
 /// \snippet window_examples.cpp frame_loop
 ///
 /// \section fcg_windows_workflows Common tasks

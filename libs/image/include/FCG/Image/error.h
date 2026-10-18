@@ -76,14 +76,14 @@ struct ImageError
 	std::string message;
 };
 
-/// @}
-
 
 
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace fcg
 }

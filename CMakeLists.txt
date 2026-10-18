@@ -68,8 +68,8 @@ endif()
 include(cmake/Documentation.cmake)
 include(docs/Documentation.cmake)
 fcg_add_documentation(
-    TEMPLATE "${PROJECT_SOURCE_DIR}/docs/Doxyfile.in"
-    MAIN_PAGE "${PROJECT_SOURCE_DIR}/docs/main.dox"
+	TEMPLATE "${PROJECT_SOURCE_DIR}/docs/Doxyfile.in"
+	MAIN_PAGE "${PROJECT_SOURCE_DIR}/docs/main.dox"
 )
 
 # Packaging rules. Based on https://alexreinking.com/blog/building-a-dual-shared-and-static-library-with-cmake.html

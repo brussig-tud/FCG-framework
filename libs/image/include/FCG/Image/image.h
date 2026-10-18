@@ -563,14 +563,14 @@ private:
 	SDL_Surface *m_handle = nullptr;
 };
 
-/// @}
-
 
 
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace fcg
 }

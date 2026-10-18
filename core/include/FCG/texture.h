@@ -1,5 +1,4 @@
 
-
 #ifndef __FCG_TEXTURE_H__
 #define __FCG_TEXTURE_H__
 
@@ -889,14 +888,12 @@ private:
 
 
 
-/// @}
-
-
-
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 } // namespace fcg
 

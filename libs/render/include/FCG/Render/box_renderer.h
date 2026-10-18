@@ -24,11 +24,9 @@
 // Framework types
 namespace fcg {
 	class Player;
-}
-
-// Implementation details
-namespace fcg::detail {
-	struct PrimitiveResources;
+	namespace detail { // implementation details
+		struct PrimitiveResources;
+	}
 }
 
 

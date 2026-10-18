@@ -709,14 +709,13 @@ private:
 };
 
 
-/// @}
-
-
 
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace fcg
 }

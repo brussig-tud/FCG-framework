@@ -262,14 +262,12 @@ inline int run (PlayerSettings &&settings = PlayerSettings()) {
 
 
 
-/// @}
-
-
-
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace fcg
 }

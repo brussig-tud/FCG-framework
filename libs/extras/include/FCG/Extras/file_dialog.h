@@ -406,14 +406,14 @@ FCG_EXTRAS_EXPORT void showOpenFolderDialogCallback (
 /// 	<tt>\ref showOpenFileDialogAsync</tt>.
 [[nodiscard]] FCG_EXTRAS_EXPORT auto showOpenFolderDialog (FileDialogOptions options={}) -> FileDialogResult;
 
-/// @}
-
 
 
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace extra
 }

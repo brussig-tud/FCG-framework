@@ -80,16 +80,13 @@ struct SDL_GPUDevice;
 struct SDL_GPURenderPass;
 
 // Framework types
-/// The library top-level namespace.
 namespace fcg {
-class Device;
-class Window;
-class Frame;
-
-/// Implementation details of the framework.
-namespace detail {
-class GuiScaling;
-}
+	class Device;
+	class Window;
+	class Frame;
+	namespace detail { // implementation details
+		class GuiScaling;
+	}
 }
 
 
@@ -275,14 +272,12 @@ private:
 
 
 
-/// @}
-
-
-
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace fcg
 }

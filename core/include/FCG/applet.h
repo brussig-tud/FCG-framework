@@ -315,14 +315,12 @@ concept AppletConcept = std::derived_from<A, Applet>;
 
 
 
-/// @}
-
-
-
 //////
 //
 // Namespaces close
 //
+
+/// @}
 
 // namespace fcg
 }
