@@ -277,7 +277,7 @@ void Camera2D::onEvent (const Event &event, EventContext &context, Player &playe
 	}
 }
 
-void Camera2D::gui (Device&, Player&)
+void Camera2D::gui (Device&, Player &player)
 {
 	const auto &workPos = ImGui::GetMainViewport()->WorkPos;
 	const auto &padding = ImGui::GetStyle().WindowPadding;

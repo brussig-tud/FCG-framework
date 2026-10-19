@@ -109,6 +109,10 @@ void Gui::processEvent (const SDL_Event &event) {
 	ImGui_ImplSDL3_ProcessEvent(&event);
 }
 
+auto Gui::unitScale () const noexcept -> float {
+	return m_scaling->unitScale();
+}
+
 void Gui::newFrame (Frame *frame)
 {
 	ImGui_ImplSDLGPU3_NewFrame();
@@ -118,11 +122,19 @@ void Gui::newFrame (Frame *frame)
 			SDL_GetWindowDisplayScale(m_window), SDL_GetWindowPixelDensity(m_window)
 		};
 	});
-	ImGuiIO &io = ImGui::GetIO();
+	int width = 0, height = 0, pixelWidth = 0, pixelHeight = 0;
+	if (!SDL_GetWindowSize(m_window, &width, &height))
+		width = height = 0;
+	if (!SDL_GetWindowSizeInPixels(m_window, &pixelWidth, &pixelHeight))
+		pixelWidth = pixelHeight = 0;
 	const auto extent = frame ? frame->extent() : glm::uvec2(0);
-	io.DisplayFramebufferScale = detail::GuiScaling::framebufferScale(
-		io.DisplaySize, ImVec2((float)extent.x, (float)extent.y), io.DisplayFramebufferScale
+	m_scaling->updateGeometry(
+		ImVec2(float(width), float(height)), ImVec2(float(pixelWidth), float(pixelHeight)),
+		ImVec2(float(extent.x), float(extent.y)), (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED) != 0
 	);
+	ImGuiIO &io = ImGui::GetIO();
+	io.DisplaySize = m_scaling->displaySize();
+	io.DisplayFramebufferScale = m_scaling->framebufferScale();
 	m_scaling->selectFont();
 	ImGui::NewFrame();
 }
@@ -133,22 +145,16 @@ void Gui::prepareRender (Frame *frame)
 	// is minimized), otherwise the ImGui frame stack would be left in an inconsistent state
 	ImGui::Render();
 
-	// Upload vertex/index buffers and process texture updates on the frame's command buffer. The SDL GPU backend
-	// requires this to be called before the render pass that RenderDrawData will be recorded into.
-	if (frame)
-	{
-		// The window can be resized between acquiring the swapchain texture and finalizing this frame, so the extent
-		// ImGui derives from the window may exceed the render pass dimensions. ImGui projects its clip/scissor
-		// rectangles through the draw data's framebuffer scale, so pin that scale to the actual target extent to keep
-		// every scissor rectangle within the render pass (out-of-bounds scissors abort under graphics API validation).
-		ImDrawData *drawData = ImGui::GetDrawData();
-		const glm::uvec2 extent = frame->extent();
-		if (drawData)
-			drawData->FramebufferScale = detail::GuiScaling::framebufferScale(
-				drawData->DisplaySize, ImVec2((float)extent.x, (float)extent.y), drawData->FramebufferScale
-			);
-		ImGui_ImplSDLGPU3_PrepareDrawData(drawData, frame->commandBuffer());
+	// Reuse the geometry chosen before layout and font rasterization, including during a native resize.
+	ImDrawData *drawData = ImGui::GetDrawData();
+	if (drawData) {
+		drawData->DisplaySize = m_scaling->displaySize();
+		drawData->FramebufferScale = m_scaling->framebufferScale();
 	}
+
+	// Upload vertex/index buffers and texture updates before any render pass begins.
+	if (frame)
+		ImGui_ImplSDLGPU3_PrepareDrawData(drawData, frame->commandBuffer());
 }
 
 void Gui::renderDrawData (SDL_GPUCommandBuffer *commandBuffer, SDL_GPURenderPass *renderPass) {

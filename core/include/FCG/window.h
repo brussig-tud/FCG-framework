@@ -252,7 +252,7 @@ public:
 	/// The size is updated by <tt>\ref beginFrame</tt> to the size of the acquired window image, and by
 	/// <tt>\ref pollViewportSize</tt>.
 	///
-	/// \return The viewport size in pixels, or <tt>(0, 0)</tt> before the size was first determined.
+	/// \return The viewport size in physical pixels, or <tt>(0, 0)</tt> before the size was first determined.
 	[[nodiscard]] auto viewportSize () const -> const glm::uvec2& {
 		return m_viewportSize;
 	}

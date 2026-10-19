@@ -13,6 +13,7 @@
 
 // Local includes
 #include "FCG/player.h"
+#include "FCG/gui.h"
 #include "FCG/window.h"
 #include "FCG/viewing.h"
 
@@ -44,6 +45,10 @@ Player::~Player() {
 	shutdownPresentation();
 	depthMapping.reset();
 	depthReadback.reset();
+}
+
+auto Player::guiUnitScale () const noexcept -> float {
+	return m_gui ? m_gui->unitScale() : 1.f;
 }
 
 void Player::setWindowTitle (const std::string &title)

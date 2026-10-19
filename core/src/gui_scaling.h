@@ -77,6 +77,21 @@ public:
 	////
 	// Accessors
 
+	/// ImGui coordinate units per dimension authored at 100% display scale.
+	[[nodiscard]] auto unitScale () const noexcept -> float {
+		return scale;
+	}
+
+	/// Display dimensions for the current GUI frame, zero while minimized.
+	[[nodiscard]] auto displaySize () const noexcept -> ImVec2 {
+		return m_displaySize;
+	}
+
+	/// Framebuffer pixels per ImGui coordinate unit for the current GUI frame.
+	[[nodiscard]] auto framebufferScale () const noexcept -> ImVec2 {
+		return m_framebufferScale;
+	}
+
 	/// Whether the last requested display query failed and should be retried.
 	[[nodiscard]] auto retryPending () const -> bool {
 		return m_retryPending;
@@ -162,27 +177,32 @@ public:
 	#ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 		size *= io.FontGlobalScale;
 	#endif
-		const ImVec2 density = io.DisplayFramebufferScale;
+		const ImVec2 density = m_framebufferScale;
 		const bool native = std::abs(size - 13.f) <= tolerance
 			&& std::abs(density.x - 1.f) <= tolerance && std::abs(density.y - 1.f) <= tolerance;
 		io.FontDefault = native ? bitmapFont : vectorFont;
 	}
 
-	/// \brief Calculate the framebuffer scale shared by font rasterization and rendering.
+	/// \brief Retain frame geometry from native window queries and the acquired render target.
 	///
-	/// \param display Logical display dimensions supplied by the platform backend.
-	/// \param target The acquired render target's pixel dimensions, or zero when unavailable.
-	/// \param fallback The platform backend's current framebuffer scale.
+	/// Invalid window dimensions retain the previous normal dimensions. An acquired target takes precedence over
+	/// the queried pixel dimensions; invalid ratios retain the previous framebuffer scale. No ImGui state is read.
 	///
-	/// \return The target-to-display ratio, a valid fallback, or unit scale if both are invalid.
-	[[nodiscard]] static auto framebufferScale (ImVec2 display, ImVec2 target, ImVec2 fallback) -> ImVec2
+	/// \param window Native SDL window dimensions, or zero when the query failed.
+	/// \param pixels SDL pixel dimensions, or zero when the query failed.
+	/// \param target Acquired frame dimensions, or zero when no frame is available.
+	/// \param minimized Whether the display dimensions should be zero for this frame.
+	void updateGeometry (ImVec2 window, ImVec2 pixels, ImVec2 target, bool minimized)
 	{
-		if (positive(display.x) && positive(display.y) && positive(target.x) && positive(target.y)) {
-			const ImVec2 scale(target.x / display.x, target.y / display.y);
-			if (positive(scale.x) && positive(scale.y))
-				return scale;
-		}
-		return positive(fallback.x) && positive(fallback.y) ? fallback : ImVec2(1.f, 1.f);
+		if (positive(window.x) && positive(window.y))
+			m_windowSize = window;
+		m_displaySize = minimized ? ImVec2(0.f, 0.f) : m_windowSize;
+		if (!positive(m_displaySize.x) || !positive(m_displaySize.y))
+			return;
+		const ImVec2 extent = positive(target.x) && positive(target.y) ? target : pixels;
+		const ImVec2 density(extent.x / m_displaySize.x, extent.y / m_displaySize.y);
+		if (positive(density.x) && positive(density.y))
+			m_framebufferScale = density;
 	}
 
 
@@ -355,6 +375,15 @@ private:
 
 	/// Whether initial applet style customizations have been captured.
 	bool captured = false;
+
+	/// Last valid native window dimensions, retained through minimization and failed queries.
+	ImVec2 m_windowSize = {0.f, 0.f};
+
+	/// Main viewport dimensions published at the current frame boundary.
+	ImVec2 m_displaySize = {0.f, 0.f};
+
+	/// Render-target pixels per coordinate unit, shared by font selection and rendering.
+	ImVec2 m_framebufferScale = {1.f, 1.f};
 
 	/// The last successfully applied coordinate scale.
 	float scale = 1.f;

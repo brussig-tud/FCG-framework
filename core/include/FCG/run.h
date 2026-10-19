@@ -47,6 +47,8 @@
 /// - query the main viewport size and render-target formats
 ///   (<tt>\ref fcg::Player::viewportSize "viewportSize"</tt>,
 ///   <tt>\ref fcg::Player::mainRenderTargetInfo "mainRenderTargetInfo"</tt>);
+/// - convert GUI sizes and positions authored at 100% display scale into ImGui coordinates
+///   (<tt>\ref fcg::Player::toGuiUnits "toGuiUnits"</tt>; see \ref fcg_gui_workflows_scaling);
 /// - read back the depth buffer (<tt>\ref fcg::Player::scheduleDepthReadback "scheduleDepthReadback"</tt>), e.g. for
 ///   focus picking as done by <tt>\ref fcg::CameraFocus "CameraFocus"</tt>;
 /// - replace the main window's scene presentation

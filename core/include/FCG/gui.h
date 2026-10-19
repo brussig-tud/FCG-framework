@@ -40,7 +40,12 @@
 /// other style settings can be edited directly at any scale. Use <tt>ImGui::GetStyle().FontScaleMain</tt> for user font
 /// enlargement; <tt>ImGui::GetStyle().FontScaleDpi</tt> is managed by the framework.
 ///
-/// Express widget sizes and positions relative to font or style dimensions, as in this example:
+/// For fixed sizes and positions authored at 100% display scale, use
+/// <tt>\ref fcg::Player::toGuiUnits "Player::toGuiUnits"</tt> in your GUI callback. For example, a width of 400
+/// becomes 800 ImGui units on a Windows display at 200% scaling and stays 400 on a 2x Retina display:
+/// \snippet gui_examples.cpp gui_authored_size
+/// This conversion follows display scaling. To also follow user font enlargement, express widget sizes and
+/// positions relative to font or style dimensions:
 /// \snippet gui_examples.cpp gui_relative_size
 /// Sizes and positions explicitly supplied by an applet take precedence over automatic window scaling. Temporary
 /// style overrides must be balanced before the end of the frame.
@@ -168,6 +173,15 @@ public:
 
 	////
 	// Accessors
+
+	/// \brief Query the scale from dimensions at 100% display scale to main-window ImGui coordinates.
+	///
+	/// The scale is uniform and independent of user font enlargement or temporary style overrides.
+	///
+	/// \pre Call on the main thread after \c newFrame and before the next iteration's events are processed.
+	///
+	/// \return The current coordinate scale, retaining the last valid scale when display queries fail.
+	[[nodiscard]] auto unitScale () const noexcept -> float;
 
 	/// \brief
 	/// 	Whether a GUI text field is currently being edited. While this is \c true, key presses belong to the text

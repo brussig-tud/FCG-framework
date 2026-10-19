@@ -174,6 +174,8 @@ FCG_FRAMEWORK_EXPORT auto run (
 			// Claim the window for the GPU device, then create the framework GUI on top of it. The GUI instance is
 			// destroyed before releasing the window claim, including during exception unwinding.
 			std::unique_ptr<Gui> gui;
+			auto detachGui = [] (Player *owner) { owner->m_gui = nullptr; };
+			std::unique_ptr<Player, decltype(detachGui)> guiBinding(&player, detachGui);
 			if (device.claimWindow(window))
 			{
 				windowClaim.reset(window.get());
@@ -202,6 +204,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 			}
 			if (gui)
 			{
+				player.m_gui = gui.get();
 				// Initialize all applets
 				for (auto &applet : applets) {
 					SDL_LogInfo(
@@ -347,6 +350,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 				);
 				applet.reset();
 			}
+			guiBinding.reset();
 			gui.reset();
 			windowClaim.reset();
 		}

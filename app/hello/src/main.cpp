@@ -168,11 +168,15 @@ public:
 	/// Shows a window with a combo box for selecting the shape, followed by the selected shape's parameter widgets.
 	void gui (fcg::Device &device, fcg::Player &player) override
 	{
+		// Start our widget
 		const auto &workPos = ImGui::GetMainViewport()->WorkPos,
 		           &padding = ImGui::GetStyle().WindowPadding;
 		const auto workSizeX = ImGui::GetMainViewport()->WorkSize.x;
-		ImGui::SetNextWindowSize({ 264, 0 }, ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowPos(ImVec2{workSizeX-264 - padding.x, workPos.y + padding.y}, ImGuiCond_FirstUseEver);
+		const auto initialWidth = player.toGuiUnits(264.f);
+		ImGui::SetNextWindowSize({ initialWidth, 0 }, ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowPos(
+			ImVec2{workSizeX-initialWidth - padding.x, workPos.y + padding.y}, ImGuiCond_FirstUseEver
+		);
 		ImGui::Begin("Simple Shapes");
 
 		// Shape selection combo box.

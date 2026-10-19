@@ -291,7 +291,7 @@ void OrbitCamera::onEvent (const Event &event, EventContext &context, Player &pl
 	}
 }
 
-void OrbitCamera::gui (Device&, Player&)
+void OrbitCamera::gui (Device&, Player &player)
 {
 	const auto &workPos = ImGui::GetMainViewport()->WorkPos;
 	const auto &padding = ImGui::GetStyle().WindowPadding;

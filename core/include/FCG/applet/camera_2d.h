@@ -205,10 +205,8 @@ public:
 	/// eye position, focal point XY, rotation and navigation speed factor, buttons for \c resetRotation and
 	/// \c resetFocus, and a summary of the mouse controls.
 	///
-	/// \param device
-	/// 	Unused.
-	/// \param player
-	/// 	Unused.
+	/// \param device Unused.
+	/// \param player The player driving this camera.
 	///
 	/// \throws std::invalid_argument
 	/// 	If a value entered in the GUI is rejected by the corresponding setter.

@@ -117,10 +117,13 @@ public:
 	{
 		// Start our widget
 		const auto &workPos = ImGui::GetMainViewport()->WorkPos,
-		           &padding = ImGui::GetStyle().WindowPadding;
+				   &padding = ImGui::GetStyle().WindowPadding;
 		const auto workSizeX = ImGui::GetMainViewport()->WorkSize.x;
-		ImGui::SetNextWindowSize({ 296, 0 }, ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowPos(ImVec2{workSizeX-296 - padding.x, workPos.y + padding.y}, ImGuiCond_FirstUseEver);
+		const auto initialWidth = player.toGuiUnits(264.f);
+		ImGui::SetNextWindowSize({ initialWidth, 0 }, ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowPos(
+			ImVec2{workSizeX-initialWidth - padding.x, workPos.y + padding.y}, ImGuiCond_FirstUseEver
+		);
 		ImGui::Begin("Image Loader");
 
 		// File selection

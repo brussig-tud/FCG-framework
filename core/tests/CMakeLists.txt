@@ -12,6 +12,15 @@ target_link_libraries(gui-scaling-smoke PRIVATE Core)
 add_test(NAME gui-scaling-smoke COMMAND gui-scaling-smoke)
 set_tests_properties(gui-scaling-smoke PROPERTIES TIMEOUT 10)
 
+# Public GUI unit conversions, custom arithmetic and frame geometry through the real runtime.
+add_executable(gui-units-smoke gui/units.cpp)
+target_link_libraries(gui-units-smoke PRIVATE Core)
+add_test(NAME gui-units-smoke COMMAND gui-units-smoke)
+# Exercise a fractional coordinate scale on X11; other video drivers ignore this SDL hint.
+set_tests_properties(gui-units-smoke PROPERTIES TIMEOUT 60
+	ENVIRONMENT "SDL_VIDEO_X11_SCALING_FACTOR=1.5"
+	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
+
 # Window sizing policy and SDL dummy-driver integration without a display server or GPU.
 add_executable(window-scaling-smoke gui/window_scaling.cpp)
 target_include_directories(window-scaling-smoke PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")

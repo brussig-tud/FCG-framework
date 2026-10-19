@@ -15,6 +15,7 @@
 #include <span>
 #include <atomic>
 #include <optional>
+#include <concepts>
 
 // GLM library
 #include <glm/glm.hpp>
@@ -36,10 +37,14 @@
 
 // Framework types
 namespace fcg {
+	class Gui;
 	class Window;
 	class Frame;
 	class Camera;
 }
+
+// Dear ImGui types
+struct ImVec2;
 
 
 
@@ -168,8 +173,39 @@ public:
 	/// \brief
 	/// 	The current size of the main window viewport.
 	///
-	/// \return The viewport size in pixels, or <tt>(0, 0)</tt> if the player has no main window.
+	/// \return The viewport size in physical pixels, or <tt>(0, 0)</tt> if the player has no main window.
 	[[nodiscard]] auto viewportSize () const -> glm::uvec2;
+
+	/// \brief Convert a distance or position authored at 100% display scale into ImGui coordinates.
+	///
+	/// Both position components are measured from the main window's top-left corner. The conversion scales each
+	/// component uniformly without translating the origin or rounding. User font enlargement and temporary style
+	/// overrides do not affect it. A player without an attached GUI uses a scale of one.
+	///
+	/// \pre With an attached GUI, call from \c Applet::gui, \c Applet::update or \c Applet::render on the main thread.
+	///
+	/// \tparam T
+	/// 	The value type. Supports \c float, \c double, \c ImVec2, \c glm::vec2 and \c glm::dvec2. Other non-integral
+	/// 	types must support <tt>value * float</tt> with a result implicitly convertible to \c T.
+	///
+	/// \param value The distance or position at 100% display scale; zero and negative components are allowed.
+	///
+	/// \return The converted value, preserving its type and double-precision components.
+	///
+	/// \throws ... Exceptions from user-defined multiplication or result conversion propagate to the caller.
+	template <class T>
+	requires
+		   (!std::integral<T>)
+		&& (   std::same_as<T, ImVec2> || std::same_as<T, glm::dvec2>
+		    || requires (T value, float scale){{value*scale} -> std::convertible_to<T>;})
+	[[nodiscard]] auto toGuiUnits (T value) const -> T
+	{
+		const float scale = guiUnitScale();
+		if constexpr (std::same_as<T, ImVec2> || std::same_as<T, glm::dvec2>)
+			return T{value.x * scale, value.y * scale};
+		else
+			return value * scale;
+	}
 
 	/// \brief
 	/// 	Check whether at least one continuous redraw request is active.
@@ -326,6 +362,9 @@ private:
 	////
 	// Methods
 
+	/// Query the attached GUI's retained coordinate scale, or one when no GUI is attached.
+	[[nodiscard]] auto guiUnitScale () const noexcept -> float;
+
 	/// Create the default recorder for the claimed main window. Returns a resource-creation error on failure;
 	/// recorder allocation exceptions propagate. Called before applet initialization.
 	[[nodiscard]] auto initializePresentation () -> std::expected<void, FullscreenError>;
@@ -363,6 +402,9 @@ private:
 	/// The main window that applets can interact with through the player. Non-owning – the window is owned by whoever
 	/// created the \c fcg::Player, (e.g., <tt>\ref fcg::run</tt>) and must outlive the player.
 	Window *m_window = nullptr;
+
+	/// Borrowed GUI, attached by the runtime and detached before its destruction, including on unwinding.
+	Gui *m_gui = nullptr;
 
 	/// The currently ongoing frame. Non-owning reference, managed externally.
 	Frame *frame = nullptr;

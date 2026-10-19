@@ -13,6 +13,7 @@
 // FCG Framework
 // [includes]
 #include <FCG/applet.h>
+#include <FCG/player.h>
 // [includes]
 
 
@@ -56,6 +57,14 @@ public:
 // [gui_widgets]
 void ExampleApplet::gui (fcg::Device &device, fcg::Player &player)
 {
+	// [gui_authored_size]
+	ImGui::SetNextWindowPos(player.toGuiUnits(ImVec2(20.f, 20.f)), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(player.toGuiUnits(ImVec2(400.f, 300.f)), ImGuiCond_FirstUseEver);
+	ImGui::Begin("Fixed-size panel");
+	ImGui::TextUnformatted("Dimensions follow display scaling.");
+	ImGui::End();
+	// [gui_authored_size]
+
 	// [gui_relative_size]
 	ImGui::SetNextWindowSize(ImVec2(30.f * ImGui::GetFontSize(), 0.f), ImGuiCond_FirstUseEver);
 	// [gui_relative_size]

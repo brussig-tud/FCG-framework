@@ -173,9 +173,11 @@ void eventsAndFailures ()
 		std::numeric_limits<float>::quiet_NaN()})
 	{
 		test.move(invalid);
-		check(test.scaling.retryPending() && ImGui::GetStyle().FontScaleDpi == 2.f);
+		check(test.scaling.retryPending() && test.scaling.unitScale() == 2.f
+			&& ImGui::GetStyle().FontScaleDpi == 2.f);
 		test.move(2.f, invalid);
-		check(test.scaling.retryPending() && ImGui::GetStyle().FontScaleDpi == 2.f);
+		check(test.scaling.retryPending() && test.scaling.unitScale() == 2.f
+			&& ImGui::GetStyle().FontScaleDpi == 2.f);
 	}
 	test.display = {1.f, 1.f};
 	test.refresh();
@@ -225,13 +227,14 @@ void stylePreservation ()
 /// Check startup scales and density-only moves separately from coordinate-scale changes.
 void coordinateModels ()
 {
-	for (float scale : {1.f, 1.5f, 2.f})
+	for (float scale : {1.f, 1.25f, 1.5f, 2.f})
 	{
 		Context test;
 		ImGui::GetStyle().ScrollbarSize = 17.f;
 		test.move(scale);
 		check(ImGui::GetStyle().ScrollbarSize == std::trunc(17.f * scale));
 		check(ImGui::GetStyle().FontScaleDpi == scale);
+		check(test.scaling.unitScale() == scale);
 	}
 	Context test;
 	test.refresh();
@@ -241,7 +244,8 @@ void coordinateModels ()
 	test.move(2.f, 2.f);
 	check(ImGui::GetStyle().FontScaleDpi == 1.f);
 	check(window->SizeFull.x == size.x && window->Pos.x == position.x);
-	ImGui::GetIO().DisplayFramebufferScale = ImVec2(2, 2);
+	test.scaling.updateGeometry({2000, 1600}, {4000, 3200}, {}, false);
+	ImGui::GetIO().DisplayFramebufferScale = test.scaling.framebufferScale();
 	test.scaling.selectFont();
 	check(ImGui::GetIO().FontDefault == test.vector);
 	test.panel();
@@ -336,10 +340,10 @@ void fonts ()
 	test.scaling.selectFont();
 	check(io.FontDefault == test.vector);
 	style._NextFrameFontSizeBase = 0.f;
-	io.DisplayFramebufferScale = ImVec2(1, 1.5f);
+	test.scaling.updateGeometry({800, 600}, {800, 900}, {}, false);
 	test.scaling.selectFont();
 	check(io.FontDefault == test.vector);
-	io.DisplayFramebufferScale = ImVec2(1, 1);
+	test.scaling.updateGeometry({800, 600}, {800, 600}, {}, false);
 	test.scaling.selectFont();
 	check(io.FontDefault == test.bitmap);
 #ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
@@ -361,19 +365,44 @@ void fonts ()
 /// Check that a stale window query cannot give fonts a different density than the acquired target.
 void framebufferConsistency ()
 {
-	using fcg::detail::GuiScaling;
 	Context test;
+	test.scaling.updateGeometry({}, {}, {}, false);
+	check(test.scaling.displaySize().x == 0 && test.scaling.framebufferScale().x == 1.f);
 	test.move(2.f, 2.f);
+	auto &scaling = test.scaling;
+	scaling.updateGeometry({800, 600}, {1600, 1200}, {1200, 900}, false);
 	auto &io = ImGui::GetIO();
-	io.DisplaySize = ImVec2(800, 600);
-	io.DisplayFramebufferScale = GuiScaling::framebufferScale(io.DisplaySize, ImVec2(1200, 900), ImVec2(2, 2));
+	io.DisplaySize = scaling.displaySize();
+	io.DisplayFramebufferScale = scaling.framebufferScale();
 	check(near(io.DisplayFramebufferScale.x, 1.5f));
 	test.panel();
 	const auto *draw = ImGui::GetDrawData();
-	check(draw && draw->FramebufferScale.x == io.DisplayFramebufferScale.x);
+	check(draw && draw->FramebufferScale.x == scaling.framebufferScale().x);
 	check(near(ImGui::GetFont()->CurrentRasterizerDensity, draw->FramebufferScale.x));
-	check(GuiScaling::framebufferScale(ImVec2(0, 0), ImVec2(1200, 900), ImVec2(2, 2)).x == 2.f);
-	check(GuiScaling::framebufferScale(ImVec2(800, 600), ImVec2(0, 0), ImVec2(0, 0)).x == 1.f);
+	check(scaling.unitScale() == 1.f);
+	io.DisplaySize = {42, 17};
+	io.DisplayFramebufferScale = {9, 7};
+	ImGui::GetStyle().FontScaleDpi = 13.f;
+	check(scaling.displaySize().x == 800 && scaling.framebufferScale().x == 1.5f);
+	check(scaling.unitScale() == 1.f);
+	scaling.updateGeometry({}, {}, {}, false);
+	check(scaling.displaySize().y == 600 && scaling.framebufferScale().y == 1.5f);
+	scaling.updateGeometry({}, {}, {}, true);
+	check(scaling.displaySize().x == 0 && scaling.displaySize().y == 0);
+	check(scaling.framebufferScale().x == 1.5f);
+	scaling.updateGeometry({}, {1600, 900}, {}, false);
+	check(scaling.displaySize().x == 800);
+	check(scaling.framebufferScale().x == 2.f && scaling.framebufferScale().y == 1.5f);
+	scaling.updateGeometry({0, 600}, {}, {400, 300}, false);
+	check(scaling.framebufferScale().x == .5f && scaling.framebufferScale().y == .5f);
+	for (float invalid : {-1.f, std::numeric_limits<float>::infinity(),
+		std::numeric_limits<float>::quiet_NaN()})
+	{
+		scaling.updateGeometry({invalid, 600}, {invalid, 900}, {invalid, 1200}, false);
+		check(scaling.displaySize().x == 800 && scaling.framebufferScale().x == .5f);
+	}
+	scaling.updateGeometry({1000, 500}, {1500, 1000}, {}, false);
+	check(scaling.framebufferScale().x == 1.5f && scaling.framebufferScale().y == 2.f);
 }
 
 // Anonymous namespace end
