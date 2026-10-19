@@ -40,6 +40,9 @@
 /// <tt>\ref fcg::applet::OrbitCamera::resetRotation "resetRotation"</tt> restores direction -Z and up +Y around the
 /// current focus, and <tt>\ref fcg::applet::OrbitCamera::resetFocus "resetFocus"</tt> retargets the world origin from
 /// the existing eye. Manual mutations cancel a running picked-focus animation.
+/// Use <tt>\ref fcg::Camera::setOrientation "Camera::setOrientation"</tt> to replace direction and up together,
+/// or <tt>\ref fcg::Camera::setDir "Camera::setDir"</tt> and <tt>\ref fcg::Camera::setUp "Camera::setUp"</tt>
+/// to change one axis. These setters keep the axes normalized and perpendicular.
 ///
 /// \section fcg_orbit_camera_lifetime Ownership and lifetime
 /// Run the applet before the scene applets it should serve. The <tt>\ref fcg::Player "Player"</tt> must outlive the
@@ -49,6 +52,8 @@
 /// Nonfinite inputs, zero or parallel axes, orthographic alternatives, and a focus closer than 0.001 world units to
 /// the eye throw \c std::invalid_argument without changing the camera. Focus and clipping distances clamp to 0.001,
 /// and perspective angles clamp to [1, 179] degrees.
+/// Accepted extreme focus distances or world coordinates can still destabilize mouse navigation through loss of
+/// single-precision accuracy. Keep scene coordinates and camera distances on a comparable, moderate scale.
 ///
 /// \see \ref fcg_viewing, \ref fcg_camera_focus, \ref fcg_camera_2d, \ref fcg_applets
 
@@ -177,6 +182,11 @@ public:
 	/// middle or right mouse button, the release of the button that started the current drag, mouse motion while
 	/// a drag is active, and wheel events with nonzero vertical scroll.
 	///
+	/// \note
+	/// 	Extreme focus distances or world coordinates can lose significant digits during navigation. An accepted
+	/// 	configuration can then produce an unusable pose or viewing matrix without an exception; numerical failure
+	/// 	is not always detected.
+	///
 	/// \param event
 	/// 	The event to process.
 	/// \param context
@@ -185,8 +195,7 @@ public:
 	/// 	The player used for depth picking. Must be the same in every call.
 	///
 	/// \throws std::invalid_argument
-	/// 	If a navigation step would lead to an invalid pose, e.g. one that cannot be represented in single
-	/// 	precision. The camera remains in a valid state.
+	/// 	If a navigation operation requests a pose or focus distance rejected by the corresponding camera setter.
 	/// \throws std::runtime_error
 	/// 	If a double-click cannot request the scene depth; see
 	/// 	<tt>\ref fcg::CameraFocus::pick "CameraFocus::pick"</tt>.
@@ -267,6 +276,10 @@ public:
 	///
 	/// The distance is clamped to at least 0.001.
 	///
+	/// \note
+	/// 	An extreme focus distance can destabilize orbit controls even when accepted. Single-precision arithmetic
+	/// 	can lose the small positional offsets needed to calculate a valid viewing pose after moving the eye.
+	///
 	/// \param f
 	/// 	The new focus distance in world units.
 	///
@@ -299,6 +312,10 @@ public:
 
 	/// \brief Move the eye, keeping orientation and focus distance, so that the focal point moves along.
 	///
+	/// \note
+	/// 	Extreme world coordinates can destabilize orbit controls even when accepted. Single-precision arithmetic
+	/// 	can lose small positional or directional offsets as the eye moves, producing an unusable viewing matrix.
+	///
 	/// \param eye
 	/// 	The new eye position in world space.
 	///
@@ -306,25 +323,13 @@ public:
 	/// 	If \c eye is not finite or the resulting pose or focal point cannot be represented.
 	void setEye (const glm::vec3 &eye) override;
 
-	/// \brief Set the viewing direction, keeping the eye, the up vector and the focus distance.
+	/// \brief Store normalized perpendicular direction and up vectors together, keeping the eye and focus distance.
 	///
-	/// \param dir
-	/// 	The new viewing direction in world space; it is normalized.
+	/// \pre The preconditions of \c Camera::setOrientationUnchecked hold.
 	///
-	/// \throws std::invalid_argument
-	/// 	If \c dir is zero or not finite, (nearly) parallel to the current up vector, or the resulting pose cannot
-	/// 	be represented.
-	void setDir (const glm::vec3 &dir) override;
-
-	/// \brief Set the up vector, keeping the eye, the viewing direction and the focus distance.
-	///
-	/// \param up
-	/// 	The new up vector in world space; it is normalized.
-	///
-	/// \throws std::invalid_argument
-	/// 	If \c up is zero or not finite, (nearly) parallel to the current viewing direction, or the resulting pose
-	/// 	cannot be represented.
-	void setUp (const glm::vec3 &up) override;
+	/// \param dir The normalized viewing direction in world space.
+	/// \param up The normalized up vector in world space.
+	void setOrientationUnchecked (const glm::vec3 &dir, const glm::vec3 &up) override;
 
 	/// \brief Turn the camera from its current eye position toward the given point, which becomes the focal point.
 	///
@@ -332,6 +337,10 @@ public:
 	/// perpendicular to the new viewing direction, staying as close as possible to the current up vector. If the
 	/// current up vector is (nearly) parallel to the new direction, +Y is used instead, or +Z when looking (nearly)
 	/// along the Y axis.
+	///
+	/// \note
+	/// 	Extreme coordinates or a point far from the eye can destabilize orbit controls even when accepted.
+	/// 	Single-precision arithmetic can lose small offsets when moving the eye around a distant focal point.
 	///
 	/// \param focalPoint
 	/// 	The new focal point in world space.
@@ -342,6 +351,10 @@ public:
 	void setFocalPoint (const glm::vec3 &focalPoint) override;
 
 	/// \brief Move the eye so that the given point becomes the focal point, keeping orientation and focus distance.
+	///
+	/// \note
+	/// 	Extreme world coordinates can destabilize orbit controls even when accepted. Single-precision arithmetic
+	/// 	can lose small positional or directional offsets during navigation, producing an unusable viewing matrix.
 	///
 	/// \param focalPoint
 	/// 	The new focal point in world space.

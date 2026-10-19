@@ -36,16 +36,22 @@
 /// <tt>\ref fcg::applet::Camera2D::resetRotation "resetRotation"</tt> restores up +Y, and
 /// <tt>\ref fcg::applet::Camera2D::resetFocus "resetFocus"</tt> centers the XY origin; both take effect immediately
 /// and preserve zoom and depth. Rotation is measured in degrees in [-180, 180), with 0 meaning up +Y.
+/// <tt>\ref fcg::Camera::setUp "Camera::setUp"</tt> projects the supplied up vector onto XY and normalizes it;
+/// tilted inputs with a usable XY component are accepted. <tt>\ref fcg::Camera::setDir "Camera::setDir"</tt>
+/// accepts normalized directions within <tt>1e-5</tt> of -Z and stores exactly -Z.
+/// <tt>\ref fcg::Camera::setOrientation "Camera::setOrientation"</tt> changes both axes together under the same
+/// direction restriction, keeping the up vector exactly in XY.
 ///
 /// \section fcg_camera_2d_lifetime Ownership and lifetime
 /// Run the applet before the scene applets it should serve. The <tt>\ref fcg::Player "Player"</tt> must outlive the
 /// applet; the normal run loop guarantees this.
 ///
 /// \section fcg_camera_2d_errors Handling errors
-/// Unsupported projection alternatives, tilted or zero axes, changed focus depth, and nonfinite inputs throw
-/// \c std::invalid_argument without changing the camera. Direction and plane checks use a normalized tolerance of
-/// \c 1e-5; focus depth uses a world-unit tolerance of \c 1e-5. The height clamps to [0.001, 100000] world units,
-/// focus and near distances to at least 0.001, and the far distance to at least near plus 0.001.
+/// Unsupported projection alternatives or viewing directions, zero or nearly parallel axes, changed focus depth,
+/// and nonfinite inputs throw \c std::invalid_argument without changing the camera. Direction and parallel checks
+/// use a normalized tolerance of \c 1e-5; focus depth uses a world-unit tolerance of \c 1e-5. The height clamps to
+/// [0.001, 100000] world units, focus and near distances to at least 0.001, and the far distance to at least near
+/// plus 0.001.
 ///
 /// \see \ref fcg_viewing, \ref fcg_camera_focus, \ref fcg_orbit_camera, \ref fcg_applets
 
@@ -319,29 +325,20 @@ public:
 	/// 	If \c eye is not finite or the resulting focal point cannot be represented.
 	void setEye (const glm::vec3 &eye) override;
 
-	/// \brief Accept only the viewing direction -Z.
+	/// \brief Set direction and up together, snapping a supported normalized direction to exactly -Z.
 	///
-	/// A direction whose normalized value lies within a distance of <tt>1e-5</tt> of -Z is accepted and stored as
-	/// exactly -Z.
+	/// Directions within <tt>1e-5</tt> of -Z are accepted. The prepared up vector is projected onto XY and
+	/// normalized again. The eye and focus distance stay unchanged.
 	///
-	/// \param dir
-	/// 	The requested viewing direction.
+	/// \pre The preconditions of \c Camera::setOrientationUnchecked hold.
 	///
-	/// \throws std::invalid_argument
-	/// 	If \c dir is zero, not finite, or any other direction.
-	void setDir (const glm::vec3 &dir) override;
-
-	/// \brief Set the up vector, which determines the rotation around Z.
-	///
-	/// The vector is normalized; its Z component must then be within <tt>1e-5</tt> of zero. It is set to exactly
-	/// zero and the result normalized again.
-	///
-	/// \param up
-	/// 	The new up vector in world space.
+	/// \param dir The normalized viewing direction in world space.
+	/// \param up The normalized up vector perpendicular to \p dir, projected onto XY before storage.
 	///
 	/// \throws std::invalid_argument
-	/// 	If \c up is zero, not finite, or tilted out of the XY plane beyond the tolerance.
-	void setUp (const glm::vec3 &up) override;
+	/// 	If \c dir differs from -Z by more than <tt>1e-5</tt> or the resulting pose cannot be represented. The camera
+	/// 	remains unchanged, including any running focus animation.
+	void setOrientationUnchecked (const glm::vec3 &dir, const glm::vec3 &up) override;
 
 	/// \brief Pan so that the given point becomes the focal point; same as \c translateToFocalPoint.
 	///

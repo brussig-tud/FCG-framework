@@ -41,6 +41,12 @@
 /// <tt>\ref fcg::Camera::translateToFocalPoint "translateToFocalPoint"</tt> to aim at a point, and
 /// <tt>\ref fcg::Camera::setFovY "setFovY"</tt> or <tt>\ref fcg::Camera::setFocalLength "setFocalLength"</tt> to
 /// zoom. How a requested focus point is reached depends on the camera; see the two applet guides.
+/// <tt>\ref fcg::Camera::setUp "setUp"</tt> removes the up vector's component along the viewing direction and
+/// normalizes it. <tt>\ref fcg::Camera::setDir "setDir"</tt> changes the direction and projects the existing up
+/// vector onto the new viewing plane. Both reject zero or nearly parallel axes.
+/// To replace both axes together, use <tt>\ref fcg::Camera::setOrientation "setOrientation"</tt>. Its new direction
+/// and up vector are independent of the old axes, allowing a 90-degree upward pitch in one operation:
+/// \snippet camera_examples.cpp quarter turn
 ///
 /// \subsection fcg_viewing_workflows_implementing Implementing a custom camera
 /// Derive from <tt>\ref fcg::Camera "Camera"</tt>, keep a <tt>\ref fcg::CameraParameters "CameraParameters"</tt>
@@ -48,6 +54,13 @@
 /// always reflects the current state. If your camera can be focused with <tt>\ref fcg::CameraFocus "CameraFocus"</tt>,
 /// its setters should call <tt>\ref fcg::CameraFocus::cancel "CameraFocus::cancel"</tt> to stop a running focus
 /// animation before applying a manual change.
+/// The shared, final <tt>\ref fcg::Camera::setDir "setDir"</tt>, <tt>\ref fcg::Camera::setUp "setUp"</tt> and
+/// <tt>\ref fcg::Camera::setOrientation "setOrientation"</tt> perform normalization and orthogonalization.
+/// Implement <tt>\ref fcg::Camera::setOrientationUnchecked "setOrientationUnchecked"</tt> to store the prepared
+/// pair together, preserving the eye and focus distance. Prepare any supported-axis snapping and reproject the up
+/// vector before changing state. Reject unsupported or unrepresentable results before cancelling focus animation,
+/// then commit the complete orientation and invalidate any cached viewing matrix. Callbacks must see a complete
+/// old or new pose.
 ///
 /// \section fcg_viewing_lifetime Ownership and lifetime
 /// Parameters are ordinary values. References returned by <tt>\ref fcg::Camera::params "params"</tt> are borrowed
@@ -433,23 +446,66 @@ public:
 	/// 	If \c eye is not finite or the resulting pose or focal point cannot be represented.
 	virtual void setEye (const glm::vec3 &eye) = 0;
 
-	/// \brief Set the viewing direction, which is normalized on acceptance.
+	/// \brief Set the viewing direction and make the existing up vector perpendicular to it.
+	///
+	/// The direction is normalized. The existing up vector is projected onto the resulting viewing plane and
+	/// normalized, keeping the eye and focus distance. Cameras may snap an accepted direction to a supported axis;
+	/// the up vector is projected against that stored direction.
 	///
 	/// \param dir
 	/// 	The new viewing direction in world space.
 	///
 	/// \throws std::invalid_argument
-	/// 	If \c dir is zero or not finite, parallel to the up vector, or not supported by the camera.
-	virtual void setDir (const glm::vec3 &dir) = 0;
+	/// 	If \c dir is zero or not finite, the cross product of the normalized axes has length below
+	/// 	<tt>1e-5</tt>, the resulting pose cannot be represented, or the direction is not supported by the camera.
+	virtual void setDir (const glm::vec3 &dir) final;
 
-	/// \brief Set the up vector, which is normalized on acceptance.
+	/// \brief Set the up vector after making it perpendicular to the current viewing direction.
+	///
+	/// The input is normalized, projected onto the viewing plane and normalized again. The eye, viewing direction
+	/// and focus distance stay unchanged.
 	///
 	/// \param up
 	/// 	The new up vector in world space.
 	///
 	/// \throws std::invalid_argument
-	/// 	If \c up is zero or not finite, parallel to the viewing direction, or not supported by the camera.
-	virtual void setUp (const glm::vec3 &up) = 0;
+	/// 	If \c up is zero or not finite, the cross product of the normalized axes has length below
+	/// 	<tt>1e-5</tt>, or the resulting pose cannot be represented.
+	virtual void setUp (const glm::vec3 &up) final;
+
+	/// \brief Set the viewing direction and up vector together, keeping the eye and focus distance.
+	///
+	/// The direction is normalized, and the supplied up vector is projected onto its perpendicular plane and
+	/// normalized. The pair is applied together: neither input needs to be compatible with the old axes. A camera
+	/// may snap an accepted direction to a supported axis and adjust the prepared up vector to remain perpendicular.
+	/// References to the camera's current parameters may be passed as either argument.
+	///
+	/// \param dir The new viewing direction in world space.
+	/// \param up The new up vector in world space, projected perpendicular to \p dir.
+	///
+	/// \throws std::invalid_argument
+	/// 	If either input is zero or not finite, the cross product of the normalized inputs has length below
+	/// 	<tt>1e-5</tt>, the resulting pose cannot be represented, or the orientation is not supported by the camera.
+	/// 	The camera remains unchanged, including any running focus animation.
+	virtual void setOrientation (const glm::vec3 &dir, const glm::vec3 &up) final;
+
+	/// \brief Store a complete prepared orientation, keeping the eye and focus distance.
+	///
+	/// Use \c setOrientation for automatic normalization, orthogonalization and pose validation. This method
+	/// applies both axes together, accepting inputs independently of the old orientation. A camera may snap an
+	/// accepted direction to a supported axis and adjust the supplied up vector to remain perpendicular.
+	///
+	/// \pre
+	/// 	\p dir and \p up are finite unit vectors perpendicular to each other. Together with the current eye and
+	/// 	focus distance they must define a pose and focal point representable in single precision.
+	///
+	/// \param dir The normalized viewing direction in world space.
+	/// \param up The normalized up vector in world space.
+	///
+	/// \throws std::invalid_argument
+	/// 	If the camera does not support the orientation or cannot represent the pose after snapping to a supported
+	/// 	axis. The camera remains unchanged, including any running focus animation.
+	virtual void setOrientationUnchecked (const glm::vec3 &dir, const glm::vec3 &up) = 0;
 
 	/// \brief Make the given world-space point the focal point.
 	///
@@ -501,6 +557,10 @@ public:
 	///
 	/// Only supported for perspective cameras; the angle and the eye stay unchanged. The diameter is first clamped to
 	/// at least 0.001, and the result is then subject to the clamping of \c setFocalLength.
+	///
+	/// \note
+	/// 	For orbit cameras, an extreme resulting focus distance can destabilize mouse navigation: single-precision
+	/// 	arithmetic can lose the small offsets needed to calculate a valid viewing pose.
 	///
 	/// \param diameter
 	/// 	The requested full vertical height at the focus distance, in world units.

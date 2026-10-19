@@ -136,23 +136,10 @@ void OrbitCamera::setEye (const glm::vec3 &eye) {
 	viewMatrix.reset();
 }
 
-void OrbitCamera::setDir (const glm::vec3 &dir)
-{
-	const auto direction = detail::normalized(dir);
-	detail::requirePose(direction, m_params.extrinsics.up);
-	detail::requireEye(m_params.extrinsics.eye, direction, m_params.extrinsics.up, m_params.intrinsics.f);
+void OrbitCamera::setOrientationUnchecked (const glm::vec3 &dir, const glm::vec3 &up) {
+	const CameraParameters::Extrinsics pose{m_params.extrinsics.eye, dir, up};
 	focusChange->cancel();
-	m_params.extrinsics.dir = direction;
-	viewMatrix.reset();
-}
-
-void OrbitCamera::setUp (const glm::vec3 &up)
-{
-	const auto upwards = detail::normalized(up);
-	detail::requirePose(m_params.extrinsics.dir, upwards);
-	detail::requireEye(m_params.extrinsics.eye, m_params.extrinsics.dir, upwards, m_params.intrinsics.f);
-	focusChange->cancel();
-	m_params.extrinsics.up = upwards;
+	m_params.extrinsics = pose;
 	viewMatrix.reset();
 }
 

@@ -140,32 +140,22 @@ void Camera2D::setEyeZ (float z) {
 	setEye({m_params.extrinsics.eye.x, m_params.extrinsics.eye.y, z});
 }
 
-void Camera2D::setDir (const glm::vec3 &dir)
+void Camera2D::setOrientationUnchecked (const glm::vec3 &dir, const glm::vec3 &up)
 {
-	const auto direction = detail::normalized(dir);
-	if (glm::length(direction - glm::vec3(0, 0, -1)) > 1e-5f)
+	if (glm::length(dir - glm::vec3(0, 0, -1)) > 1e-5f)
 		throw std::invalid_argument("Camera2D direction must be -Z");
+	const auto upwards = glm::normalize(glm::vec3(up.x, up.y, 0));
+	const CameraParameters::Extrinsics pose{m_params.extrinsics.eye, {0, 0, -1}, upwards};
+	detail::requireEye(pose.eye, pose.dir, pose.up, m_params.intrinsics.f);
 	focusChange->cancel();
-	m_params.extrinsics.dir = {0, 0, -1};
-	viewMatrix.reset();
-}
-
-void Camera2D::setUp (const glm::vec3 &up)
-{
-	auto upwards = detail::normalized(up);
-	if (std::abs(upwards.z) > 1e-5f)
-		throw std::invalid_argument("Camera2D up must lie in XY");
-	upwards.z = 0.f;
-	upwards = glm::normalize(upwards);
-	focusChange->cancel();
-	m_params.extrinsics.up = upwards;
+	m_params.extrinsics = pose;
 	viewMatrix.reset();
 }
 
 void Camera2D::setRotation (float angle) {
 	detail::requireFinite(angle);
 	const auto radians = glm::radians(wrappedAngle(angle));
-	setUp({-std::sin(radians), std::cos(radians), 0});
+	setOrientationUnchecked(m_params.extrinsics.dir, {-std::sin(radians), std::cos(radians), 0});
 }
 
 auto Camera2D::rotation () const -> float {

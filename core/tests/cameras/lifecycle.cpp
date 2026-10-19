@@ -146,14 +146,16 @@ public:
 		return context.wasHandled();
 	}
 
-	[[nodiscard]] auto motion (float dx, float dy) -> bool {
+	/// Send relative pointer motion to an applet, defaulting to the planar camera.
+	[[nodiscard]] auto motion (float dx, float dy, fcg::Applet *applet = nullptr) -> bool
+	{
 		SDL_Event raw{};
 		raw.type = SDL_EVENT_MOUSE_MOTION;
 		raw.motion.windowID = SDL_GetWindowID(mainWindow);
 		raw.motion.xrel = dx;
 		raw.motion.yrel = dy;
 		fcg::EventContext context;
-		camera.onEvent(fcg::makeEvent(raw), context, *player);
+		(applet ? *applet : camera).onEvent(fcg::makeEvent(raw), context, *player);
 		return context.wasHandled();
 	}
 
@@ -218,6 +220,33 @@ public:
 		require(camera.params().extrinsics.eye == eye && camera.params().intrinsics.f == 3, "Zoom changed pose or focus distance");
 		camera.setViewHeight(4);
 		camera.resetRotation();
+		orbitControls();
+	}
+
+	/// Check that both shared axis setters keep orbit panning in the image plane.
+	void orbitControls ()
+	{
+		const auto initial = orbit.params();
+		for (const bool changeDirection : {false, true})
+		{
+			if (changeDirection)
+				orbit.setDir({0, 1, -1});
+			else
+				orbit.setUp({0, 1, 1});
+			const auto before = orbit.params();
+			(void)button(orbit, SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_RIGHT);
+			require(motion(30, 100, &orbit), "Orbit pan motion was not handled");
+			(void)button(orbit, SDL_EVENT_MOUSE_BUTTON_UP, SDL_BUTTON_RIGHT);
+			const auto displacement = orbit.params().extrinsics.eye - before.extrinsics.eye;
+			require(glm::length(displacement) > .01f, "Orbit pan did not move the eye");
+			require(std::abs(glm::dot(displacement, before.extrinsics.dir)) < 1e-5f,
+				"Orbit pan moved the eye along the viewing direction");
+			require(close(orbit.focalPoint() - (before.extrinsics.eye + before.intrinsics.f * before.extrinsics.dir),
+				displacement), "Orbit pan changed the focus distance");
+			orbit.setEye(initial.extrinsics.eye);
+			orbit.setDir(initial.extrinsics.dir);
+			orbit.setUp(initial.extrinsics.up);
+		}
 	}
 
 	[[nodiscard]] auto pick (fcg::CameraFocus &focus, float x = .55f, float y = .55f) -> bool
@@ -279,7 +308,7 @@ public:
 		for (fcg::Applet *applet : std::array<fcg::Applet*, 2>{&camera, &orbit})
 		{
 			auto &common = *dynamic_cast<fcg::Camera*>(applet);
-			const std::array<std::function<void()>, 12> setters{
+			const std::array<std::function<void()>, 15> setters{
 				[&] { common.setFovY(common.params().intrinsics.fovY); },
 				[&] { common.setFocalLength(common.params().intrinsics.f); },
 				[&] { common.setNearPlane(.125f); },
@@ -287,6 +316,9 @@ public:
 				[&] { common.setEye(common.params().extrinsics.eye); },
 				[&] { common.setDir(common.params().extrinsics.dir); },
 				[&] { common.setUp(common.params().extrinsics.up); },
+				[&] { common.setUp(common.params().extrinsics.up + common.params().extrinsics.dir); },
+				[&] { common.setOrientation(common.params().extrinsics.dir, common.params().extrinsics.up); },
+				[&] { common.setOrientationUnchecked(common.params().extrinsics.dir, common.params().extrinsics.up); },
 				[&] { common.setFocalPoint(common.focalPoint()); },
 				[&] { common.translateToFocalPoint(common.focalPoint()); },
 				[&] { common.resetRotation(); },
@@ -307,15 +339,21 @@ public:
 		}
 		click(camera);
 		camera.update(device, player, .1f);
-		bool rejected = false;
-		try {
-			camera.setUp({0, 0, 1});
+		const std::array<std::function<void()>, 5> rejectedSetters{
+			[&] { camera.setUp({0, 0, 1}); },
+			[&] { camera.setDir({1, 0, 0}); },
+			[&] { camera.setOrientation({0, 1, 0}, {0, 0, 1}); },
+			[&] { camera.setOrientation({0, 0, -1}, {0, 0, 1}); },
+			[&] { camera.setOrientationUnchecked({1, 0, 0}, {0, 1, 0}); }
+		};
+		for (const auto &set : rejectedSetters)
+		{
+			bool rejected = false;
+			try { set(); }
+			catch (const std::invalid_argument&) { rejected = true; }
+			require(rejected, "Invalid camera input was accepted during animation");
+			redraw(true); // Rejected mutations must leave the animation active.
 		}
-		catch (const std::invalid_argument&) {
-			rejected = true;
-		}
-		require(rejected, "Tilted up was accepted during animation");
-		redraw(true); // Rejected mutations must leave the animation active.
 		camera.resetRotation();
 		redraw(false);
 		camera.resetFocus();

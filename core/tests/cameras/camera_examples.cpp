@@ -24,6 +24,8 @@
 void configureCamera (fcg::Applet &applet)
 {
 	if (auto *camera = dynamic_cast<fcg::Camera*>(&applet)) {
+		camera->setDir({0, 0, -1});
+		camera->setUp({0, 1, 1}); // Projects onto the viewing plane and normalizes.
 		camera->setNearPlane(.1f);
 		camera->setFarPlane(100.f);
 		camera->setFrustumDiameterAtFocus(6.f);
@@ -32,6 +34,13 @@ void configureCamera (fcg::Applet &applet)
 	}
 }
 /// [shared camera]
+
+/// [quarter turn]
+void pitchCameraUp (fcg::applet::OrbitCamera &camera) {
+	const auto axes = camera.params().extrinsics;
+	camera.setOrientation(axes.up, -axes.dir);
+}
+/// [quarter turn]
 
 /// [orbit camera]
 [[nodiscard]] auto orbitApplets () -> std::vector<std::unique_ptr<fcg::Applet>> {

@@ -190,6 +190,42 @@ void common (fcg::Applet &applet, bool planar)
 	}
 }
 
+/// Exercise the shared axis setters, including validation before the unchecked orientation hook mutates state.
+void axes (fcg::Camera &camera)
+{
+	const auto before = camera.params();
+	for (const float scale : {std::numeric_limits<float>::denorm_min(), std::numeric_limits<float>::max()}) {
+		camera.setUp({0, scale, scale});
+		check(close(camera.params().extrinsics.up, {0, 1, 0}));
+		camera.setDir({0, 0, -scale});
+		check(close(camera.params().extrinsics.dir, {0, 0, -1}));
+	}
+	camera.setUp({1, 2, 3});
+	check(close(camera.params().extrinsics.up, glm::normalize(glm::vec3(1, 2, 0))));
+	check(close(glm::length(camera.params().extrinsics.up), 1.f));
+	check(std::abs(glm::dot(camera.params().extrinsics.dir, camera.params().extrinsics.up)) < 1e-6f);
+	check(camera.params().extrinsics.eye == before.extrinsics.eye && camera.params().intrinsics.f == before.intrinsics.f);
+	rejects(camera, [&] { camera.setUp(-camera.params().extrinsics.dir); });
+	rejects(camera, [&] { camera.setDir(-camera.params().extrinsics.up); });
+	rejects(camera, [&] { camera.setUp({0, 5e-6f, -1}); });
+	rejects(camera, [&] { camera.setDir(camera.params().extrinsics.up + glm::vec3(0, 0, 5e-6f)); });
+	camera.setUp({0, 2e-5f, -1});
+	check(close(camera.params().extrinsics.up, {0, 1, 0}));
+	for (const float scale : {std::numeric_limits<float>::denorm_min(), std::numeric_limits<float>::max()}) {
+		camera.setOrientation({0, 0, -scale}, {scale, scale, scale});
+		check(close(camera.params().extrinsics.up, glm::normalize(glm::vec3(1, 1, 0))));
+	}
+	rejects(camera, [&] { camera.setOrientation({0, 0, 0}, {0, 1, 0}); });
+	rejects(camera, [&] { camera.setOrientation({0, 0, -1}, {0, 0, 0}); });
+	rejects(camera, [&] { camera.setOrientation({0, 0, -1}, {0, 0, 1}); });
+	rejects(camera, [&] { camera.setOrientation({0, 0, -1}, {0, 5e-6f, -1}); });
+	for (const float invalid : {std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity()}) {
+		rejects(camera, [&] { camera.setOrientation({invalid, 0, -1}, {0, 1, 0}); });
+		rejects(camera, [&] { camera.setOrientation({0, 0, -1}, {0, 1, invalid}); });
+	}
+	camera.resetRotation();
+}
+
 void planar ()
 {
 	fcg::applet::Camera2D camera;
@@ -209,11 +245,28 @@ void planar ()
 	check(camera.params().extrinsics.up.z == 0.f);
 	camera.setDir({1e-6f, 0, -2});
 	check(camera.params().extrinsics.dir == glm::vec3(0, 0, -1));
+	check(camera.params().extrinsics.up.z == 0.f);
+	check(close(camera.params().extrinsics.up, glm::normalize(glm::vec3(1, 1, 0))));
 	rejects(camera, [&] { camera.setDir({0, 0, 1}); });
 	rejects(camera, [&] { camera.setDir({.01f, 0, -1}); });
 	rejects(camera, [&] { camera.setDir({1.1e-5f, 0, -1}); });
-	rejects(camera, [&] { camera.setUp({0, 1, .01f}); });
-	rejects(camera, [&] { camera.setUp({0, 1, 1.1e-5f}); });
+	camera.setUp({0, 1, 1});
+	check(camera.params().extrinsics.up == glm::vec3(0, 1, 0));
+	camera.setUp({1, 2, 3});
+	check(camera.params().extrinsics.up.z == 0.f);
+	check(close(camera.params().extrinsics.up, glm::normalize(glm::vec3(1, 2, 0))));
+	rejects(camera, [&] { camera.setOrientationUnchecked({1, 0, 0}, {0, 1, 0}); });
+	rejects(camera, [&] { camera.setOrientation({0, 1, 0}, {0, 0, 1}); });
+	fcg::Camera &interface = camera;
+	interface.setOrientationUnchecked({0, 0, -1}, {1, 0, 0});
+	check(camera.params().extrinsics.up == glm::vec3(1, 0, 0));
+	camera.setOrientation({1e-6f, 0, -2}, {1, 1, 1});
+	check(camera.params().extrinsics.dir == glm::vec3(0, 0, -1));
+	check(camera.params().extrinsics.up.z == 0.f);
+	check(close(glm::length(camera.params().extrinsics.up), 1.f));
+	interface.setOrientationUnchecked(glm::normalize(glm::vec3(1e-6f, 0, -2)), {0, 1, 0});
+	check(camera.params().extrinsics.dir == glm::vec3(0, 0, -1));
+	check(camera.params().extrinsics.up == glm::vec3(0, 1, 0));
 	rejects(camera, [&] { camera.setFocalPoint(glm::vec3(1, 2, 5)); });
 	rejects(camera, [&] { camera.translateToFocalPoint({1, 2, 5}); });
 	camera.setFocalPoint(glm::vec3(1, 2, 4.f + 5e-6f));
@@ -237,6 +290,23 @@ void planar ()
 void orbit ()
 {
 	fcg::applet::OrbitCamera camera;
+	camera.setUp({0, 1, 1});
+	check(camera.params().extrinsics.up == glm::vec3(0, 1, 0));
+	const auto before = camera.params();
+	camera.setDir({0, 1, -1});
+	check(close(camera.params().extrinsics.dir, glm::normalize(glm::vec3(0, 1, -1))));
+	check(close(camera.params().extrinsics.up, glm::normalize(glm::vec3(0, 1, 1))));
+	check(std::abs(glm::dot(camera.params().extrinsics.dir, camera.params().extrinsics.up)) < 1e-6f);
+	check(camera.params().extrinsics.eye == before.extrinsics.eye && camera.params().intrinsics.f == before.intrinsics.f);
+	fcg::Camera &interface = camera;
+	interface.setOrientationUnchecked({1, 0, 0}, {0, 0, 1});
+	check(camera.params().extrinsics.dir == glm::vec3(1, 0, 0));
+	check(camera.params().extrinsics.up == glm::vec3(0, 0, 1));
+	camera.resetRotation();
+	camera.setEye({1e20f, 0, 3});
+	rejects(camera, [&] { camera.setDir({1, 0, 0}); });
+	rejects(camera, [&] { camera.setOrientation({1, 0, 0}, {0, 1, 0}); });
+	camera.setEye({0, 0, 3});
 	rejects(camera, [&] { camera.setFocalPoint(camera.params().extrinsics.eye); });
 	rejects(camera, [&] { camera.setDir({0, 1, 0}); });
 	camera.setFocalPoint({0, 4, 3}); // Retargeting parallel to the previous up chooses a valid fallback.
@@ -250,6 +320,67 @@ void orbit ()
 	check(std::get<Intrinsics::PerspectiveFov>(camera.params().intrinsics.fovY).angle == 1);
 	camera.setFovY(200);
 	check(std::get<Intrinsics::PerspectiveFov>(camera.params().intrinsics.fovY).angle == 179);
+}
+
+/// Verify complete orientation commits and quarter-turns through concrete and shared camera interfaces.
+void orientationCommits ()
+{
+	/// Records the complete poses visible around the single implementation hook.
+	struct ObservedCamera final : fcg::applet::OrbitCamera
+	{
+		/// The number of completed hook calls.
+		unsigned commits = 0;
+
+		/// The complete pose observed on entry to the hook.
+		fcg::CameraParameters before{};
+
+		/// The complete pose observed after the hook completes.
+		fcg::CameraParameters after{};
+
+		/// Record and apply the prepared orientation in one hook call.
+		void setOrientationUnchecked (const glm::vec3 &dir, const glm::vec3 &up) override {
+			before = params();
+			OrbitCamera::setOrientationUnchecked(dir, up);
+			after = params();
+			++commits;
+		}
+	};
+	ObservedCamera camera;
+	fcg::Camera &interface = camera;
+	const auto verifyCommit = [&] (auto action)
+	{
+		const auto before = camera.params();
+		const auto commits = camera.commits;
+		action();
+		check(camera.commits == commits + 1);
+		check(same(camera.before, before) && same(camera.after, camera.params()));
+		check(camera.after.extrinsics.eye == before.extrinsics.eye && camera.after.intrinsics.f == before.intrinsics.f);
+		for (const auto &pose : {camera.before, camera.after})
+		{
+			check(std::abs(glm::dot(pose.extrinsics.dir, pose.extrinsics.up)) < 1e-6f);
+			const auto view = pose.extrinsics.modelviewMatrix();
+			for (unsigned col = 0; col < 4; ++col)
+				for (unsigned row = 0; row < 4; ++row)
+					check(std::isfinite(view[col][row]));
+		}
+	};
+	const auto initial = camera.params().extrinsics;
+	verifyCommit([&] { camera.setOrientation(camera.params().extrinsics.up, -camera.params().extrinsics.dir); });
+	check(camera.params().extrinsics.dir == initial.up && camera.params().extrinsics.up == -initial.dir);
+	verifyCommit([&] { interface.setOrientation({1, -2, -3}, {2, 3, 1}); });
+	const auto rotated = camera.params().extrinsics;
+	verifyCommit([&] { interface.setOrientation(camera.params().extrinsics.up, -camera.params().extrinsics.dir); });
+	check(close(camera.params().extrinsics.dir, rotated.up) && close(camera.params().extrinsics.up, -rotated.dir));
+	const auto aliased = camera.params().extrinsics;
+	verifyCommit([&] { interface.setOrientation(camera.params().extrinsics.up, camera.params().extrinsics.dir); });
+	check(close(camera.params().extrinsics.dir, aliased.up) && close(camera.params().extrinsics.up, aliased.dir));
+	verifyCommit([&] { interface.setOrientationUnchecked(camera.params().extrinsics.up, camera.params().extrinsics.dir); });
+	check(close(camera.params().extrinsics.dir, aliased.dir) && close(camera.params().extrinsics.up, aliased.up));
+	verifyCommit([&] { interface.setDir(camera.params().extrinsics.dir + camera.params().extrinsics.up); });
+	verifyCommit([&] { interface.setUp(camera.params().extrinsics.up + camera.params().extrinsics.dir); });
+	const auto commits = camera.commits;
+	rejects(camera, [&] { interface.setOrientation({0, 0, -1}, {0, 0, -1}); });
+	check(camera.commits == commits);
 }
 
 // Anonymous namespace end
@@ -268,6 +399,8 @@ void orbit ()
 		parameters();
 		fcg::applet::OrbitCamera orbitCamera;
 		fcg::applet::Camera2D planarCamera;
+		axes(orbitCamera);
+		axes(planarCamera);
 		common(orbitCamera, false);
 		common(planarCamera, true);
 		fcg::CameraFocus orbitFocus(orbitCamera);
@@ -276,6 +409,7 @@ void orbit ()
 		planarFocus.resized();
 		planar();
 		orbit();
+		orientationCommits();
 	}
 	catch (const std::exception &error) {
 		std::fprintf(stderr, "%s\n", error.what());
