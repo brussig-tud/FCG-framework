@@ -158,7 +158,7 @@ If the body cannot be made single-statement, put the opening `{` on the same lin
 
 ### Class definitions
 
-Note that these instructions concern complex ("actual") classes that define at least one method (i.e., those that go into a `Classes` section). They do not apply to simple structs that go under the `Structs and enums` section, or similarly, simple nested structs defined in a class. Such "simple" structs should just observe the general documentation/commenting rules.
+Note that these instructions concern complex ("actual") classes that define at least one method (i.e., those that go into a `Classes` section), **and** which are defined in public or private interfaces of the framework. They do not apply to helper classes that are defined directly inside a function scope for local use, simple structs that go under the `Structs and enums` section, and simple nested structs defined in a class. Such "simple" structs should just observe the general documentation/commenting rules.
 
 Put the opening class brace on its own line. Align access labels (`public:`, `protected:`, `private:`) with the `class` keyword. Apply the same relative indentation to nested classes.
 

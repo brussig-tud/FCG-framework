@@ -11,6 +11,7 @@
 
 // FCG Framework
 #include <FCG/Extras/file_dialog.h>
+#include <FCG/Extras/file_filters.h>
 
 
 
@@ -46,6 +47,15 @@ void callbackExample ()
 				*state = (int)result->paths.size(); // Zero means cancellation.
 		});
 // [callback]
+}
+
+/// Build image filters without automatically appending an all-files filter.
+void imageFilterExample ()
+{
+// [image_filters]
+	fcg::extra::FileDialogOptions options;
+	options.filters = fcg::extra::imageFileFilters(fcg::ImageLoader::global().fileFormats(), false);
+// [image_filters]
 }
 
 /// Compile the remaining public overloads and the explicit completion-thread policy.

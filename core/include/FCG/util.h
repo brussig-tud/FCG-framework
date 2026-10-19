@@ -76,6 +76,8 @@
 /// Calling <tt>\ref fcg::StateMachine::transition "transition"</tt> with a state type outside the machine's state
 /// types is rejected at compile time. <tt>\ref fcg::StateMachine::get "get"</tt> throws \c std::bad_variant_access if
 /// the machine is not currently in the requested state.
+/// State types must be nothrow move-constructible. A transition that fails before committing its replacement keeps
+/// the old state active; changes made by controller hooks are retained. Constructor and hook exceptions propagate.
 
 
 
@@ -89,6 +91,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -347,8 +350,9 @@ concept has_onExit = requires(C c, S& s) { c.onExit(s); };
 /// it.
 ///
 /// \tparam Controller The controller type. The machine stores a reference to the controller.
-/// \tparam States The state types. Each type may appear only once.
+/// \tparam States The state types. Each type may appear only once and must be nothrow move-constructible.
 template<class Controller, class... States>
+	requires (std::is_nothrow_move_constructible_v<States> && ...)
 class StateMachine
 {
 public:
@@ -367,11 +371,18 @@ public:
 	/// 	Constructs a state machine with the given controller and initial state. \c onEnter is not called for the
 	/// 	initial state.
 	///
+	/// Exceptions from constructing or copying \p init propagate unchanged.
+	///
 	/// \param ctrl The controller. It must outlive the state machine.
 	/// \param init The initial state. Defaults to a default-constructed object of the first state type.
+	///
+	/// \throws std::invalid_argument If \p init is valueless by exception.
+	/// \throws ... Exceptions from constructing or copying \p init propagate unchanged.
 	explicit StateMachine(Controller& ctrl, VariantType init={})
-		: m_controller(ctrl), m_state(std::move(init))
-	{}
+		: m_controller(ctrl), m_state(std::move(init)) {
+		if (m_state.valueless_by_exception())
+			throw std::invalid_argument("State machine requires an active initial state");
+	}
 
 
 	////
@@ -436,6 +447,8 @@ public:
 	/// \tparam Old The type of the state being left.
 	///
 	/// \param old The state being left.
+	///
+	/// \throws ... Exceptions from the controller's \c onExit hook propagate unchanged.
 	template<class Old>
 	inline void onExit (Old &old) {
 		if constexpr (fsm::has_onExit<Controller, Old>) {
@@ -456,13 +469,16 @@ public:
 	/// When this is called from within the controller's \c on handler, the state reference passed to \c on refers to
 	/// the destroyed old state afterwards. The handler must not use it after the call.
 	///
-	/// If constructing the new state or \c onEnter throws, the old state remains current (although \c onExit has
-	/// already been called for it).
+	/// Exceptions from constructing the new state or from either controller hook propagate unchanged. The old state
+	/// remains current until all these operations succeed. Changes made by hooks to the old state or to other objects
+	/// are retained if a later operation throws. Moving the new state into the machine cannot throw.
 	///
 	/// \tparam NewState The type of the new state. Must be one of \p States.
 	/// \tparam Args The types of the constructor arguments.
 	///
 	/// \param args The arguments forwarded to the constructor of \c NewState.
+	///
+	/// \throws ... Exceptions from the constructor or the controller's \c onExit and \c onEnter hooks propagate unchanged.
 	template<class NewState, class... Args>
 	void transition (Args&&... args)
 	{
@@ -491,6 +507,8 @@ public:
 	/// \tparam Event The event type.
 	///
 	/// \param event The event to dispatch.
+	///
+	/// \throws ... Exceptions from the controller's event handler propagate unchanged.
 	template<class Event>
 	void handle (const Event& event)
 	{

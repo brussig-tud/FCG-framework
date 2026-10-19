@@ -52,8 +52,8 @@
 /// applet to record its draw calls.
 ///
 /// All applets share the main window, the GPU device and the <tt>\ref fcg::Player "Player"</tt>, which gives access to
-/// shared application state. When several applets are run together, each callback is invoked on every applet in the
-/// order in which the applets were passed to <tt>\ref fcg::run "run"</tt>.
+/// shared application state. Callbacks follow the order in which applets were passed to
+/// <tt>\ref fcg::run "run"</tt>; input delivery follows \ref fcg_events_workflows_handling.
 ///
 /// \section fcg_applets_usage Getting started
 /// Derive from <tt>\ref fcg::Applet "Applet"</tt>, implement the callbacks, and pass the applet to
@@ -65,9 +65,7 @@
 /// \subsection fcg_applets_workflows_running Running applets together
 /// Combine applets by passing several instances to <tt>\ref fcg::run "run"</tt>, e.g.
 /// <tt>fcg::run&lt;MyCamera, MyScene&gt;()</tt>. The order matters in two ways:
-/// - Events are delivered in order, and every applet sees every event. Check
-///   <tt>\ref fcg::EventContext::wasHandled "EventContext::wasHandled"</tt> to skip events that a preceding applet
-///   already consumed.
+/// - Events follow the dispatch rules in \ref fcg_events_workflows_handling.
 /// - The <tt>\ref fcg::Applet::render "render"</tt> callbacks share one
 ///   <tt>\ref fcg::RenderState "RenderState"</tt> in the same order. A camera applet placed before a scene applet
 ///   installs its viewing matrices for the scene to draw with.
@@ -167,15 +165,15 @@ namespace fcg {
 /// 	and pass instances to <tt>\ref fcg::run "run"</tt>.
 ///
 /// All applets of an application share the main window, the GPU device and the <tt>\ref fcg::Player "Player"</tt>.
-/// All callbacks run on the thread that called \c fcg::run. When several applets are run together, each callback is
-/// invoked on every applet in the order in which the applets were passed to \c fcg::run.
+/// All callbacks run on the thread that called \c fcg::run. Callback order follows the order of applets passed to
+/// \c fcg::run; see \ref fcg_events_workflows_handling for input delivery.
 ///
 /// The player invokes the callbacks as follows:
 /// 1. <tt>\ref init "init"</tt> once per applet, after the main window, the GPU device and the GUI have been set up
 /// 	and before the first frame.
 /// 2. Once per main-loop iteration:
 /// 	- <tt>\ref onViewportResize "onViewportResize"</tt> if the size of the main viewport has changed;
-/// 	- <tt>\ref onEvent "onEvent"</tt> for each pending input event of the main window;
+/// 	- <tt>\ref onEvent "onEvent"</tt> for eligible input events of the main window;
 /// 	- <tt>\ref gui "gui"</tt> followed by <tt>\ref update "update"</tt>, applet by applet;
 /// 	- <tt>\ref render "render"</tt>, but only if a frame could be started (for example, not while the window is
 /// 	  minimized).
@@ -230,16 +228,14 @@ public:
 	virtual void onViewportResize (Device &device, const glm::uvec2 &oldViewportSize, Player &player) = 0;
 
 	/// \brief
-	/// 	Called once for each input event of the main window, before <tt>\ref gui "gui"</tt> and
+	/// 	Called for eligible input events of the main window, before <tt>\ref gui "gui"</tt> and
 	/// 	<tt>\ref update "update"</tt> of the same main-loop iteration. The default implementation does nothing.
 	///
 	/// Events that the GUI captures are not delivered: keyboard events are withheld while
 	/// <tt>\ref fcg::Gui::wantsKeyboard "Gui::wantsKeyboard"</tt> is \c true, and mouse events while
 	/// <tt>\ref fcg::Gui::wantsMouse "Gui::wantsMouse"</tt> is \c true.
 	///
-	/// Every applet receives every delivered event, even if a preceding applet has marked it as handled. Check
-	/// <tt>\ref fcg::EventContext::wasHandled "EventContext::wasHandled"</tt> to skip events already consumed, and call
-	/// <tt>\ref fcg::EventContext::markHandled "EventContext::markHandled"</tt> after consuming one yourself.
+	/// See \ref fcg_events_workflows_handling for event order and consumption.
 	///
 	/// Pressing Escape closes the application, unless an applet marks the \c EventType::KeyDown event as handled. If
 	/// the GUI captures the keyboard, the event is not delivered and Escape still closes the application, except while

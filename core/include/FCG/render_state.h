@@ -38,9 +38,16 @@
 /// \subsection fcg_render_state_workflows_derived Derived matrices
 /// The derived accessors (<tt>\ref fcg::RenderState::invModelviewMatrix "invModelviewMatrix"</tt>,
 /// <tt>\ref fcg::RenderState::normalMatrix "normalMatrix"</tt>,
-/// <tt>\ref fcg::RenderState::modelviewProjectionMatrix "modelviewProjectionMatrix"</tt>, …) compute and cache on
-/// first use. Accessing a derived matrix from a \c const render state requires that the non-const overload has been
-/// called since the last change to the stacks.
+/// <tt>\ref fcg::RenderState::modelviewProjectionMatrix "modelviewProjectionMatrix"</tt>, …) compute and cache on first
+/// use. Accessing a derived matrix from a \c const render state requires that the non-const overload has been called
+/// since the last change to the stacks.
+///
+/// The managed normal matrices are only valid when an invertible affine \ref fcg::RenderState::modelviewMatrix
+/// "modelview" matrix is used, i.e., its bottom row is <tt>(0, 0, 0, 1)</tt> and its upper-left 3x3 part is invertible.
+/// Rotations, translations, nonzero scales, and shears all fulfill this requirement and can be combined in such a
+/// matrix. In general, as long as the camera projection is kept in the projection stack, this is typically not an
+/// issue. Also, normals transformed by the normal matrix usually need to be normalized afterwards (unless the modelview
+/// matrix is known to contain only rotation and translation).
 ///
 /// \subsection fcg_render_state_workflows_uniforms Matching shader declaration
 /// <tt>\ref fcg::ViewingUniforms "ViewingUniforms"</tt> is a \c std140 uniform block; its field order must match the
@@ -79,7 +86,7 @@ struct SDL_GPUCommandBuffer;
 
 // Framework types
 namespace fcg {
-class Device;
+	class Device;
 }
 
 
@@ -151,10 +158,13 @@ struct ViewingUniforms
 	/// The inverse of the combined modelview-projection matrix.
 	glm::mat4 invModelviewProjection;
 
-	/// The normal matrix, i.e. the inverse transpose of the upper-left 3x3 part of the modelview matrix.
+	/// \brief
+	/// 	The object-to-eye normal matrix, i.e. the inverse transpose of the upper-left 3x3 part of the modelview matrix.
+	///
+	/// The modelview matrix must be affine and invertible.
 	Std140Mat3 normal;
 
-	/// The inverse of the normal matrix.
+	/// The inverse of \c normal for the same affine, invertible modelview matrix.
 	Std140Mat3 invNormal;
 };
 static_assert(offsetof(ViewingUniforms, normal) == 6 * sizeof(glm::mat4));
@@ -186,6 +196,8 @@ static_assert(sizeof(ViewingUniforms) == 6 * sizeof(glm::mat4) + 2 * sizeof(Std1
 /// Camera applets typically load their view and projection matrices into it, and subsequent applets read the matrices
 /// or upload them to their shaders with <tt>\ref pushViewingUniforms</tt>.
 ///
+/// Normal matrices and complete viewing uniforms require an invertible affine modelview matrix.
+///
 /// References returned by the accessors are valid only until the next change to the matrix stacks. Copy the values if
 /// they are needed beyond that.
 class FCG_FRAMEWORK_EXPORT RenderState
@@ -213,17 +225,17 @@ public:
 	////
 	// Accessors
 
-	/// The current modelview matrix, i.e. the top of the modelview matrix stack.
+	/// \brief The current modelview matrix, i.e. the top of the modelview matrix stack.
 	[[nodiscard]] auto modelviewMatrix () const -> const glm::mat4& {
 		return modelview.top();
 	}
 
-	/// The current projection matrix, i.e. the top of the projection matrix stack.
+	/// \brief The current projection matrix, i.e. the top of the projection matrix stack.
 	[[nodiscard]] auto projectionMatrix () const -> const glm::mat4& {
 		return projection.top();
 	}
 
-	/// The inverse of the current modelview matrix, computing it if necessary.
+	/// \brief The inverse of the current modelview matrix, computing it if necessary.
 	///
 	/// \return A reference to the inverse modelview matrix.
 	[[nodiscard]] auto invModelviewMatrix () -> const glm::mat4& {
@@ -232,8 +244,7 @@ public:
 		return invModelview.top().value();
 	}
 
-	/// \brief
-	/// 	The inverse of the current modelview matrix, as last computed by the non-const overload.
+	/// \brief The inverse of the current modelview matrix, as last computed by the non-const overload.
 	///
 	/// \pre The non-const overload has been called since the last change to the matrix stacks.
 	///
@@ -244,28 +255,32 @@ public:
 		return invModelview.top().value();
 	}
 
-	/// The normal matrix for the current modelview matrix, computing it if necessary.
+	/// \brief The normal matrix for the current modelview matrix, computing it if necessary.
+	///
+	/// \pre The current modelview matrix is affine and invertible.
 	///
 	/// \return A reference to the inverse transpose of the upper-left 3x3 part of the modelview matrix.
 	[[nodiscard]] auto normalMatrix () -> const glm::mat3& {
 		if (!normal.top().has_value())
-			normal.top() = glm::mat3(glm::transpose(glm::inverse(modelview.top())));
+			normal.top() = glm::transpose(glm::mat3(invModelviewMatrix()));
 		return normal.top().value();
 	}
 
-	/// \brief
-	/// 	The normal matrix for the current modelview matrix, as last computed by the non-const overload.
+	/// \brief The normal matrix for the current modelview matrix, as last computed by the non-const overload.
 	///
+	/// \pre The current modelview matrix is affine and invertible.
 	/// \pre The non-const overload has been called since the last change to the matrix stacks.
 	///
 	/// \return A reference to the inverse transpose of the upper-left 3x3 part of the modelview matrix.
 	///
-	/// \throws std::bad_optional_access if the precondition is violated.
+	/// \throws std::bad_optional_access if the normal matrix has not been computed.
 	[[nodiscard]] auto normalMatrix () const -> const glm::mat3& {
 		return normal.top().value();
 	}
 
-	/// The inverse of the current normal matrix, computing it if necessary.
+	/// \brief The inverse of the current normal matrix, computing it if necessary.
+	///
+	/// \pre The current modelview matrix is affine and invertible.
 	///
 	/// \return A reference to the inverse normal matrix.
 	[[nodiscard]] auto invNormalMatrix () -> const glm::mat3& {
@@ -274,19 +289,19 @@ public:
 		return invNormal.top().value();
 	}
 
-	/// \brief
-	/// 	The inverse of the current normal matrix, as last computed by the non-const overload.
+	/// \brief The inverse of the current normal matrix, as last computed by the non-const overload.
 	///
+	/// \pre The current modelview matrix is affine and invertible.
 	/// \pre The non-const overload has been called since the last change to the matrix stacks.
 	///
 	/// \return A reference to the inverse normal matrix.
 	///
-	/// \throws std::bad_optional_access if the precondition is violated.
+	/// \throws std::bad_optional_access if the inverse normal matrix has not been computed.
 	[[nodiscard]] auto invNormalMatrix () const -> const glm::mat3& {
 		return invNormal.top().value();
 	}
 
-	/// The inverse of the current projection matrix, computing it if necessary.
+	/// \brief The inverse of the current projection matrix, computing it if necessary.
 	///
 	/// \return A reference to the inverse projection matrix.
 	[[nodiscard]] auto invProjectionMatrix () -> const glm::mat4& {
@@ -295,8 +310,7 @@ public:
 		return invProjection.top().value();
 	}
 
-	/// \brief
-	/// 	The inverse of the current projection matrix, as last computed by the non-const overload.
+	/// \brief The inverse of the current projection matrix, as last computed by the non-const overload.
 	///
 	/// \pre The non-const overload has been called since the last change to the matrix stacks.
 	///
@@ -307,7 +321,7 @@ public:
 		return invProjection.top().value();
 	}
 
-	/// The combined modelview-projection matrix, computing it if necessary.
+	/// \brief The combined modelview-projection matrix, computing it if necessary.
 	///
 	/// \return A reference to the matrix <tt>projectionMatrix() * modelviewMatrix()</tt>.
 	[[nodiscard]] auto modelviewProjectionMatrix () -> const glm::mat4& {
@@ -316,8 +330,7 @@ public:
 		return modelviewProjection.value();
 	}
 
-	/// \brief
-	/// 	The combined modelview-projection matrix, as last computed by the non-const overload.
+	/// \brief The combined modelview-projection matrix, as last computed by the non-const overload.
 	///
 	/// \pre The non-const overload has been called since the last change to the matrix stacks.
 	///
@@ -328,7 +341,7 @@ public:
 		return modelviewProjection.value();
 	}
 
-	/// The inverse of the combined modelview-projection matrix, computing it if necessary.
+	/// \brief The inverse of the combined modelview-projection matrix, computing it if necessary.
 	///
 	/// \return A reference to the inverse modelview-projection matrix.
 	[[nodiscard]] auto invModelviewProjectionMatrix () -> const glm::mat4& {
@@ -337,8 +350,7 @@ public:
 		return invModelviewProjection.value();
 	}
 
-	/// \brief
-	/// 	The inverse of the combined modelview-projection matrix, as last computed by the non-const overload.
+	/// \brief The inverse of the combined modelview-projection matrix, as last computed by the non-const overload.
 	///
 	/// \pre The non-const overload has been called since the last change to the matrix stacks.
 	///
@@ -349,7 +361,9 @@ public:
 		return invModelviewProjection.value();
 	}
 
-	/// All current viewing matrices as a uniform block, computing them if necessary.
+	/// \brief All current viewing matrices as a uniform block, computing them if necessary.
+	///
+	/// \pre The current modelview matrix is affine and invertible.
 	///
 	/// \return A reference to the viewing uniforms reflecting the current matrix stacks.
 	[[nodiscard]] auto viewingUniforms () -> const ViewingUniforms&
@@ -364,14 +378,14 @@ public:
 		return m_viewingUniforms.value();
 	}
 
-	/// \brief
-	/// 	All current viewing matrices as a uniform block, as last computed by the non-const overload.
+	/// \brief All current viewing matrices as a uniform block, as last computed by the non-const overload.
 	///
+	/// \pre The current modelview matrix is affine and invertible.
 	/// \pre The non-const overload has been called since the last change to the matrix stacks.
 	///
 	/// \return A reference to the viewing uniforms reflecting the current matrix stacks.
 	///
-	/// \throws std::bad_optional_access if the precondition is violated.
+	/// \throws std::bad_optional_access if the uniform block has not been computed.
 	[[nodiscard]] auto viewingUniforms () const -> const ViewingUniforms& {
 		return m_viewingUniforms.value();
 	}
@@ -380,7 +394,7 @@ public:
 	////
 	// Methods
 
-	/// Save the current modelview matrix by pushing a copy of it onto the modelview matrix stack.
+	/// \brief Save the current modelview matrix by pushing a copy of it onto the modelview matrix stack.
 	void pushModelviewMatrix () {
 		modelview.push(modelview.top());
 		invModelview.push(invModelview.top());
@@ -388,7 +402,7 @@ public:
 		invNormal.push(invNormal.top());
 	}
 
-	/// Right-multiply the current modelview matrix by the given matrix, i.e. <tt>top = top * matrix</tt>.
+	/// \brief Right-multiply the current modelview matrix by the given matrix, i.e. <tt>top = top * matrix</tt>.
 	///
 	/// \param matrix The matrix to multiply with.
 	void mulModelviewMatrix (const glm::mat4& matrix) {
@@ -396,7 +410,7 @@ public:
 		onModelviewChange();
 	}
 
-	/// Replace the current modelview matrix with the given matrix.
+	/// \brief Replace the current modelview matrix with the given matrix.
 	///
 	/// \param matrix The new modelview matrix.
 	void loadModelviewMatrix (const glm::mat4& matrix) {
@@ -404,7 +418,7 @@ public:
 		onModelviewChange();
 	}
 
-	/// Restore the modelview matrix saved by the matching <tt>\ref pushModelviewMatrix</tt>.
+	/// \brief Restore the modelview matrix saved by the matching <tt>\ref pushModelviewMatrix</tt>.
 	///
 	/// \pre The modelview matrix stack holds more than one entry, i.e. every pop matches a preceding push.
 	void popModelviewMatrix () {
@@ -415,13 +429,13 @@ public:
 		invalidateDependentData();
 	}
 
-	/// Save the current projection matrix by pushing a copy of it onto the projection matrix stack.
+	/// \brief Save the current projection matrix by pushing a copy of it onto the projection matrix stack.
 	void pushProjectionMatrix () {
 		projection.push(projection.top());
 		invProjection.push(invProjection.top());
 	}
 
-	/// Right-multiply the current projection matrix by the given matrix, i.e. <tt>top = top * matrix</tt>.
+	/// \brief Right-multiply the current projection matrix by the given matrix, i.e. <tt>top = top * matrix</tt>.
 	///
 	/// \param matrix The matrix to multiply with.
 	void mulProjectionMatrix (const glm::mat4& matrix) {
@@ -429,7 +443,7 @@ public:
 		onProjectionChange();
 	}
 
-	/// Replace the current projection matrix with the given matrix.
+	/// \brief Replace the current projection matrix with the given matrix.
 	///
 	/// \param matrix The new projection matrix.
 	void loadProjectionMatrix (const glm::mat4& matrix) {
@@ -437,7 +451,7 @@ public:
 		onProjectionChange();
 	}
 
-	/// Restore the projection matrix saved by the matching <tt>\ref pushProjectionMatrix</tt>.
+	/// \brief Restore the projection matrix saved by the matching <tt>\ref pushProjectionMatrix</tt>.
 	///
 	/// \pre The projection matrix stack holds more than one entry, i.e. every pop matches a preceding push.
 	void popProjectionMatrix () {
@@ -454,6 +468,8 @@ public:
 	/// stacks do not affect draws already recorded. Failures, such as a null command buffer or an invalid slot, are
 	/// reported to the SDL error log and nothing is pushed.
 	///
+	/// \pre The current modelview matrix is affine and invertible.
+	///
 	/// \param commandBuffer The command buffer to record the push into.
 	/// \param stage The shader stage that receives the uniform block.
 	/// \param slot The uniform slot of that stage, in the range 0–3.
@@ -466,6 +482,7 @@ public:
 	/// Failures, such as a null command buffer or an invalid slot, are reported to the SDL error log and nothing is
 	/// pushed.
 	///
+	/// \pre The current modelview matrix is affine and invertible.
 	/// \pre
 	/// 	The non-const overload of <tt>\ref viewingUniforms</tt> or of this method has been called since the last
 	/// 	change to the matrix stacks.
@@ -474,7 +491,7 @@ public:
 	/// \param stage The shader stage that receives the uniform block.
 	/// \param slot The uniform slot of that stage, in the range 0–3.
 	///
-	/// \throws std::bad_optional_access if the precondition is violated.
+	/// \throws std::bad_optional_access if the uniform block has not been computed.
 	void pushViewingUniforms (SDL_GPUCommandBuffer *commandBuffer, ShaderStage stage, uint32_t slot) const;
 
 
@@ -483,14 +500,14 @@ private:
 	////
 	// Methods
 
-	/// Reset the cached matrices that depend on both stacks, as well as the cached uniform block.
+	/// \brief Reset the cached matrices that depend on both stacks, as well as the cached uniform block.
 	inline void invalidateDependentData () {
 		modelviewProjection.reset();
 		invModelviewProjection.reset();
 		m_viewingUniforms.reset();
 	}
 
-	/// Reset all cached matrices derived from the top of the modelview stack after it changed.
+	/// \brief Reset all cached matrices derived from the top of the modelview stack after it changed.
 	inline void onModelviewChange () {
 		invModelview.top().reset();
 		normal.top().reset();
@@ -498,7 +515,7 @@ private:
 		invalidateDependentData();
 	}
 
-	/// Reset all cached matrices derived from the top of the projection stack after it changed.
+	/// \brief Reset all cached matrices derived from the top of the projection stack after it changed.
 	inline void onProjectionChange () {
 		invProjection.top().reset();
 		invalidateDependentData();

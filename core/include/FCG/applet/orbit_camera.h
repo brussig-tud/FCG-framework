@@ -27,12 +27,13 @@
 /// - Left-drag orbits around the focal point.
 /// - Shift+left-drag rolls the camera.
 /// - Right-drag pans.
-/// - The mouse wheel dollies: it changes the field of view while keeping the focal point fixed.
+/// - The mouse wheel moves the eye toward or away from the focal point, changing the focus distance while keeping
+///   the focal point and field of view fixed.
 /// - Middle-drag moves the eye along the view direction while keeping the focus distance, so the focal point moves
 ///   with the camera.
 ///
 /// Double-click a rendered object to smoothly translate the focus there over half a second; see \ref
-/// fcg_camera_focus. The camera consumes these mouse events, so scene applets placed after it do not receive them.
+/// fcg_camera_focus.
 ///
 /// \subsection fcg_orbit_camera_workflows_programmatic Programmatic navigation
 /// <tt>\ref fcg::applet::OrbitCamera::setFocalPoint "setFocalPoint"</tt> retargets the focus from the existing eye,

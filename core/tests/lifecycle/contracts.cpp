@@ -38,6 +38,24 @@ struct Results
 
 	/// Whether the runtime failed to close after the unhandled Escape event.
 	bool timedOut = false;
+
+	/// Escape delivery order across the three observers.
+	std::vector<unsigned> escapeOrder;
+
+	/// Unhandled Space delivery order across the three observers.
+	std::vector<unsigned> spaceOrder;
+
+	/// Number of wheel events consumed before the camera.
+	unsigned wheels = 0;
+
+	/// Camera borrowed until the runtime destroys its applets.
+	fcg::applet::Camera2D *camera = nullptr;
+
+	/// Camera span before the synthetic wheel event.
+	float initialSpan = 0.f;
+
+	/// Whether consumed wheel input left the camera unchanged.
+	bool cameraUnchanged = false;
 };
 
 
@@ -46,6 +64,19 @@ struct Results
 //
 // Classes
 //
+
+/// Camera with its normal input behavior and no widgets that could capture the probe's synthetic keyboard input.
+class InputCamera final : public fcg::applet::Camera2D
+{
+public:
+
+	////
+	// Interface: fcg::applet::Camera2D
+
+	/// Keep keyboard focus available to the event observers.
+	void gui (fcg::Device&, fcg::Player&) override {}
+};
+
 
 /// Exercise camera lookup and Escape handling through the public runtime interfaces.
 class RuntimeProbe final : public fcg::Applet
@@ -85,9 +116,16 @@ public:
 	void onEvent (const fcg::Event &event, fcg::EventContext &context, fcg::Player&) override
 	{
 		if (event.type() == fcg::EventType::KeyDown)
-			if (const auto *key = event.data<fcg::KeyEvent>(); key && key->key == SDLK_ESCAPE)
-				if (++results.escapes == 1)
-					context.markHandled();
+			if (const auto *key = event.data<fcg::KeyEvent>())
+			{
+				if (key->key == SDLK_ESCAPE) {
+					results.escapeOrder.push_back(1);
+					if (++results.escapes == 1)
+						context.markHandled();
+				}
+				if (key->key == SDLK_SPACE)
+					results.spaceOrder.push_back(1);
+			}
 	}
 
 	/// This probe does not allocate viewport-dependent resources.
@@ -100,8 +138,23 @@ public:
 	void update (fcg::Device&, fcg::Player &player, float) override
 	{
 		if (++updates == 1)
+		{
+			SDL_Event wheel{};
+			wheel.type = SDL_EVENT_MOUSE_WHEEL;
+			wheel.wheel.windowID = window;
+			wheel.wheel.y = 1.f;
+			if (!SDL_PushEvent(&wheel))
+				throw std::runtime_error(SDL_GetError());
+			SDL_Event space{};
+			space.type = SDL_EVENT_KEY_DOWN;
+			space.key.windowID = window;
+			space.key.key = SDLK_SPACE;
+			if (!SDL_PushEvent(&space))
+				throw std::runtime_error(SDL_GetError());
 			pushEscape();
+		}
 		if (results.escapes == 1 && !results.continued) {
+			results.cameraUnchanged = results.camera->frustumDiameterAtFocus() == results.initialSpan;
 			results.continued = true;
 			pushEscape();
 		}
@@ -178,6 +231,74 @@ private:
 };
 
 
+/// Observe input before or after the consumer; the first observer consumes wheel input before it reaches a camera.
+class EventObserver final : public fcg::Applet
+{
+public:
+
+	////
+	// Object construction
+
+	/// Borrow the retained counters and select the observer position.
+	EventObserver(Results &results, unsigned index) : results(results), index(index) {}
+
+
+	////
+	// Interface: fcg::Applet
+
+	/// Return a stable observer name.
+	[[nodiscard]] auto name () const -> const std::string& override {
+		static const std::string label = "Event observer";
+		return label;
+	}
+
+	/// Observe delivery order and consume wheel events at the first recipient.
+	void onEvent (const fcg::Event &event, fcg::EventContext &context, fcg::Player&) override
+	{
+		if (!index && event.type() == fcg::EventType::MouseWheel) {
+			++results.wheels;
+			context.markHandled();
+		}
+		if (event.type() == fcg::EventType::KeyDown)
+			if (const auto *key = event.data<fcg::KeyEvent>()) {
+				if (key->key == SDLK_ESCAPE)
+					results.escapeOrder.push_back(index);
+				if (key->key == SDLK_SPACE)
+					results.spaceOrder.push_back(index);
+			}
+	}
+
+	/// No initialization resources are needed.
+	void init (fcg::Device&, fcg::Player&) override {}
+
+	/// No viewport-dependent resources are needed.
+	void onViewportResize (fcg::Device&, const glm::uvec2&, fcg::Player&) override {}
+
+	/// No widgets are needed.
+	void gui (fcg::Device&, fcg::Player&) override {}
+
+	/// The central probe controls the test lifetime.
+	void update (fcg::Device&, fcg::Player&, float) override {}
+
+	/// The observer does not draw scene geometry.
+	void render (
+		fcg::Device&, fcg::RenderState&, SDL_GPURenderPass*, SDL_GPUCommandBuffer*, fcg::Player&
+	) override {}
+
+
+private:
+
+	////
+	// Fields
+
+	/// Counters owned by the main function.
+	Results &results;
+
+	/// Observer position, zero before and two after the consuming probe.
+	unsigned index;
+};
+
+
 
 //////
 //
@@ -189,8 +310,23 @@ auto main () -> int
 {
 	try {
 		Results results;
-		const auto status = fcg::run({}, std::make_unique<RuntimeProbe>(results));
-		return status == 0 && results.escapes == 2 && results.continued && !results.timedOut ? 0 : 1;
+		auto camera = std::make_unique<InputCamera>();
+		results.camera = camera.get();
+		results.initialSpan = camera->frustumDiameterAtFocus();
+		const auto status = fcg::run({}, std::make_unique<EventObserver>(results, 0),
+			std::make_unique<RuntimeProbe>(results), std::move(camera), std::make_unique<EventObserver>(results, 2));
+		std::cout << "status=" << status << " escapes=" << results.escapes << " continued=" << results.continued
+			<< " wheels=" << results.wheels << " camera=" << results.cameraUnchanged << " escape order:";
+		for (auto index : results.escapeOrder)
+			std::cout << ' ' << index;
+		std::cout << "; space order:";
+		for (auto index : results.spaceOrder)
+			std::cout << ' ' << index;
+		std::cout << '\n';
+		return status == 0 && results.escapes == 2 && results.continued && !results.timedOut
+			&& results.escapeOrder == std::vector<unsigned>{0, 1, 0, 1, 2}
+			&& results.spaceOrder == std::vector<unsigned>{0, 1, 2}
+			&& results.wheels == 1 && results.cameraUnchanged ? 0 : 1;
 	}
 	catch (const std::exception &error) {
 		std::cerr << error.what() << '\n';

@@ -31,18 +31,23 @@
 /// continuous redraw so the loop stays active while waiting, and balance the request when the result arrives. Use the
 /// callback variant to react without storing a future:
 /// \snippet file_dialog_examples.cpp callback
-/// Callbacks run on the main thread during SDL event processing by default
-/// (<tt>\ref fcg::extra::FileDialogCallbackThread "FileDialogCallbackThread"</tt> selects otherwise), may run before
-/// the launching call returns, and must not throw. Use the blocking variant only when nothing else needs to happen
+/// Callback delivery follows <tt>\ref fcg::extra::FileDialogCallbackThread "FileDialogCallbackThread"</tt>, with
+/// <tt>\ref fcg::extra::FileDialogCallbackThread::MainThread "MainThread"</tt> as the default. Callbacks may run before
+/// the launching call returns and must not throw. Use the blocking variant only when nothing else needs to happen
 /// meanwhile: it pumps SDL events until the dialog closes, so the application does not render or update during that
 /// time.
 ///
 /// \subsection fcg_file_dialogs_workflows_filters Filtering by file type
 /// Filters pair a label with a list of extensions without leading dots, e.g. <tt>{"Images", {"png", "jpg"}}</tt>.
 /// Use <tt>\ref fcg::extra::imageFileFilters "imageFileFilters"</tt> to build a filter list from the formats an
-/// <tt>\ref fcg::ImageLoader "ImageLoader"</tt> supports. <tt>"*"</tt> is accepted only as the sole extension of an
-/// all-files filter. Save dialogs ignore multiple selection; folder dialogs ignore filters. Platforms may ignore
-/// individual settings.
+/// <tt>\ref fcg::ImageLoader "ImageLoader"</tt> supports. The helper excludes <tt>"*"</tt> from its combined "All
+/// supported images" filter, preserves named wildcard filters, and appends "All files" by default. Pass \c false as its
+/// second argument to omit the appended filter. Link \verbatim FCG-Framework::Image \endverbatim alongside
+/// \verbatim FCG-Framework::Extras \endverbatim when using image-loader filters:
+/// \snippet file_dialog_examples.cpp image_filters
+/// <tt>"*"</tt> is accepted only as the sole extension within a filter; separate all-files filters are allowed. An
+/// empty filter list leaves file types unrestricted. Save dialogs ignore multiple selection; folder dialogs ignore
+/// filters. Platforms may ignore individual settings.
 ///
 /// \section fcg_file_dialogs_lifetime Ownership and lifetime
 /// Launch dialogs from the main thread. Keep SDL and the parent window alive until the dialog completes; dialogs
@@ -124,7 +129,7 @@ struct FileDialogFilter
 	/// 	all files.
 	///
 	/// The list must be nonempty. Extensions may contain ASCII letters, digits, hyphens, underscores and interior
-	/// dots. \c "*" is only accepted as the sole entry of a filter.
+	/// dots. \c "*" is only accepted as the sole entry of a filter. Separate filters may each contain <tt>"*"</tt>.
 	std::vector<std::string> extensions;
 };
 
@@ -207,7 +212,10 @@ enum class FileDialogCallbackThread
 	/// 	Invoke the callback on the main thread.
 	///
 	/// If the dialog completes on the main thread, the callback runs immediately. Otherwise, it runs the next time
-	/// the application processes SDL events on the main thread.
+	/// the application processes SDL events on the main thread. If dispatch fails, the callback instead runs on the
+	/// completing thread with \c FileDialogErrorCode::SDLFailure. If main-thread delivery is unavailable without SDL
+	/// events, it runs on the completing thread with the existing error, or \c FileDialogErrorCode::InvalidState if
+	/// there was no error. Error handling in the callback must therefore be safe on a background thread.
 	MainThread,
 
 	/// Invoke the callback directly on the thread on which SDL completes the dialog. This can be the main thread or a
@@ -251,7 +259,8 @@ enum class FileDialogCallbackThread
 /// 	Shows a native open-file dialog and invokes a callback with its result.
 ///
 /// Call from the main thread after SDL's event subsystem has been initialized. The callback is invoked exactly once,
-/// on the thread selected by \c thread. It may be invoked before this function returns, e.g. if the launch failed.
+/// according to \c thread, including its error-delivery fallback. It may be invoked before this function returns,
+/// e.g. if the launch failed.
 /// With <tt>\ref FileDialogCallbackThread::MainThread</tt>, the application must keep processing SDL events to receive
 /// the callback.
 ///
@@ -271,7 +280,7 @@ enum class FileDialogCallbackThread
 /// 	including its captures, is kept alive until it has been invoked. The callable and its captures must be
 /// 	copyable to be stored in <tt>std::function</tt>.
 /// \param thread
-/// 	The thread on which to invoke \c callback, also for errors detected at launch.
+/// 	The delivery policy for \c callback, including errors detected at launch; see \c FileDialogCallbackThread.
 ///
 /// \throws std::invalid_argument
 /// 	If \c callback is empty. No dialog is shown in this case.
@@ -329,7 +338,7 @@ FCG_EXTRAS_EXPORT void showOpenFileDialogCallback (
 /// \param callback
 /// 	Function receiving the result as described for <tt>\ref showOpenFileDialogCallback</tt>. Must not be empty.
 /// \param thread
-/// 	The thread on which to invoke \c callback, also for errors detected at launch.
+/// 	The delivery policy for \c callback, including errors detected at launch; see \c FileDialogCallbackThread.
 ///
 /// \throws std::invalid_argument
 /// 	If \c callback is empty. No dialog is shown in this case.
@@ -384,7 +393,7 @@ FCG_EXTRAS_EXPORT void showSaveFileDialogCallback (
 /// \param callback
 /// 	Function receiving the result as described for <tt>\ref showOpenFileDialogCallback</tt>. Must not be empty.
 /// \param thread
-/// 	The thread on which to invoke \c callback, also for errors detected at launch.
+/// 	The delivery policy for \c callback, including errors detected at launch; see \c FileDialogCallbackThread.
 ///
 /// \throws std::invalid_argument
 /// 	If \c callback is empty. No dialog is shown in this case.

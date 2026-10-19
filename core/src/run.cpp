@@ -6,11 +6,13 @@
 
 // C++ STL
 #include <cstdlib>
+#include <exception>
 #include <memory>
 #include <vector>
 #include <ranges>
 #include <chrono>
 #include <stdexcept>
+#include <utility>
 
 // SDL3
 #include <SDL3/SDL.h>
@@ -39,8 +41,7 @@ namespace {
 void handleEvent (
 	const SDL_Event &event, fcg::Window &window, fcg::Gui &gui, fcg::Player &player,
 	std::vector<std::unique_ptr<fcg::Applet>> &applets
-)
-{
+){
 	// Always feed the GUI so ImGui can react to input
 	gui.processEvent(event);
 
@@ -59,12 +60,17 @@ void handleEvent (
 	const bool mouse = event.type >= SDL_EVENT_MOUSE_MOTION && event.type <= SDL_EVENT_MOUSE_WHEEL;
 	// - dispatch to the applets, remembering whether one of them consumed the event
 	bool handledByApplet = false;
-	if (mainWindowEvent && inputEvent && !(keyboard && gui.wantsKeyboard()) && !(mouse && gui.wantsMouse())) {
+	if (mainWindowEvent && inputEvent && !(keyboard && gui.wantsKeyboard()) && !(mouse && gui.wantsMouse()))
+	{
 		fcg::Event normalized = fcg::makeEvent(event);
 		fcg::EventContext context;
-		for (auto &applet : applets)
+		for (auto &applet : applets) {
 			applet->onEvent(normalized, context, player);
-		handledByApplet = context.wasHandled();
+			if (context.wasHandled()) {
+				handledByApplet = true;
+				break;
+			}
+		}
 	}
 
 	switch (event.type)
@@ -117,6 +123,15 @@ FCG_FRAMEWORK_EXPORT auto run (
 	std::vector<std::unique_ptr<Applet>> _applets, PlayerSettings &&settings
 ) -> int
 {
+	// Retain reverse destruction order even when startup stops before ownership moves into the player scope.
+	auto destroyApplets = [] (std::vector<std::unique_ptr<Applet>> *owned) noexcept {
+		for (auto &applet : std::views::reverse(*owned))
+			applet.reset();
+	};
+	std::unique_ptr<
+		std::vector<std::unique_ptr<Applet>>, decltype(destroyApplets)
+	> unstartedApplets(&_applets, destroyApplets);
+
 	// Info trace
 	SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: starting up...");
 
@@ -131,9 +146,14 @@ FCG_FRAMEWORK_EXPORT auto run (
 		SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "Initializing SDL failed: %s", SDL_GetError());
 		return EXIT_FAILURE;
 	}
+	auto shutdownSDL = [&] (void*) noexcept {
+		unstartedApplets.reset();
+		SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: exiting...");
+		SDL_Quit();
+	};
+	std::unique_ptr<void, decltype(shutdownSDL)> sdlOwner(&_applets, shutdownSDL);
 
-	// Scope for the shared GPU device and the central window – they are guaranteed to be cleaned up before SDL_Quit()
-	// is called below. Note the declaration order: the window must be destroyed before the GPU device it renders with.
+	// Destroy the central window and shared device before the SDL guard above runs, by opening a new scope here.
 	int exitCode = EXIT_SUCCESS;
 	{
 		// Create the GPU device shared by all windows and applets
@@ -151,31 +171,32 @@ FCG_FRAMEWORK_EXPORT auto run (
 			// We now have a working device
 			auto &device = maybeDevice.value();
 
-			// Moving the vector preserves its element addresses. Declare its owner after the player so applet
-			// destructors can still use the player during normal shutdown and exception unwinding.
+			// Moving the vector preserves the element addresses referenced by the player.
 			Player player(device, window.get(), std::span(_applets));
 
-			// Own the device claim separately from the window. Unwinding destroys GUI and applets first,
-			// then finalizes any frame and releases the claim while the player and parent are still alive.
-			auto releaseClaim = [&] (Window*)
-			{
-				if (player.frame) {
-					window->endFrame();
-					player.frame = nullptr;
-				}
+			// Acquired frames finish inside the loop, before applet and GUI teardown releases the claim.
+			auto releaseClaim = [&] (Window*) {
 				device.unclaimWindow(window);
 			};
 			std::unique_ptr<Window, decltype(releaseClaim)> windowClaim(nullptr, releaseClaim);
-			std::vector<std::unique_ptr<Applet>> applets = std::move(_applets);
-			// Clear captures while applet state and the claimed device are still alive, also on unwinding.
-			auto clearPresentation = [&] (Player *owner) { owner->shutdownPresentation(); };
-			std::unique_ptr<Player, decltype(clearPresentation)> presentationOwner(&player, clearPresentation);
 
 			// Claim the window for the GPU device, then create the framework GUI on top of it. The GUI instance is
 			// destroyed before releasing the window claim, including during exception unwinding.
-			std::unique_ptr<Gui> gui;
-			auto detachGui = [] (Player *owner) { owner->m_gui = nullptr; };
+			std::unique_ptr<Gui> gui; auto detachGui = [](Player *owner) { owner->m_gui = nullptr; };
 			std::unique_ptr<Player, decltype(detachGui)> guiBinding(&player, detachGui);
+			// - take ownership of the applets vector and install a guard to guarantee reverse destruction order. We
+			//   need to do this now to have the guarantee already active in case any step of window-device marriage or
+			//   GUI initialization fails.
+			std::vector<std::unique_ptr<Applet>> applets = std::move(_applets);
+			auto shutdownApplets = [&] (std::vector<std::unique_ptr<Applet>> *owned) noexcept {
+				SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: shutting down...");
+				player.shutdownPresentation();
+				destroyApplets(owned);
+			};
+			std::unique_ptr<std::vector<std::unique_ptr<Applet>>, decltype(shutdownApplets)> appletOwner(
+				&applets, shutdownApplets
+			);
+			// - now claim the window and initialize the GUI
 			if (device.claimWindow(window))
 			{
 				windowClaim.reset(window.get());
@@ -202,6 +223,8 @@ FCG_FRAMEWORK_EXPORT auto run (
 				window->pollViewportSize(dummy);
 				player.invalidateReadbacks();
 			}
+
+			// Initialize the applets
 			if (gui)
 			{
 				player.m_gui = gui.get();
@@ -228,12 +251,43 @@ FCG_FRAMEWORK_EXPORT auto run (
 			auto lastFrameTime = std::chrono::high_resolution_clock::now();
 			while (!player.shouldClose())
 			{
+				// Store un-refreshed viewport size for detecting size changes after the new frame has been acquired
 				const auto oldViewportSize = window->viewportSize();
+
 				// Begin the new rendering frame. We need it now because the applets might need to interact with the
 				// player in ways that require the current target textures during their update() or gui() hooks (like
 				// scheduling readbacks upon user interaction).
 				player.frame = window->beginFrame(device);
-				// - any readbacks should be done now
+
+				/// Finish this iteration's frame on both nominal completion/exit and unwinding, preserving any original
+				/// exception
+				struct FrameCompletion
+				{
+					/// Borrow the window and the player's current-frame pointer for this iteration.
+					FrameCompletion(Window &window, Frame *&frame)
+						: window(window), frame(frame), exceptions(std::uncaught_exceptions())
+					{}
+
+					/// Submit once; secondary submission failures are already logged by the frame.
+					~FrameCompletion() noexcept(false)
+					{
+						if (!std::exchange(frame, nullptr))
+							// no frame was active
+							return;
+						try { window.endFrame(); }
+						catch (...) {
+							if (std::uncaught_exceptions() == exceptions)
+								throw;
+						}
+					}
+
+				private:
+					Window &window;
+					Frame *&frame;
+					int exceptions;
+				} frameCompletion(*window, player.frame);
+
+				// Any readbacks should be done now
 				player.collectReadbackResults();
 
 				// Frame acquisition updates the viewport and may replace the depth texture. Detect that change before
@@ -276,10 +330,10 @@ FCG_FRAMEWORK_EXPORT auto run (
 						handleEvent(event, *window, *gui, player, applets);
 						while (SDL_PollEvent(&event))
 							handleEvent(event, *window, *gui, player, applets);
-						// The GUI reacts to input with one frame of latency, so schedule follow-up redraws
-						pendingRedraws = 2;
+						pendingRedraws = 2; // ImGui reacts to input with one frame latency, schedule follow-up redraws
 					}
-					else if (waitTimeoutMs < 0) {
+					else if (waitTimeoutMs < 0)
+					{
 						// An error while waiting without timeout is fatal – a timeout is not, it just means the
 						// periodic redraw interval expired with no events pending
 						SDL_LogError(
@@ -296,7 +350,9 @@ FCG_FRAMEWORK_EXPORT auto run (
 
 				// Update frame stats
 				auto now = std::chrono::high_resolution_clock::now();
-				const auto frameDur = std::chrono::duration_cast<std::chrono::nanoseconds>(now - lastFrameTime);
+				const auto frameDur = std::chrono::duration_cast<std::chrono::nanoseconds>(
+					now - lastFrameTime
+				);
 				lastFrameTime = now;
 				const auto dt = (float)(double(frameDur.count()) / 1000000000.);
 
@@ -312,55 +368,35 @@ FCG_FRAMEWORK_EXPORT auto run (
 				}
 
 				// Render a frame: all applets draw into the primary render pass (with depth buffer), then the GUI is
-				// rendered on top in a separate overlay pass without depth attachment. The ImGui SDL GPU backend
-				// creates pipelines without a depth-stencil target, so it must be recorded into a pass that has none.
+				// rendered on top in a separate overlay pass without depth attachment.
 				gui->prepareRender(player.frame);
 				if (player.frame)
 				{
+					// Common logic to both scene render and overlay pass guards
+					auto endPass = [](Frame *frame) { frame->endRenderPass(); };
+
+					// Render the scene
 					auto rs = RenderState(device);
 					if (auto *renderPass = player.frame->beginRenderPass(player.clearColor())) {
+						std::unique_ptr<Frame, decltype(endPass)> passGuard(player.frame, endPass);
 						for (auto &applet : applets)
-							applet->render(
-								device, rs, renderPass, player.frame->commandBuffer(), player
-							);
-						player.frame->endRenderPass();
+							applet->render(device, rs, renderPass, player.frame->commandBuffer(), player);
 					}
+
+					// Present the scene
 					if (auto result = player.presentFrame(); !result)
 						throw std::runtime_error(result.error().message);
+
+					// Render the GUI overlay
 					if (auto *overlayPass = player.frame->beginOverlayRenderPass()) {
+						std::unique_ptr<Frame, decltype(endPass)> passGuard(player.frame, endPass);
 						gui->renderDrawData(player.frame->commandBuffer(), overlayPass);
-						player.frame->endRenderPass();
 					}
-					window->endFrame();
-					player.frame = nullptr;
 				}
 			}
-			if (player.frame) {
-				window->endFrame();
-				player.frame = nullptr;
-			}
-
-			// Clean up
-			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: shutting down...");
-			player.shutdownPresentation();
-			for (auto &applet : std::views::reverse(applets)) {
-				SDL_LogInfo(
-					SDL_LOG_CATEGORY_APPLICATION, "Player: ending applet %p (\"%s\")",
-					(void*)applet.get(), applet->name().c_str()
-				);
-				applet.reset();
-			}
-			guiBinding.reset();
-			gui.reset();
-			windowClaim.reset();
 		}
 	}
 
-	// Info trace
-	SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: exiting...");
-
-	// Shut down SDL and report our status
-	SDL_Quit();
 	return exitCode;
 }
 

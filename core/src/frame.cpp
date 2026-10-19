@@ -7,6 +7,7 @@
 // C++ STL
 #include <format>
 #include <stdexcept>
+#include <utility>
 
 // SDL3 library
 #include <SDL3/SDL.h>
@@ -60,10 +61,13 @@ void Frame::end ()
 		throw std::logic_error("Cannot finish a frame during presentation recording");
 
 	// Submit the frame's command buffer, which also presents the swapchain texture
-	if (!SDL_SubmitGPUCommandBuffer(m_commandBuffer))
-		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Submitting the GPU command buffer failed: %s", SDL_GetError());
-	m_commandBuffer = nullptr;
+	auto *command = std::exchange(m_commandBuffer, nullptr);
 	presentationColorTarget = nullptr;
+	if (!SDL_SubmitGPUCommandBuffer(command)) {
+		const auto message = std::format("Submitting the GPU command buffer failed: {}", SDL_GetError());
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", message.c_str());
+		throw std::runtime_error(message);
+	}
 }
 
 auto Frame::present (PresentationRecorder &recorder) -> std::expected<void, FullscreenError>

@@ -11,7 +11,7 @@ This readme only provides a coarse overview. The full framework documentation is
 
 # Building
 
-The framework requires CMake 3.31 or newer and a C++23-capable compiler (a recent GCC, Clang or MSVC); Ninja is the recommended generator. On Linux, the X11 development packages are required because we have to build SDL3 from source to workaround an SDL bug on MacOS. Doxygen is optional and only needed for building the documentation.
+The framework requires CMake 3.31 or newer and a C++23-capable compiler (a recent GCC, Clang or MSVC); Ninja is the recommended generator. SDL3 reuses a supplied target or a compatible installed package, with a pinned source build as fallback. On Linux, building that fallback with X11 support requires the X11 development packages. Doxygen is optional and only needed for building the documentation.
 
 Configure, build and test using one of the provided CMake presets:
 

@@ -194,10 +194,12 @@ void SDLCALL mainThreadCompletion (void *userdata) noexcept
 {
 	try {
 		std::unique_ptr<StateToken> token((StateToken*)userdata);
-		// SDL falls back to inline delivery without initialized events, even on a worker.
-		if (!SDL_IsMainThread())
-			std::terminate();
 		auto &state = **token;
+		// SDL can deliver inline on a worker without events. Preserve an error, or report lost dispatch state.
+		if (!SDL_IsMainThread() && state.result->has_value())
+			state.result.emplace(std::unexpected(FileDialogError{
+				FileDialogErrorCode::InvalidState, "Main-thread dialog delivery requires SDL events"
+			}));
 		state.callback(std::move(*state.result));
 	} catch (...) {
 		std::terminate();
@@ -219,7 +221,7 @@ void complete (const StateToken &state, FileDialogResult result) noexcept
 		if (!state->backend.dispatch(mainThreadCompletion, token, false)) {
 			const auto error = sdlFailure("Dispatching dialog callback");
 			delete token;
-			std::terminate();
+			state->callback(error);
 		}
 	}
 }

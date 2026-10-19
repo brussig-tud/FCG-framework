@@ -2,6 +2,7 @@
 add_subdirectory(resources)
 add_subdirectory(buffers)
 add_subdirectory(textures)
+add_subdirectory(render_state)
 add_subdirectory(cameras)
 add_subdirectory(guides)
 
@@ -34,6 +35,11 @@ target_link_libraries(move-only-function-smoke PRIVATE Core)
 add_test(NAME move-only-function-smoke COMMAND move-only-function-smoke)
 set_tests_properties(move-only-function-smoke PROPERTIES TIMEOUT 10)
 
+add_executable(state-machine-smoke utilities/state_machine.cpp)
+target_link_libraries(state-machine-smoke PRIVATE Core)
+add_test(NAME state-machine-smoke COMMAND state-machine-smoke)
+set_tests_properties(state-machine-smoke PROPERTIES TIMEOUT 10)
+
 # ---------------------------------------------------------------------------
 # Tier 1 - app lifecycle: run a trivial probe applet through fcg::run()
 # headlessly. The probe (core/tests/lifecycle/main.cpp) forces continuous redraws
@@ -61,6 +67,16 @@ target_link_libraries(runtime-contract-smoke PRIVATE Core)
 add_test(NAME runtime-contract-smoke COMMAND runtime-contract-smoke)
 set_tests_properties(runtime-contract-smoke PROPERTIES TIMEOUT 60
 	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
+
+# Substitute narrow SDL boundaries in the production sources without exporting test hooks from Core.
+add_executable(runtime-failure-smoke lifecycle/failures.cpp)
+target_compile_definitions(runtime-failure-smoke PRIVATE FCG_FRAMEWORK_STATIC_DEFINE)
+target_link_libraries(runtime-failure-smoke PRIVATE Core)
+foreach(scenario normal startup window init name event resize gui update render overlay presentation submit close-submit render-submit logic)
+	add_test(NAME runtime-failure-${scenario} COMMAND runtime-failure-smoke ${scenario})
+	set_tests_properties(runtime-failure-${scenario} PROPERTIES TIMEOUT 60
+		FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
+endforeach()
 
 # Real runtime presentation registration, failure handling and capture lifetimes.
 add_executable(presentation-smoke lifecycle/presentation.cpp)

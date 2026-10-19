@@ -299,7 +299,8 @@ public:
 	/// \brief
 	/// 	Update the viewport size from the current size of the window in pixels.
 	///
-	/// Called by \c fcg::run once per main loop iteration; applications normally don't call this. Call it when
+	/// Called by \c fcg::run during startup and in iterations without an acquired frame; applications normally don't
+	/// call this. While rendering, \c beginFrame supplies the acquired image's dimensions instead. Call this when
 	/// \c viewportSize must be up to date while no frames are being rendered, e.g. after a resize event. If querying
 	/// the window size fails, the error is logged and the viewport size is left unchanged.
 	///
@@ -338,14 +339,16 @@ public:
 	///
 	/// Submission displays the window image recorded by \c Frame::present. If presentation was omitted or failed,
 	/// the displayed contents are unspecified. Afterwards, the <tt>\ref Frame</tt> returned by <tt>\ref beginFrame</tt>
-	/// is invalid. Submission failures are logged to the SDL log. If an exception is thrown, the frame remains in
-	/// progress.
+	/// is invalid, including when submission fails. Submission failures are logged to the SDL log and throw
+	/// \c std::runtime_error. Pre-submission logic errors leave an existing frame in progress.
 	///
 	/// \pre
 	/// 	A frame of this window is in progress and has no active render pass.
 	///
 	/// \throws std::logic_error
 	/// 	If no frame is in progress, a render pass is still active, or a presentation recorder is executing.
+	/// \throws std::runtime_error
+	/// 	If submitting the command buffer fails. The frame is finished and must not be used or submitted again.
 	void endFrame ();
 
 	/// \brief

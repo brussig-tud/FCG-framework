@@ -19,9 +19,10 @@ e.g. `doxygen build/debug/docs/Doxyfile`.
 Doxygen is optional: if absent, configuration succeeds and reports that `fcg-docs` is unavailable. Documentation is
 outside the default build and has no library or executable dependencies.
 
-The `build` workflow (`.github/workflows/ci.yml`) builds `fcg-docs` on Linux and Windows for every pull request —
-warnings fail the build — and its `deploy-docs` job publishes the Linux leg's `docs/html` to GitHub Pages on pushes
-to `master`. It requires the repository's Pages source to be set to "GitHub Actions".
+The `build` workflow (`.github/workflows/ci.yml`) builds `fcg-docs` on Linux and Windows for pull requests that change
+files other than Markdown; Markdown-only changes do not trigger the workflow. Documentation warnings fail the build.
+Its `deploy-docs` job publishes the Linux leg's `docs/html` to GitHub Pages on qualifying pushes to `master`.
+It requires the repository's Pages source to be set to "GitHub Actions".
 
 
 ## Module guides

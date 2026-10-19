@@ -31,31 +31,30 @@
 /// \subsection fcg_image_loading_workflows_registry Choosing a loader instance
 /// <tt>\ref fcg::ImageLoader::global "ImageLoader::global()"</tt> is the shared process-wide loader, with the
 /// SDL_image handler pre-registered; the load above went through it. A locally constructed
-/// <tt>\ref fcg::ImageLoader "ImageLoader"</tt> starts empty and is useful when a module needs its own set of
-/// handlers:
+/// <tt>\ref fcg::ImageLoader "ImageLoader"</tt> starts empty and is useful when a module needs its own set of handlers:
 /// \snippet image_examples.cpp independent
-/// <tt>\ref fcg::ImageLoader::fileFormats "fileFormats"</tt> lists which formats a loader advertises, e.g. for
-/// building file-dialog filters with <tt>\ref fcg::extra::imageFileFilters "imageFileFilters"</tt>.
+/// <tt>\ref fcg::ImageLoader::fileFormats "fileFormats"</tt> lists which formats a loader advertises, e.g. for building
+/// file-dialog filters with <tt>\ref fcg::extra::imageFileFilters "imageFileFilters"</tt>.
 ///
 /// \subsection fcg_image_loading_workflows_handlers Adding a format handler
 /// Implement <tt>\ref fcg::ImageFormatHandler "ImageFormatHandler"</tt> and register it on a loader:
 /// \snippet image_examples.cpp registration
-/// \c accepts decides whether a load attempt is worth trying, and \c load performs the decoding. Registration
-/// transfers ownership of the handler to the loader.
+/// \c accepts decides whether a load attempt is worth trying, and \c load performs the decoding. Registration transfers
+/// ownership of the handler to the loader.
 ///
 /// \section fcg_image_loading_lifetime Ownership and lifetime
-/// <tt>\ref fcg::ImageLoader::registerHandler "registerHandler"</tt> takes ownership; removing a handler or
-/// destroying the loader destroys it. Images do not borrow their decoder. <tt>\ref fcg::ImageLoader::global
-/// "global()"</tt> is constructed on first use and lives until process end; its handlers remain registered until
-/// removed explicitly. Avoid unloading a shared library while its handler is still registered. Registry operations
-/// and loads are not synchronized internally; serialize them externally. Static-archive clients should see the note
-/// in <tt>\ref fcg::FormatHandlerRegistration "FormatHandlerRegistration"</tt>.
+/// <tt>\ref fcg::ImageLoader::registerHandler "registerHandler"</tt> takes ownership; removing a handler or destroying
+/// the loader destroys it. Images do not borrow their decoder. <tt>\ref fcg::ImageLoader::global "global()"</tt> is
+/// constructed on first use and lives until process end; its handlers remain registered until removed explicitly. Avoid
+/// unloading a shared library while its handler is still registered. Registry operations and loads are not synchronized
+/// internally; serialize them externally. Static-archive clients should see the note in
+/// <tt>\ref fcg::FormatHandlerRegistration "FormatHandlerRegistration"</tt>.
 ///
 /// \section fcg_image_loading_errors Handling errors
 /// Loads return <tt>std::expected&lt;\ref fcg::Image "Image", \ref fcg::ImageError "ImageError"&gt;</tt>:
-/// <tt>\ref fcg::ImageErrorCode::UnsupportedFormat "UnsupportedFormat"</tt> means no handler accepted the input,
-/// and <tt>\ref fcg::ImageErrorCode::DecodeFailure "DecodeFailure"</tt> aggregates the diagnostics of every handler
-/// that tried, in attempt order. Nothing logs automatically. Custom handlers should return recoverable failures as
+/// <tt>\ref fcg::ImageErrorCode::UnsupportedFormat "UnsupportedFormat"</tt> means no handler accepted the input, and
+/// <tt>\ref fcg::ImageErrorCode::DecodeFailure "DecodeFailure"</tt> aggregates the diagnostics of every handler that
+/// tried, in attempt order. Nothing logs automatically. Custom handlers should return recoverable failures as
 /// <tt>std::expected</tt>; exceptions escaping a handler abort the load.
 ///
 /// \see \ref fcg_images, \ref fcg_sdl_image
@@ -109,7 +108,10 @@ struct ImageFileFormat
 	/// Human-readable name of the format, e.g. <tt>"PNG"</tt>.
 	std::string name;
 
-	/// File name extensions of the format, lowercase and without a leading dot, e.g. <tt>"jpg"</tt>, <tt>"jpeg"</tt>.
+	/// \brief
+	/// 	File name extensions of the format, lowercase and without a leading dot, e.g. <tt>"jpg"</tt>, <tt>"jpeg"</tt>.
+	///
+	/// A single \c "*" may be used to provide a catch-all file-dialog filter.
 	std::vector<std::string> extensions;
 };
 
@@ -229,11 +231,7 @@ public:
 /// 	A registry of image format handlers that loads image files by trying the handlers in order.
 ///
 /// Most applications use the process-wide loader returned by \c global, which can decode the common image formats:
-/// \code
-/// auto image = fcg::ImageLoader::global().load("textures/wood.png");
-/// if (!image)
-/// 	SDL_Log("Loading failed: %s", image.error().message.c_str());
-/// \endcode
+/// \snippet image_examples.cpp quick_load
 /// Construct your own \c ImageLoader to control exactly which handlers are used; a new loader has no handlers.
 ///
 /// Handlers are tried in order of descending priority, with equal priorities ordered by ascending ID. For each
@@ -415,11 +413,7 @@ private:
 ///
 /// Define a registration object at namespace scope in the translation unit that implements the handler. The handler
 /// is registered during static initialization, before \c main runs:
-/// \code
-/// namespace {
-/// const fcg::FormatHandlerRegistration myFormatRegistration{"my_format", std::make_unique<MyFormatHandler>()};
-/// }
-/// \endcode
+/// \snippet image_examples.cpp registration
 /// The registration is permanent: destroying the object does not remove the handler.
 ///
 /// \note

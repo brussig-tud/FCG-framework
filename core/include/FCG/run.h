@@ -102,8 +102,9 @@
 /// \section fcg_runtime_errors Handling errors
 /// <tt>\ref fcg::run "run"</tt> returns \c EXIT_FAILURE if SDL, the GPU device, the window, the default presentation
 /// pass or the GUI could not be
-/// initialized, or if waiting for events failed; the reason is written to the SDL log and no applet callback is
-/// invoked. With an empty applet list it returns \c EXIT_SUCCESS after logging a warning. GPU failures while acquiring
+/// initialized, or if waiting for events failed; the reason is written to the SDL log. Initialization failures invoke
+/// no applet callbacks; event-wait failures can occur after callbacks have run. With an empty applet list it returns
+/// \c EXIT_SUCCESS after logging a warning. GPU failures while acquiring
 /// or presenting a frame throw \c std::runtime_error, and exceptions from applet callbacks propagate out of the call.
 /// A presentation recorder's returned <tt>\ref fcg::FullscreenError "FullscreenError"</tt> becomes
 /// \c std::runtime_error; exceptions thrown by the recorder propagate unchanged. Either failure stops the run without
@@ -177,7 +178,8 @@ struct PlayerSettings
 /// while the GPU device and the player are still alive, releases all framework resources and shuts down SDL.
 ///
 /// Exceptions thrown by applet callbacks propagate out of this function. The player and the GPU device remain valid
-/// while the applets are destroyed during the unwinding.
+/// while the applets are destroyed during the unwinding. If finishing a frame also fails during this unwinding,
+/// the submission failure is logged and the original exception propagates unchanged.
 ///
 /// \pre
 /// 	Call from the main thread. Only one call may be active at a time. No element of \p applets is \c nullptr.

@@ -12,12 +12,11 @@
 /// \ingroup fcg_modules
 /// \brief Input events of the main window, delivered to the applets' \c onEvent callbacks.
 ///
-/// Every pending input event of the main window is delivered to each applet's
-/// <tt>\ref fcg::Applet::onEvent "Applet::onEvent"</tt> callback, once per main-loop iteration. An
+/// Pending keyboard, mouse and drag-and-drop events of the main window are delivered through
+/// <tt>\ref fcg::Applet::onEvent "Applet::onEvent"</tt> during each main-loop iteration. An
 /// <tt>\ref fcg::Event "Event"</tt> carries an <tt>\ref fcg::EventType "EventType"</tt> and, for most event kinds, a
 /// typed payload such as <tt>\ref fcg::KeyEvent "KeyEvent"</tt> or <tt>\ref fcg::MouseButtonEvent
-/// "MouseButtonEvent"</tt>. An <tt>\ref fcg::EventContext "EventContext"</tt> lets applets mark events as handled so
-/// that later applets can skip them.
+/// "MouseButtonEvent"</tt>. An <tt>\ref fcg::EventContext "EventContext"</tt> lets applets consume events.
 ///
 /// \section fcg_events_usage Getting started
 /// Override <tt>\ref fcg::Applet::onEvent "Applet::onEvent"</tt>, switch over the event type, and access the typed
@@ -29,8 +28,10 @@
 /// The <tt>\ref fcg::EventType "EventType"</tt> enumeration lists all event kinds together with the payload type each
 /// one carries: key events (<tt>\ref fcg::EventType::KeyDown "KeyDown"</tt>,
 /// <tt>\ref fcg::EventType::KeyUp "KeyUp"</tt>), text input, mouse motion, button and wheel events, and drag-and-drop
-/// of files and text. Events without a framework equivalent arrive as <tt>\ref fcg::EventType::Raw "Raw"</tt> with the
-/// SDL event accessible through <tt>\ref fcg::Event::raw "Event::raw"</tt>.
+/// of files and text. Within these delivered categories, events without a framework equivalent arrive as
+/// <tt>\ref fcg::EventType::Raw "Raw"</tt>, with the SDL event accessible through
+/// <tt>\ref fcg::Event::raw "Event::raw"</tt>. \b Other SDL event categories, including touch, pen and user events,
+/// are <b>not currently delivered</b> to applets.
 ///
 /// \subsection fcg_events_workflows_coordinates Coordinates
 /// Mouse positions are given in window coordinates relative to the top-left corner of the window. On high-DPI displays
@@ -38,11 +39,12 @@
 /// "Player::viewportSize"</tt> returns the pixel size.
 ///
 /// \subsection fcg_events_workflows_handling Cooperation between applets
-/// Every applet receives every delivered event, even if a preceding applet consumed it. Call
-/// <tt>\ref fcg::EventContext::markHandled "EventContext::markHandled"</tt> after handling an event, and check
-/// <tt>\ref fcg::EventContext::wasHandled "EventContext::wasHandled"</tt> to skip events that another applet already
-/// consumed. Events that the GUI captures (e.g. keyboard input while a text field is focused) are not delivered at
-/// all; see \ref fcg_gui.
+/// Events are delivered in the order in which applets were passed to <tt>\ref fcg::run "run"</tt>. Call
+/// <tt>\ref fcg::EventContext::markHandled "EventContext::markHandled"</tt> when consuming an event. Once that
+/// callback returns, delivery stops: remaining applets do not receive the event. Marking an Escape
+/// <tt>\ref fcg::EventType::KeyDown "KeyDown"</tt> event as handled also suppresses the player's close action.
+/// Events that the GUI captures (e.g. keyboard input while a text field is focused) are not delivered to applets;
+/// see \ref fcg_gui.
 ///
 /// \section fcg_events_lifetime Ownership and lifetime
 /// The <tt>\ref fcg::Event "Event"</tt> passed to <tt>\ref fcg::Applet::onEvent "onEvent"</tt> is only valid during the
@@ -280,12 +282,7 @@ using EventPayload = std::variant<
 /// \brief
 /// 	Context of one event, shared by all applets that receive it.
 ///
-/// \c fcg::run passes each event to the <tt>\ref fcg::Applet::onEvent "Applet::onEvent"</tt> callback of every
-/// applet in order, together with one \c EventContext. Delivery does not stop when an applet marks the event as
-/// handled, so applets should check <tt>\ref wasHandled "wasHandled"</tt> before reacting to an event and call
-/// <tt>\ref markHandled "markHandled"</tt> when they consume one.
-///
-/// Marking an Escape \c EventType::KeyDown event as handled keeps the player from closing the application.
+/// Call \c markHandled when consuming an event. See \ref fcg_events_workflows_handling for the dispatch rules.
 class FCG_FRAMEWORK_EXPORT EventContext
 {
 public:
@@ -305,8 +302,7 @@ public:
 	////
 	// Methods
 
-	/// Marks this event as handled by the calling applet. Applets that receive the event afterwards see this via
-	/// <tt>\ref wasHandled "wasHandled"</tt>.
+	/// Marks this event as consumed; see \ref fcg_events_workflows_handling for its effect on dispatch.
 	void markHandled () {
 		handled = true;
 	}
@@ -326,9 +322,7 @@ private:
 ///
 /// Query the kind of event with <tt>\ref type "type"</tt> and retrieve its payload with <tt>\ref data "data"</tt>,
 /// for example:
-/// \code
-/// if (const auto *key = event.data<fcg::KeyEvent>(); key && event.type() == fcg::EventType::KeyDown) { ... }
-/// \endcode
+/// \snippet event_examples.cpp key_payload
 ///
 /// An event refers to the raw SDL event it was made from. The events passed to \c Applet::onEvent are therefore only
 /// valid during that call: do not store them, or pointers or references obtained from them, but copy the data you

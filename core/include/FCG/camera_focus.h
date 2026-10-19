@@ -225,11 +225,9 @@ public:
 	///
 	/// Call from \c Applet::onEvent. The caller decides which button, click count and modifiers trigger a pick. On
 	/// success, any running focus animation stops, and the depth of the scene under the cursor is requested from the
-	/// player; \c update then reads it in the same frame and starts the animation toward the picked point.
-	///
-	/// \pre
-	/// 	\c update is called later in the same frame, with the same \c Player, as happens naturally when \c pick is
-	/// 	called from \c Applet::onEvent and \c update from \c Applet::update.
+	/// player. Call \c update later in the same frame to start the animation promptly, as happens naturally when
+	/// \c pick is called from \c Applet::onEvent and \c update from \c Applet::update. A delayed \c update can still
+	/// read the requested depth until a newer readback replaces it or the viewport changes.
 	///
 	/// \param event
 	/// 	The mouse-button event whose position, in window coordinates, should be picked.
@@ -263,8 +261,8 @@ public:
 	/// 	The time since the last frame in seconds. Negative or nonfinite values count as zero.
 	///
 	/// \throws std::runtime_error
-	/// 	If the depth requested by \c pick cannot be read, including when \c update was not called in the same
-	/// 	frame as \c pick; see \c Player::getDepthReadbackResult.
+	/// 	If the depth requested by \c pick cannot be read, including when a newer readback has replaced it;
+	/// 	see \c Player::getDepthReadbackResult.
 	/// \throws std::logic_error
 	/// 	If the player has discarded the requested depth, e.g. after a viewport change without a call to
 	/// 	\c resized.

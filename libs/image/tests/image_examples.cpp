@@ -12,6 +12,7 @@
 // SDL3 library
 #include <SDL3/SDL_surface.h>
 #include <SDL3/SDL_error.h>
+#include <SDL3/SDL_log.h>
 
 // Local includes
 //! [includes]
@@ -27,6 +28,15 @@
 //
 
 namespace image_examples {
+
+/// Load a file and report an owned error message through SDL's logger.
+//! [quick_load]
+void quickLoad () {
+	auto image = fcg::ImageLoader::global().load("textures/wood.png");
+	if (!image)
+		SDL_Log("Loading failed: %s", image.error().message.c_str());
+}
+//! [quick_load]
 
 //! [file]
 auto fromDisk (const std::filesystem::path &path) -> std::expected<fcg::Image, fcg::ImageError> {

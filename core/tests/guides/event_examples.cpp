@@ -56,3 +56,23 @@ public:
 	) override {}
 };
 // [event_handling]
+
+
+
+//////
+//
+// Functions
+//
+
+/// Read a typed key payload and report whether it describes a Space press.
+///
+/// \param event The borrowed input event.
+///
+/// \return Whether this is a Space key press.
+// [key_payload]
+[[nodiscard]] auto isSpacePress (const fcg::Event &event) -> bool {
+	if (const auto *key = event.data<fcg::KeyEvent>(); key && event.type() == fcg::EventType::KeyDown)
+		return key->key == SDLK_SPACE;
+	return false;
+}
+// [key_payload]

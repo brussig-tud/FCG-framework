@@ -48,22 +48,30 @@ namespace extra {
 /// <tt>\ref FileDialogOptions::filters</tt>.
 ///
 /// The returned filters are, in this order:
-/// - "All supported images", containing every distinct extension of all \c formats in order of first appearance.
-///   This filter is omitted if \c formats contains no extensions.
-/// - One filter per format, labelled with the format's name, in the order of \c formats. Duplicate extensions within
-///   a format are removed. A format is skipped if it has no extensions or if an earlier format has the same set of
-///   extensions.
-/// - "All files", matching any file. This filter is always present.
+/// - "All supported images", containing every distinct extension of all \c formats except <tt>"*"</tt>, in order of
+///   first appearance. This filter is omitted if no extensions remain after excluding wildcards.
+/// - One filter per format, labelled with the format's name, in the order of \c formats. Duplicate extensions within a
+///   format are removed. A format is skipped if it has no extensions or if an earlier format has the same set of
+///   extensions. A format containing only \c "*" provides a named all-files filter.
+/// - "All files", matching any file, if \c includeAllFiles is <tt>true</tt>.
+///
+/// Setting \c includeAllFiles to \c false preserves any all-files filters supplied in \c formats. Empty input with
+/// \c includeAllFiles set to \c false produces an empty list; a dialog given an empty filter list leaves file types
+/// unrestricted.
 ///
 /// \param formats
-/// 	The image file formats to build filters for. Their names and extensions must satisfy the rules of
-/// 	<tt>\ref FileDialogFilter</tt>; otherwise, a dialog launched with the resulting filters reports
-/// 	<tt>\ref FileDialogErrorCode::InvalidArgument</tt>.
+/// 	The image file formats to build filters for. After the deduplication and omissions described above, the
+/// 	generated filters must satisfy the rules of <tt>\ref FileDialogFilter</tt>; a dialog launched with invalid
+/// 	generated filters reports <tt>\ref FileDialogErrorCode::InvalidArgument</tt>.
+/// \param includeAllFiles
+/// 	Whether to append the "All files" filter. Defaults to <tt>true</tt>, including when \c formats already supplies
+/// 	an all-files filter.
 ///
 /// \return
 /// 	The list of filters described above.
-[[nodiscard]] FCG_EXTRAS_EXPORT auto imageFileFilters (std::span<const ImageFileFormat> formats)
-	-> std::vector<FileDialogFilter>;
+[[nodiscard]] FCG_EXTRAS_EXPORT auto imageFileFilters (
+	std::span<const ImageFileFormat> formats, bool includeAllFiles=true
+) -> std::vector<FileDialogFilter>;
 
 
 

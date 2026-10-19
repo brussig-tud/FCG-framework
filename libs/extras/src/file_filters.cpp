@@ -34,7 +34,7 @@ namespace fcg::extra {
 // Function implementations
 //
 
-auto imageFileFilters (std::span<const ImageFileFormat> formats) -> std::vector<FileDialogFilter>
+auto imageFileFilters (std::span<const ImageFileFormat> formats, bool includeAllFiles) -> std::vector<FileDialogFilter>
 {
 	std::vector<FileDialogFilter> filters;
 	std::vector<std::string> aggregate;
@@ -43,11 +43,10 @@ auto imageFileFilters (std::span<const ImageFileFormat> formats) -> std::vector<
 	for (const auto &format : formats)
 	{
 		std::vector<std::string> extensions;
-		for (const auto &extension : format.extensions)
-		{
+		for (const auto &extension : format.extensions) {
 			if (std::ranges::find(extensions, extension) == extensions.end())
 				extensions.push_back(extension);
-			if (seenExtensions.insert(extension).second)
+			if (extension != "*" && seenExtensions.insert(extension).second)
 				aggregate.push_back(extension);
 		}
 		auto group = extensions;
@@ -57,7 +56,8 @@ auto imageFileFilters (std::span<const ImageFileFormat> formats) -> std::vector<
 	}
 	if (!aggregate.empty())
 		filters.insert(filters.begin(), {"All supported images", std::move(aggregate)});
-	filters.push_back({"All files", {"*"}});
+	if (includeAllFiles)
+		filters.push_back({"All files", {"*"}});
 	return filters;
 }
 

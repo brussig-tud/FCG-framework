@@ -284,7 +284,13 @@ void Window::endFrame ()
 	}
 
 	// Handle frame finalization
-	m_frame->end();
+	try {
+		m_frame->end();
+	} catch (...) {
+		if (!m_frame->commandBuffer())
+			m_frame.reset();
+		throw;
+	}
 
 	// The frame landed
 	m_frame.reset();

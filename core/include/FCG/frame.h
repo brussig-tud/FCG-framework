@@ -336,8 +336,12 @@ private:
 	////
 	// Methods
 
-	/// Submit the command buffer and mark the frame as finished. Throws \c std::logic_error if a render pass or
-	/// presentation recorder is active. Called by \c Window::endFrame, including for unpresented and failed frames.
+	/// Submit the command buffer and mark the frame as finished.
+	///
+	/// \throws std::logic_error If a render pass or presentation recorder is currently active.
+	/// \throws std::runtime_error
+	/// 	When \ref commandBuffer "command buffer" submission fails, after marking the frame as finished. This is also
+	/// 	logged to the SDL log.
 	void end ();
 
 

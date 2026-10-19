@@ -11,6 +11,7 @@
 #include <set>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 // FCG Framework
 #include <FCG/Image/sdl_image.h>
@@ -113,6 +114,44 @@ void registryTests ()
 	require(fcg::extra::imageFileFilters({}).size() == 1, "Empty metadata did not retain all-files filter");
 }
 
+/// Check exact filter contents and order for default, explicit inclusion, and opt-out calls.
+void filterTests ()
+{
+	using fcg::ImageFileFormat;
+	using fcg::extra::FileDialogFilter;
+	const auto equal = [] (const auto &left, const auto &right) {
+		return std::ranges::equal(left, right, [] (const auto &a, const auto &b) {
+			return a.name == b.name && a.extensions == b.extensions;
+		});
+	};
+	const auto check = [&] (const std::vector<ImageFileFormat> &formats, std::vector<FileDialogFilter> expected) {
+		require(equal(fcg::extra::imageFileFilters(formats, false), expected), "Opt-out filter contents or order differ");
+		expected.push_back({"All files", {"*"}});
+		require(equal(fcg::extra::imageFileFilters(formats), expected), "Default filter contents or order differ");
+		require(equal(fcg::extra::imageFileFilters(formats, true), expected), "Explicit inclusion differs from default");
+	};
+	check({}, {});
+	check({{"PNG", {"png", "png"}}, {"JPEG", {"jpg", "jpeg"}}}, {
+		{"All supported images", {"png", "jpg", "jpeg"}}, {"PNG", {"png"}}, {"JPEG", {"jpg", "jpeg"}}
+	});
+	check({{"Any image", {"*"}}}, {{"Any image", {"*"}}});
+	check({{"First wildcard", {"*", "*"}}, {"Second wildcard", {"*"}}, {"Empty", {}}}, {
+		{"First wildcard", {"*"}}
+	});
+	for (std::size_t position = 0; position < 3; ++position)
+	{
+		std::vector<ImageFileFormat> formats{{"PNG", {"png"}}, {"JPEG", {"jpg", "jpeg", "png"}}};
+		formats.insert(formats.begin() + position, {"Any image", {"*"}});
+		std::vector<FileDialogFilter> expected{{"PNG", {"png"}}, {"JPEG", {"jpg", "jpeg", "png"}}};
+		expected.insert(expected.begin() + position, {"Any image", {"*"}});
+		expected.insert(expected.begin(), {"All supported images", {"png", "jpg", "jpeg"}});
+		check(formats, std::move(expected));
+	}
+	check({{"Invalid mixed filter", {"png", "*"}}}, {
+		{"All supported images", {"png"}}, {"Invalid mixed filter", {"png", "*"}}
+	});
+}
+
 /// Compare every advertised backend extension with the dependency's resolved capabilities.
 void backendTests ()
 {
@@ -153,6 +192,7 @@ auto main () -> int
 {
 	try {
 		registryTests();
+		filterTests();
 		backendTests();
 		std::cout << "Format snapshots, registry order, codec capabilities, and viewer filters passed\n";
 		return 0;

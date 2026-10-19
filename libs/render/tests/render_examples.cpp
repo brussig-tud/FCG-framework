@@ -21,6 +21,33 @@
 // Functions
 //
 
+/// Upload positions and a shared color before drawing boxes into the caller's active pass.
+///
+/// \param device The device shared by the renderer and command buffer.
+/// \param boxes The renderer used for the draw.
+/// \param state The current viewing matrices.
+/// \param commandBuffer The command buffer owning the active pass.
+/// \param renderPass The active pass compatible with the renderer.
+/// \param positions The instance centers, borrowed for this call.
+///
+/// \return Success, or the upload or draw error.
+// [update_and_draw]
+[[nodiscard]] auto updateAndDraw (
+	fcg::Device &device, const fcg::BoxRenderer &boxes, fcg::RenderState &state,
+	SDL_GPUCommandBuffer *commandBuffer, SDL_GPURenderPass *renderPass, std::span<const glm::vec4> positions
+) -> std::expected<void, fcg::RenderError>
+{
+	fcg::PrimitiveAttributes attributes(device);
+	auto result = attributes.setAttributes([&] (fcg::PrimitiveAttributes::Update &update) {
+		update.set<fcg::Attribute::Position>(positions);
+		update.set<fcg::Attribute::Color>(glm::vec4(1.f, 0.f, 0.f, 1.f));
+	});
+	if (result)
+		result = boxes.draw(attributes, state, commandBuffer, renderPass);
+	return result;
+}
+// [update_and_draw]
+
 /// Update shared GPU attributes from caller-owned arrays.
 /// [attributes]
 [[nodiscard]] auto replaceInstances (

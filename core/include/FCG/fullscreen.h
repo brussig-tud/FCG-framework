@@ -59,8 +59,10 @@
 /// Factories and recording functions return <tt>std::expected&lt;T, E&gt;</tt> with
 /// <tt>E = \ref fcg::FullscreenError "FullscreenError"</tt>.
 /// Invalid bindings, mismatched resource counts, extents outside 1 to 16384 pixels, uniform blocks outside 1 to 4096
-/// bytes, and target textures that are also bound as inputs are rejected as <tt>\ref
-/// fcg::FullscreenErrorCode::InvalidArgument "InvalidArgument"</tt> without recording anything. A failed
+/// bytes are rejected as <tt>\ref fcg::FullscreenErrorCode::InvalidArgument "InvalidArgument"</tt> without recording
+/// anything. <tt>\ref fcg::FullscreenPass::record "record"</tt> also rejects target textures bound as inputs.
+/// When using <tt>\ref fcg::FullscreenPass::draw "draw"</tt>, the caller must ensure that input textures differ
+/// from the attachment and that the command buffer and render pass meet its compatibility preconditions. A failed
 /// <tt>\ref fcg::FullscreenPass::record "record"</tt> leaves no pass open.
 ///
 /// \see \ref fcg_textures, \ref fcg_buffers
@@ -105,7 +107,7 @@ namespace fcg {
 enum class FullscreenErrorCode
 {
 	/// \brief
-	/// 	A parameter is invalid: e.g. a null or mismatched command buffer, pass, target or binding, binding counts
+	/// 	A parameter is invalid: e.g. a null command buffer or pass, a mismatched target or binding, binding counts
 	/// 	that differ from the shader declaration, an output extent outside 1–16384, a uniform block outside 1–4096
 	/// 	bytes, a non-fragment or empty shader, or a target texture that is also bound as an input.
 	InvalidArgument,

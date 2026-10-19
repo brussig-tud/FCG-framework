@@ -26,13 +26,20 @@
 // Function implementations
 //
 
+/// \brief Load modelview and projection matrices and upload the viewing uniforms for a draw.
+///
+/// \pre The model matrix is affine and invertible.
+///
+/// \param device The device used for rendering.
+/// \param commandBuffer The command buffer that receives the viewing uniforms.
+/// \param model The affine, invertible model matrix that transforms object coordinates into world coordinates.
 // [render_state_usage]
 void example (fcg::Device &device, SDL_GPUCommandBuffer *commandBuffer, const glm::mat4 &model)
 {
 	fcg::RenderState renderState(device);
 	renderState.loadProjectionMatrix(glm::perspective(glm::radians(60.f), 16.f / 9.f, 0.125f, 100.f));
 
-	// Compose transforms by right-multiplication:
+	// Compose transforms by right-multiplication; model must be affine and invertible:
 	renderState.loadModelviewMatrix(model);
 	renderState.mulModelviewMatrix(glm::translate(glm::mat4(1.f), glm::vec3(0.f, 0.f, -3.f)));
 

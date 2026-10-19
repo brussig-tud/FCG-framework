@@ -243,15 +243,7 @@ using AttributeSource = std::variant<std::monostate, typename AttributeTraits<A>
 /// Each \c Attribute is either absent, a constant shared by all instances, an array copied from CPU memory, or an
 /// array in a GPU buffer that you manage. The number of positions determines the number of instances. Change the
 /// sources with <tt>setAttributes</tt>, then pass the collection to <tt>PrimitiveRenderer::draw</tt>:
-/// \code
-/// fcg::PrimitiveAttributes attributes(device);
-/// auto result = attributes.setAttributes([&] (fcg::PrimitiveAttributes::Update &update) {
-/// 	update.set<fcg::Attribute::Position>(std::span(positions));
-/// 	update.set<fcg::Attribute::Color>(glm::vec4(1.f, 0.f, 0.f, 1.f));
-/// });
-/// if (result)
-/// 	result = boxes.draw(attributes, state, commandBuffer, renderPass);
-/// \endcode
+/// \snippet render_examples.cpp update_and_draw
 ///
 /// The collection keeps no CPU copy of uploaded arrays, and updates never wait for the GPU. If an update fails, the
 /// previous sources stay in effect; see \c setAttributes for the consequences of a failed GPU submission.
