@@ -68,13 +68,16 @@ add_test(NAME runtime-contract-smoke COMMAND runtime-contract-smoke)
 set_tests_properties(runtime-contract-smoke PROPERTIES TIMEOUT 60
 	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
 
-# Substitute narrow SDL boundaries in the production sources without exporting test hooks from Core.
+# Substitute narrow SDL and ImGui boundaries in production sources without exporting test hooks from Core.
 add_executable(runtime-failure-smoke lifecycle/failures.cpp)
 target_compile_definitions(runtime-failure-smoke PRIVATE FCG_FRAMEWORK_STATIC_DEFINE)
 target_link_libraries(runtime-failure-smoke PRIVATE Core)
-foreach(scenario normal startup window init name event resize gui update render overlay presentation submit close-submit render-submit logic)
+foreach(scenario normal startup window gui-context gui-platform gui-renderer gui-allocation
+	init name event resize gui update render overlay presentation submit close-submit render-submit logic)
 	add_test(NAME runtime-failure-${scenario} COMMAND runtime-failure-smoke ${scenario})
-	set_tests_properties(runtime-failure-${scenario} PROPERTIES TIMEOUT 60
+	add_test(NAME runtime-failure-${scenario}-previous-context
+		COMMAND runtime-failure-smoke ${scenario} previous-context)
+	set_tests_properties(runtime-failure-${scenario} runtime-failure-${scenario}-previous-context PROPERTIES TIMEOUT 60
 		FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
 endforeach()
 

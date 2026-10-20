@@ -95,6 +95,11 @@
 /// \section fcg_runtime_lifetime Ownership and lifetime
 /// <tt>\ref fcg::run "run"</tt> takes ownership of the applets it is given. Run one application at a time, from the
 /// main thread; the call blocks until the application shuts down.
+///
+/// A previously current ImGui context remains caller-owned and is restored when the call returns or unwinds.
+/// Keep that context alive and unused during the call. Leave the framework's context current until its GUI is
+/// destroyed, including throughout applet destruction; see <tt>\ref fcg::Gui "Gui"</tt> for its lifetime contract.
+///
 /// Presentation recorders own their captures, including move-only passes. Captures are destroyed on replacement,
 /// clearing or shutdown. On normal shutdown and exception unwinding, the runtime clears the recorder before destroying
 /// applets, while the device is still alive. References captured from applet state must remain valid while registered.
@@ -181,8 +186,13 @@ struct PlayerSettings
 /// while the applets are destroyed during the unwinding. If finishing a frame also fails during this unwinding,
 /// the submission failure is logged and the original exception propagates unchanged.
 ///
+/// A previously current ImGui context is restored on return or exception unwinding.
+///
 /// \pre
 /// 	Call from the main thread. Only one call may be active at a time. No element of \p applets is \c nullptr.
+/// 	Any previously current ImGui context must remain alive and unused during the call. While the framework GUI
+/// 	exists, keep its context current, including during applet destruction, and leave context destruction and
+/// 	backend initialization and shutdown to the framework.
 ///
 /// \param applets The applets to run, in callback order. The function takes ownership of them.
 /// \param settings The initial player settings.

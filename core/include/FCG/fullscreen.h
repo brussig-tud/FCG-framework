@@ -107,12 +107,15 @@ namespace fcg {
 enum class FullscreenErrorCode
 {
 	/// \brief
-	/// 	A parameter is invalid: e.g. a null command buffer or pass, a mismatched target or binding, binding counts
-	/// 	that differ from the shader declaration, an output extent outside 1–16384, a uniform block outside 1–4096
-	/// 	bytes, a non-fragment or empty shader, or a target texture that is also bound as an input.
+	/// 	A parameter is invalid: e.g. a null command buffer or pass, a mismatched target, an invalid or empty input
+	/// 	resource binding, binding counts that differ from the shader declaration, an output extent outside 1–16384,
+	/// 	a uniform block outside 1–4096 bytes, a non-fragment or empty shader, or a target texture that is also bound
+	/// 	as an input.
 	InvalidArgument,
 
-	/// The fullscreen pass or a texture is empty (e.g. moved from), or a built-in shader is missing.
+	/// \brief
+	/// 	The fullscreen pass is empty, the texture supplied to \c FullscreenTarget::fromTexture is empty,
+	/// 	or a built-in shader is missing.
 	InvalidState,
 
 	/// The output format cannot be rendered to, or the shader declares more resources than supported.

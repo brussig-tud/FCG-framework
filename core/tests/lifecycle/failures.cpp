@@ -7,6 +7,7 @@
 // C++ STL
 #include <iostream>
 #include <memory>
+#include <new>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -17,6 +18,11 @@
 
 // Dear ImGui library
 #include <imgui.h>
+#include <imgui_impl_sdl3.h>
+#include <imgui_impl_sdlgpu3.h>
+
+// Framework implementation helpers (before substituting ImGui entry points)
+#include "../../src/gui_scaling.h"
 
 // FCG Framework
 #include <FCG/device.h>
@@ -37,6 +43,33 @@ namespace {
 
 /// Selected subprocess scenario.
 std::string scenario;
+
+/// Caller-owned context that must survive the runtime.
+ImGuiContext *callerContext = nullptr;
+
+/// Context acquired by the production GUI factory.
+ImGuiContext *createdContext = nullptr;
+
+/// Number of attempts to create the framework context.
+unsigned contextCreationAttempts = 0;
+
+/// Number of owned contexts released by production cleanup.
+unsigned contextDestructions = 0;
+
+/// Number of successful platform backend initializations.
+unsigned platformInitializations = 0;
+
+/// Number of successful renderer backend initializations.
+unsigned rendererInitializations = 0;
+
+/// Number of platform backend shutdowns.
+unsigned platformShutdowns = 0;
+
+/// Number of renderer backend shutdowns.
+unsigned rendererShutdowns = 0;
+
+/// Whether cleanup selected the owned context and released its backends before destruction.
+bool guiCleanupValid = true;
 
 /// Whether the next frame submission should report failure after consuming its command buffer.
 bool failSubmission = false;
@@ -92,8 +125,89 @@ void SDLCALL observeLog (void*, int category, SDL_LogPriority priority, const ch
 		originalLog(originalLogData, category, priority, message);
 }
 
+/// Fail before platform initialization or initialize the real backend.
+auto initializeGuiPlatform (SDL_Window *window) -> bool {
+	if (scenario == "gui-platform")
+		return false;
+	const bool initialized = ImGui_ImplSDL3_InitForSDLGPU(window);
+	platformInitializations += initialized;
+	return initialized;
+}
+
+/// Inject a failure before renderer initialization or an allocation exception after it succeeds.
+auto initializeGuiRenderer (ImGui_ImplSDLGPU3_InitInfo *info) -> bool
+{
+	if (scenario == "gui-renderer")
+		return false;
+	const bool initialized = ImGui_ImplSDLGPU3_Init(info);
+	rendererInitializations += initialized;
+	if (initialized && scenario == "gui-allocation")
+		throw std::bad_alloc();
+	return initialized;
+}
+
+/// Observe platform shutdown on the owned context after renderer shutdown.
+void shutdownGuiPlatform () {
+	guiCleanupValid &= ImGui::GetCurrentContext() == createdContext && !ImGui::GetIO().BackendRendererUserData;
+	++platformShutdowns;
+	ImGui_ImplSDL3_Shutdown();
+}
+
+/// Observe renderer shutdown on the owned context.
+void shutdownGuiRenderer () {
+	guiCleanupValid &= ImGui::GetCurrentContext() == createdContext;
+	++rendererShutdowns;
+	ImGui_ImplSDLGPU3_Shutdown();
+}
+
 // Anonymous namespace end
 }
+
+
+
+//////
+//
+// Module namespace open
+//
+
+// Dear ImGui namespace, for test substitutes of qualified production calls.
+namespace ImGui {
+
+
+
+//////
+//
+// Functions
+//
+
+/// Acquire the real GUI context, or report an initialization failure without acquiring one.
+auto createGuiContext (ImFontAtlas *atlas = nullptr) -> ImGuiContext* {
+	++contextCreationAttempts;
+	if (scenario == "gui-context")
+		return nullptr;
+	createdContext = CreateContext(atlas);
+	return createdContext;
+}
+
+/// Verify explicit ownership and backend cleanup before destroying the real GUI context.
+void destroyGuiContext (ImGuiContext *context)
+{
+	guiCleanupValid &= context && context == createdContext && context != callerContext
+		&& GetCurrentContext() == context;
+	if (context)
+		guiCleanupValid &= !GetIO().BackendRendererUserData && !GetIO().BackendPlatformUserData;
+	++contextDestructions;
+	DestroyContext(context);
+}
+
+
+
+//////
+//
+// Module namespace close
+//
+
+} // namespace ImGui
 
 
 
@@ -102,8 +216,8 @@ void SDLCALL observeLog (void*, int category, SDL_LogPriority priority, const ch
 // Includes
 //
 
-// Compile the production implementations with only these SDL boundaries substituted. The rest of Core, including
-// its GPU resources, GUI and player, is linked normally. This also exercises the sources with shared dependencies
+// Compile the production implementations with narrow SDL and ImGui boundaries substituted. The rest of Core,
+// including its GPU resources and player, is linked normally. This also exercises the sources with shared dependencies
 // without introducing test entry points into the public API.
 #define SDL_SubmitGPUCommandBuffer submitFrame
 #include "../../src/frame.cpp"
@@ -114,6 +228,19 @@ void SDLCALL observeLog (void*, int category, SDL_LogPriority priority, const ch
 #define SDL_Init initializeSDL
 #include "../../src/run.cpp"
 #undef SDL_Init
+#define CreateContext createGuiContext
+#define DestroyContext destroyGuiContext
+#define ImGui_ImplSDL3_InitForSDLGPU initializeGuiPlatform
+#define ImGui_ImplSDLGPU3_Init initializeGuiRenderer
+#define ImGui_ImplSDL3_Shutdown shutdownGuiPlatform
+#define ImGui_ImplSDLGPU3_Shutdown shutdownGuiRenderer
+#include "../../src/gui.cpp"
+#undef ImGui_ImplSDLGPU3_Shutdown
+#undef ImGui_ImplSDL3_Shutdown
+#undef ImGui_ImplSDLGPU3_Init
+#undef ImGui_ImplSDL3_InitForSDLGPU
+#undef DestroyContext
+#undef CreateContext
 
 
 
@@ -206,6 +333,8 @@ public:
 			results.player = &player;
 			results.device = &device;
 			results.context = ImGui::GetCurrentContext();
+			require(results.context && results.context == createdContext && results.context != callerContext,
+				"Runtime did not select its own GUI context");
 			player.pushContinuousRedraw();
 			auto pass = fcg::FullscreenPass::linearToSRGB(device, player.swapchainFormat());
 			require(pass.has_value(), "Could not create probe presentation pass");
@@ -333,8 +462,26 @@ auto main (int argc, char **argv) -> int
 {
 	try
 	{
-		require(argc == 2, "Expected a failure scenario");
+		require(argc == 2 || (argc == 3 && std::string(argv[2]) == "previous-context"),
+			"Expected a failure scenario and optional previous-context mode");
 		scenario = argv[1];
+		std::unique_ptr<ImGuiContext, decltype(&ImGui::DestroyContext)> previous(
+			argc == 3 ? ImGui::CreateContext() : nullptr, &ImGui::DestroyContext
+		);
+		callerContext = previous.get();
+		require(argc == 2 || callerContext, "Could not create caller context");
+		ImFont *callerFont = nullptr;
+		if (callerContext)
+		{
+			auto &io = ImGui::GetIO();
+			io.IniFilename = nullptr;
+			io.ConfigFlags = ImGuiConfigFlags_NavEnableGamepad;
+			io.UserData = &scenario;
+			callerFont = io.Fonts->AddFontDefaultBitmap();
+			require(callerFont, "Could not create caller font");
+			io.FontDefault = callerFont;
+			ImGui::GetStyle().Alpha = .375f;
+		}
 		SDL_GetLogOutputFunction(&originalLog, &originalLogData);
 		SDL_SetLogOutputFunction(observeLog, nullptr);
 		Results results;
@@ -344,12 +491,16 @@ auto main (int argc, char **argv) -> int
 			applets.push_back(std::make_unique<Probe>(results, i));
 		bool callbackFailed = false;
 		bool submissionFailed = false;
+		bool allocationFailed = false;
 		int status = -1;
 		try {
 			status = fcg::run(std::move(applets));
 		} catch (const ProbeFailure &error) {
 			require(std::string(error.what()) == "callback sentinel", "Changed callback exception");
 			callbackFailed = true;
+		} catch (const std::bad_alloc&) {
+			require(scenario == "gui-allocation", "Unexpected allocation exception");
+			allocationFailed = true;
 		} catch (const std::runtime_error &error) {
 			require(scenario == "submit" || scenario == "close-submit", error.what());
 			require(submissionLogs == std::vector<std::string>{error.what()}, "Log and exception differ");
@@ -357,9 +508,31 @@ auto main (int argc, char **argv) -> int
 		}
 		require(results.destroyed == std::vector<unsigned>{2, 1, 0}, "Applets were not destroyed in reverse order");
 		require(results.valid, "Applet or presentation teardown lost its required dependencies");
-		require(SDL_WasInit(0) == 0 && !ImGui::GetCurrentContext(), "Runtime did not release SDL and GUI");
-		if (scenario == "startup" || scenario == "window")
+		require(SDL_WasInit(0) == 0, "Runtime did not release SDL");
+		require(ImGui::GetCurrentContext() == callerContext, "Runtime did not restore the previous context");
+		const bool reachesGui = scenario != "startup" && scenario != "window";
+		require(contextCreationAttempts == (reachesGui ? 1u : 0u)
+			&& bool(createdContext) == (reachesGui && scenario != "gui-context"),
+			"Scenario did not reach the expected GUI initialization stage");
+		require(guiCleanupValid && contextDestructions == (createdContext ? 1u : 0u),
+			"GUI did not destroy exactly its owned context after backend cleanup");
+		require(platformShutdowns == platformInitializations && rendererShutdowns == rendererInitializations,
+			"GUI did not shut down each initialized backend exactly once");
+		if (callerContext)
+		{
+			const auto &io = ImGui::GetIO();
+			require(io.ConfigFlags == ImGuiConfigFlags_NavEnableGamepad && io.UserData == &scenario
+				&& !io.IniFilename && io.FontDefault == callerFont && io.Fonts->Fonts.Size == 1
+				&& io.Fonts->Fonts[0] == callerFont && ImGui::GetStyle().Alpha == .375f
+				&& !io.BackendPlatformUserData && !io.BackendRendererUserData,
+				"Runtime modified the caller's context");
+		}
+		if (scenario == "startup" || scenario == "window" || scenario == "gui-context"
+			|| scenario == "gui-platform" || scenario == "gui-renderer")
 			require(status == EXIT_FAILURE && !results.player && !submissions, "Startup failure invoked callbacks");
+		else if (scenario == "gui-allocation")
+			require(allocationFailed && !results.player && !submissions && rendererInitializations == 1,
+				"GUI allocation exception was lost or invoked callbacks");
 		else if (scenario == "normal" || scenario == "logic")
 			require(status == EXIT_SUCCESS && submissions == 1, "Normal close did not finish exactly one frame");
 		else if (scenario == "submit" || scenario == "close-submit")

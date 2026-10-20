@@ -300,7 +300,8 @@ public:
 	/// 	The new near clipping distance in world units.
 	///
 	/// \throws std::invalid_argument
-	/// 	If \c zNear is not finite.
+	/// 	If \c zNear is not finite or no greater finite far clipping distance is representable as a
+	/// 	\c float value. This includes a request for the largest finite \c float value.
 	void setNearPlane (float zNear) override;
 
 	/// \brief Set the far clipping distance.

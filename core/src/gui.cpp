@@ -48,10 +48,16 @@ auto Gui::create (Device &device, Window &mainWindow) -> std::unique_ptr<Gui>
 {
 	// Set up the framework-wide ImGui context
 	IMGUI_CHECKVERSION();
-	if (!ImGui::CreateContext()) {
+	std::unique_ptr<Gui> gui(new Gui());
+	gui->m_device = device.handle();
+	gui->m_window = mainWindow.handle();
+	gui->m_previousContext = ImGui::GetCurrentContext();
+	gui->m_context = ImGui::CreateContext();
+	if (!gui->m_context) {
 		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Creating the ImGui context failed");
 		return nullptr;
 	}
+	ImGui::SetCurrentContext(gui->m_context);
 	ImGuiIO &io = ImGui::GetIO();
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // enable keyboard controls
 	ImGui::StyleColorsDark();
@@ -61,7 +67,6 @@ auto Gui::create (Device &device, Window &mainWindow) -> std::unique_ptr<Gui>
 	ImFont *vectorFont = io.Fonts->AddFontDefaultVector();
 	if (!bitmapFont || !vectorFont) {
 		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Loading the default ImGui fonts failed");
-		ImGui::DestroyContext();
 		return nullptr;
 	}
 	io.FontDefault = bitmapFont;
@@ -69,7 +74,6 @@ auto Gui::create (Device &device, Window &mainWindow) -> std::unique_ptr<Gui>
 	// Initialize the SDL3 platform backend
 	if (!ImGui_ImplSDL3_InitForSDLGPU(mainWindow.handle())) {
 		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Initializing the ImGui SDL3 platform backend failed");
-		ImGui::DestroyContext();
 		return nullptr;
 	}
 
@@ -80,28 +84,29 @@ auto Gui::create (Device &device, Window &mainWindow) -> std::unique_ptr<Gui>
 	initInfo.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
 	if (!ImGui_ImplSDLGPU3_Init(&initInfo)) {
 		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Initializing the ImGui SDL GPU renderer backend failed");
-		ImGui_ImplSDL3_Shutdown();
-		ImGui::DestroyContext();
 		return nullptr;
 	}
 
 	// Assemble and return the object
-	std::unique_ptr<Gui> gui(new Gui());
-	gui->m_device = device.handle();
-	gui->m_window = mainWindow.handle();
 	gui->m_scaling = std::make_unique<detail::GuiScaling>(mainWindow.id(), bitmapFont, vectorFont);
 	return gui;
 }
 
 Gui::~Gui ()
 {
-	// We require the GPU device is to still be valid here by contract
-	SDL_WaitForGPUIdle(m_device);
-	if (ImGui::GetIO().BackendRendererUserData)
-		ImGui_ImplSDLGPU3_Shutdown();
-	if (ImGui::GetIO().BackendPlatformUserData)
-		ImGui_ImplSDL3_Shutdown();
-	ImGui::DestroyContext();
+	if (m_context)
+	{
+		ImGui::SetCurrentContext(m_context);
+		// The device outlives the GUI, including partial initialization.
+		SDL_WaitForGPUIdle(m_device);
+		m_scaling.reset();
+		if (ImGui::GetIO().BackendRendererUserData)
+			ImGui_ImplSDLGPU3_Shutdown();
+		if (ImGui::GetIO().BackendPlatformUserData)
+			ImGui_ImplSDL3_Shutdown();
+		ImGui::DestroyContext(m_context);
+	}
+	ImGui::SetCurrentContext(m_previousContext);
 }
 
 void Gui::processEvent (const SDL_Event &event) {

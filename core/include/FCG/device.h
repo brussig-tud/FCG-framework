@@ -314,7 +314,13 @@ public:
 	/// window can be destroyed or claimed again.
 	///
 	/// \pre
-	/// 	\c window is not null.
+	/// 	\c window is not null and has no active frame. If \c Window::beginFrame returned a non-null frame,
+	/// 	finish that frame with \c Window::endFrame before releasing the claim.
+	///
+	/// \note
+	/// 	The standard loop provided by \c fcg::run finishes its frames before releasing the window's claim.
+	/// 	Violating this precondition would require unusual manual lifetime management, such as releasing
+	/// 	the claim partway through a frame in a custom rendering loop.
 	///
 	/// \param window
 	/// 	The window to release.

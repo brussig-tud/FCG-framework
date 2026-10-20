@@ -55,6 +55,10 @@
 /// claimed by the GPU device, and is destroyed after the applets, which therefore can use ImGui until their
 /// destructors run. Applications never create a GUI themselves.
 ///
+/// An ImGui context that is current before <tt>\ref fcg::run "run"</tt> remains caller-owned and is restored on
+/// return or exception unwinding. Keep it alive and unused until then. While the framework GUI exists, leave its
+/// context current and leave its destruction and backend initialization and shutdown to the framework.
+///
 /// \see \ref fcg_applets, \ref fcg_events, \ref fcg_runtime
 
 
@@ -83,6 +87,9 @@ struct SDL_Window;
 struct SDL_GPUCommandBuffer;
 struct SDL_GPUDevice;
 struct SDL_GPURenderPass;
+
+// Opaque Dear ImGui types
+struct ImGuiContext;
 
 // Framework types
 namespace fcg {
@@ -124,8 +131,13 @@ namespace fcg {
 /// and renders the result on top of the presented scene. While an instance exists, its ImGui context is the current
 /// one, so applets can issue ImGui calls directly. Applications normally don't use this class themselves.
 ///
-/// Because ImGui has a single current context, at most one instance may exist at a time. In particular, applications
-/// run by \c fcg::run must not create another one.
+/// The framework supports at most one live \c Gui instance. A previously current ImGui context remains caller-owned
+/// and is restored after this GUI is destroyed or its initialization fails.
+///
+/// \pre
+/// 	Keep any previously current context alive and unused until it is restored. Throughout this object's lifetime,
+/// 	including applet destruction, leave its context current and leave its destruction and backend initialization
+/// 	and shutdown to the framework.
 class FCG_FRAMEWORK_EXPORT Gui
 {
 public:
@@ -146,22 +158,28 @@ public:
 	///
 	/// The GUI is set up for the dark ImGui style with keyboard navigation enabled. Its style scale and default font
 	/// follow the window's display scale and are updated automatically when it changes.
+	/// Successful creation leaves the new context current. On failure, the previously current context is restored.
 	///
 	/// \pre
 	/// 	\p mainWindow is claimed by \p device (see <tt>\ref fcg::Device::claimWindow "Device::claimWindow"</tt>). No
-	/// 	other \c Gui instance exists.
+	/// 	other \c Gui instance exists. Any previously current ImGui context must remain alive and unused until the
+	/// 	returned GUI is destroyed.
 	///
 	/// \param device The GPU device used for rendering the GUI. It must outlive the returned object.
 	/// \param mainWindow The window whose input the GUI processes and into which it is rendered.
 	///
 	/// \return The new GUI, or \c nullptr if initialization failed. The reason is logged to the SDL log.
+	///
+	/// \throws std::bad_alloc
+	/// 	If memory allocation fails. Acquired GUI resources are released and the previous context is restored.
 	[[nodiscard]] static auto create (Device &device, Window &mainWindow) -> std::unique_ptr<Gui>;
 
 	/// \brief
-	/// 	Waits until the GPU is idle, then shuts down the GUI and destroys its ImGui context.
+	/// 	Waits until the GPU is idle, shuts down the GUI, destroys its ImGui context and restores the previous context.
 	///
 	/// \pre
-	/// 	The GPU device passed to <tt>\ref create "create"</tt> is still alive.
+	/// 	The GPU device passed to <tt>\ref create "create"</tt> and any previously current ImGui context are still
+	/// 	alive. This GUI's context is current.
 	~Gui();
 
 	/// Not copyable.
@@ -272,6 +290,12 @@ private:
 
 	////
 	// Fields
+
+	/// The owned ImGui context, or null before context creation succeeds.
+	ImGuiContext *m_context = nullptr;
+
+	/// The borrowed context to restore after cleanup; its owner must keep it alive until then.
+	ImGuiContext *m_previousContext = nullptr;
 
 	/// The GPU device the renderer backend was initialized with. Referenced, not owned; the device must outlive the
 	/// GUI.
