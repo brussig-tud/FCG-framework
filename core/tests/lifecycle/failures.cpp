@@ -87,6 +87,22 @@ bool failAttachment = false;
 /// Whether the next cancellation should report failure after consuming its command buffer.
 bool failCancellation = false;
 
+/// Whether configuration should fail at the application boundary after request acceptance.
+bool failSceneSupport = false;
+
+/// Number of driver recreation callbacks.
+unsigned recreations = 0;
+
+/// Number of driver updates.
+unsigned updates = 0;
+
+/// Reject a previously accepted format at its application boundary.
+auto sceneFormatSupported (
+	SDL_GPUDevice *device, SDL_GPUTextureFormat format, SDL_GPUTextureType type, SDL_GPUTextureUsageFlags usage
+) -> bool {
+	return !failSceneSupport && SDL_GPUTextureSupportsFormat(device, format, type, usage);
+}
+
 /// Number of frame submissions, excluding resource uploads made by the library.
 unsigned submissions = 0;
 
@@ -276,7 +292,7 @@ void destroyGuiContext (ImGuiContext *context)
 //
 
 // Compile the production implementations with narrow SDL and ImGui boundaries substituted. The rest of Core,
-// including its GPU resources and player, is linked normally. This also exercises the sources with shared dependencies
+// including its GPU resources, is linked normally. This also exercises the sources with shared dependencies
 // without introducing test entry points into the public API.
 #define SDL_SubmitGPUCommandBuffer submitFrame
 #include "../../src/frame.cpp"
@@ -284,12 +300,15 @@ void destroyGuiContext (ImGuiContext *context)
 #define SDL_CancelGPUCommandBuffer cancelFrame
 #define SDL_WaitAndAcquireGPUSwapchainTexture acquireImage
 #define SDL_CreateGPUTexture createAttachment
+#define SDL_GPUTextureSupportsFormat sceneFormatSupported
 #include "../../src/window.cpp"
+#undef SDL_GPUTextureSupportsFormat
 #undef SDL_CreateGPUTexture
 #undef SDL_WaitAndAcquireGPUSwapchainTexture
 #undef SDL_CancelGPUCommandBuffer
 #undef SDL_CreateWindow
 #undef SDL_SubmitGPUCommandBuffer
+#include "../../src/player.cpp"
 #define SDL_Init initializeSDL
 #include "../../src/run.cpp"
 #undef SDL_Init
@@ -393,6 +412,43 @@ public:
 		return label;
 	}
 
+	/// Inject failures during initial and subsequent recreation and changes while no drawable is available.
+	void recreatePipelines (fcg::Device&, fcg::Player &player) override
+	{
+		fail("recreate");
+		if (scenario == "recreate-runtime" && index == 1 && recreations == 2)
+			throw ProbeFailure();
+		if (index)
+			return;
+		++recreations;
+		if (recreations == 1 && (scenario == "recreate-runtime" || scenario == "scene-apply"))
+		{
+			require(player.setSceneFormat(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM).has_value(), "Format rejected");
+			failSceneSupport = scenario == "scene-apply";
+		}
+		if (scenario == "scene-minimized")
+		{
+			if (recreations == 2 || recreations == 3)
+			{
+				bool noFrame = false;
+				try { (void)player.scheduleDepthReadback(); }
+				catch (const std::runtime_error&) { noFrame = true; }
+				require(noFrame, "Minimized recreation acquired a drawable frame");
+				require(player.mainRenderTargetInfo()->colorFormat == (recreations == 2
+					? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM : SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT),
+					"Minimized change was not effective before recreation");
+			}
+			if (recreations < 4)
+			{
+				const auto format = recreations == 1 ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM
+					: recreations == 2 ? SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT
+					: SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
+				require(player.setSceneFormat(format).has_value(), "Minimized request rejected");
+				unavailableImage = recreations < 3;
+			}
+		}
+	}
+
 	/// Register a real presentation pass and arrange input or resizing before the first frame.
 	void init (fcg::Device &device, fcg::Player &player) override
 	{
@@ -483,8 +539,11 @@ public:
 	/// Close after this iteration, unless a preceding callback fails first.
 	void update (fcg::Device&, fcg::Player &player, float) override {
 		fail("update");
-		if (!index)
-			player.requestClose();
+		if (!index) {
+			++updates;
+			if (scenario != "scene-minimized" || updates == 3)
+				player.requestClose();
+		}
 	}
 
 	/// Exercise active-pass rejection and failures before scene-pass cleanup.
@@ -579,7 +638,8 @@ auto main (int argc, char **argv) -> int
 		bool acquisitionFailed = false;
 		int status = -1;
 		try {
-			status = fcg::run(std::move(applets));
+			status = fcg::run(std::move(applets), {.sceneRenderTargetFormat = scenario == "scene-startup"
+				? SDL_GPU_TEXTUREFORMAT_D32_FLOAT : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB});
 		} catch (const ProbeFailure &error) {
 			require(std::string(error.what()) == "callback sentinel", "Changed callback exception");
 			callbackFailed = true;
@@ -587,7 +647,11 @@ auto main (int argc, char **argv) -> int
 			require(scenario == "gui-allocation", "Unexpected allocation exception");
 			allocationFailed = true;
 		} catch (const std::runtime_error &error) {
-			if (scenario == "submit" || scenario == "close-submit") {
+			if (scenario == "scene-apply") {
+				require(std::string(error.what()).starts_with("Applying scene format:"), "Application failure changed");
+				acquisitionFailed = true;
+			}
+			else if (scenario == "submit" || scenario == "close-submit") {
 				require(submissionLogs == std::vector<std::string>{error.what()}, "Log and exception differ");
 				submissionFailed = true;
 			}
@@ -609,7 +673,7 @@ auto main (int argc, char **argv) -> int
 		require(results.valid, "Applet or presentation teardown lost its required dependencies");
 		require(SDL_WasInit(0) == 0, "Runtime did not release SDL");
 		require(ImGui::GetCurrentContext() == callerContext, "Runtime did not restore the previous context");
-		const bool reachesGui = scenario != "startup" && scenario != "window";
+		const bool reachesGui = scenario != "startup" && scenario != "window" && scenario != "scene-startup";
 		require(contextCreationAttempts == (reachesGui ? 1u : 0u)
 			&& bool(createdContext) == (reachesGui && scenario != "gui-context"),
 			"Scenario did not reach the expected GUI initialization stage");
@@ -626,12 +690,17 @@ auto main (int argc, char **argv) -> int
 				&& !io.BackendPlatformUserData && !io.BackendRendererUserData,
 				"Runtime modified the caller's context");
 		}
-		if (scenario == "startup" || scenario == "window" || scenario == "gui-context"
+		if (scenario == "startup" || scenario == "window" || scenario == "scene-startup" || scenario == "gui-context"
 			|| scenario == "gui-platform" || scenario == "gui-renderer")
 			require(status == EXIT_FAILURE && !results.player && !submissions, "Startup failure invoked callbacks");
 		else if (scenario == "gui-allocation")
 			require(allocationFailed && !results.player && !submissions && rendererInitializations == 1,
 				"GUI allocation exception was lost or invoked callbacks");
+		else if (scenario == "scene-apply")
+			require(acquisitionFailed && submissions == 0, "Configuration failure did not propagate before acquisition");
+		else if (scenario == "scene-minimized")
+			require(status == EXIT_SUCCESS && submissions == 1 && recreations == 4 && updates == 3,
+				"Minimized format lifecycle failed");
 		else if (scenario == "normal" || scenario == "logic" || scenario == "no-image")
 			require(status == EXIT_SUCCESS && submissions == 1, "Normal close did not finish exactly one frame");
 		else if (scenario == "submit" || scenario == "close-submit")
@@ -641,7 +710,7 @@ auto main (int argc, char **argv) -> int
 			require(acquisitionFailed && submissions == (scenario.starts_with("attachment") ? 1u : 0u),
 				"Failed acquisition did not finish its commands exactly once");
 		else
-			require(callbackFailed && submissions == (scenario == "init" || scenario == "name" ? 0u : 1u),
+			require(callbackFailed && submissions == (scenario == "init" || scenario == "name" || scenario == "recreate" ? 0u : 1u),
 				"Callback exception was lost");
 		if (scenario == "render-submit")
 			require(submissionLogs.size() == 1 && callbackFailed, "Secondary failure replaced the callback exception");
@@ -650,8 +719,9 @@ auto main (int argc, char **argv) -> int
 		if (scenario == "no-image")
 			require(results.unavailableChecked && acquisitionLogs.empty(), "Unavailable frame was not returned cleanly");
 		const bool cancelledAcquisition = scenario.starts_with("no-image") || scenario.starts_with("acquire");
-		require(cancellations == (cancelledAcquisition ? 1u : 0u), "Acquisition cancellation was missing or repeated");
-		if (acquisitionFailed)
+		require(cancellations == (scenario == "scene-minimized" ? 2u : cancelledAcquisition ? 1u : 0u),
+			"Acquisition cancellation was missing or repeated");
+		if (acquisitionFailed && scenario != "scene-apply")
 		{
 			const bool secondaryFailure = scenario == "acquire-cancel" || scenario == "attachment-submit";
 			require(acquisitionLogs.size() == (secondaryFailure ? 2u : 1u), "Acquisition diagnostics were missing or repeated");

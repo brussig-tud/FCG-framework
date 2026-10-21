@@ -18,6 +18,7 @@
 #include "FCG/frame.h"
 #include "FCG/window.h"
 #include "window_scaling.h"
+#include "scene_format.h"
 
 
 
@@ -62,6 +63,10 @@ auto Window::create (const WindowSettings &settings) -> std::unique_ptr<Window>
 	// Assemble and return the object
 	std::unique_ptr<Window> window(new Window());
 	window->m_handle = handle;
+	if (auto result = window->setSceneFormat(settings.sceneFormat); !result) {
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Configuring scene format: %s", result.error().message.c_str());
+		return nullptr;
+	}
 	if (settings.scaleToDisplay)
 		window->m_scaling = std::make_unique<detail::WindowScaling>(glm::ivec2(settings.width, settings.height));
 	window->updateDisplayScale();
@@ -104,7 +109,20 @@ auto Window::renderTargetInfo () const -> std::optional<RenderTargetInfo> {
 	const auto color = swapchainFormat();
 	if (color == SDL_GPU_TEXTUREFORMAT_INVALID)
 		return std::nullopt;
-	return RenderTargetInfo{SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB, depthFormat, samples};
+	return RenderTargetInfo{m_sceneFormat, depthFormat, samples};
+}
+
+auto Window::setSceneFormat (SDL_GPUTextureFormat format) -> std::expected<void, TextureError>
+{
+	if (!SDL_IsMainThread() || m_frame)
+		throw std::logic_error("Window::setSceneFormat requires the main thread and no active frame");
+	if (auto result = detail::validateSceneFormat(m_device, format); !result)
+		return result;
+	if (format != m_sceneFormat) {
+		sceneTexture.reset();
+		m_sceneFormat = format;
+	}
+	return {};
 }
 
 auto Window::claim (Device &device) -> bool
@@ -122,6 +140,10 @@ auto Window::claim (Device &device) -> bool
 			);
 		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 		throw std::logic_error(msg);
+	}
+	if (auto result = detail::validateSceneFormat(&device, m_sceneFormat); !result) {
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Configuring scene format: %s", result.error().message.c_str());
+		return false;
 	}
 	if (!SDL_ClaimWindowForGPUDevice(device.handle(), m_handle)) {
 		SDL_LogError(
@@ -231,13 +253,8 @@ auto Window::beginFrame (Device &device) -> Frame*
 
 	// Make sure we have a depth buffer matching the swapchain texture in size. It only gets recreated when the size
 	// actually changed (e.g. after a window resize).
-	if (!depthTexture || !sceneTexture || swapchainSize != m_depthTextureSize)
+	if (!depthTexture || swapchainSize != m_depthTextureSize)
 	{
-		// Releasing the old depth buffer is safe even if previously submitted frames are still using it, SDL defers
-		// destruction until the GPU is done with it
-		if (depthTexture)
-			SDL_ReleaseGPUTexture(device.handle(), depthTexture);
-
 		// Create the new depth buffer with the most common defaults: 32-bit float depth, no stencil, no MSAA
 		SDL_GPUTextureCreateInfo depthTextureInfo = { };
 		depthTextureInfo.type = SDL_GPU_TEXTURETYPE_2D;
@@ -248,15 +265,24 @@ auto Window::beginFrame (Device &device) -> Frame*
 		depthTextureInfo.layer_count_or_depth = 1;
 		depthTextureInfo.num_levels = 1;
 		depthTextureInfo.sample_count = samples;
-		depthTexture = SDL_CreateGPUTexture(device.handle(), &depthTextureInfo);
-		if (!depthTexture) {
+		auto *replacement = SDL_CreateGPUTexture(device.handle(), &depthTextureInfo);
+		if (!replacement) {
 			const auto msg = std::format("Creating the depth buffer failed: {}", SDL_GetError());
 			SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 			throw std::runtime_error(msg);
 		}
+		// SDL defers destruction until submitted work has finished. Retain ownership until replacement succeeds.
+		if (depthTexture)
+			SDL_ReleaseGPUTexture(device.handle(), depthTexture);
+		depthTexture = replacement;
+		m_depthTextureSize = swapchainSize;
+	}
+	if (!sceneTexture || sceneTexture->info().width != swapchainSize.x
+		|| sceneTexture->info().height != swapchainSize.y)
+	{
 		SDL_GPUTextureCreateInfo sceneInfo{};
 		sceneInfo.type = SDL_GPU_TEXTURETYPE_2D;
-		sceneInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
+		sceneInfo.format = m_sceneFormat;
 		sceneInfo.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
 		sceneInfo.width = swapchainSize.x;
 		sceneInfo.height = swapchainSize.y;
@@ -266,7 +292,6 @@ auto Window::beginFrame (Device &device) -> Frame*
 		if (!scene)
 			throw std::runtime_error("Creating scene attachment: " + scene.error().message);
 		sceneTexture.emplace(std::move(*scene));
-		m_depthTextureSize = swapchainSize;
 	}
 
 	// The viewport dimensions always reflect the size of the most recently acquired swapchain texture

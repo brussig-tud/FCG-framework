@@ -162,6 +162,9 @@ public:
 		return label;
 	}
 
+	/// No scene pipelines are needed by this applet.
+	void recreatePipelines (fcg::Device&, fcg::Player&) override {}
+
 	/// Keep the loop running and verify that a window alone does not attach a GUI to a manually created player.
 	void init (fcg::Device &device, fcg::Player &player) override {
 		player.pushContinuousRedraw();

@@ -162,7 +162,8 @@ FCG_FRAMEWORK_EXPORT auto run (
 		// Create the central window that all applets will render into
 		auto window = maybeDevice ? Window::create(WindowSettings {
 			.title = std::move(settings.mainWindowTitle).value_or("FCG Player"),
-			.scaleToDisplay = settings.mainWindowScaleToDisplay
+			.scaleToDisplay = settings.mainWindowScaleToDisplay,
+			.sceneFormat = settings.sceneRenderTargetFormat
 		}) : nullptr;
 		if (!window)
 			exitCode = EXIT_FAILURE;
@@ -236,6 +237,9 @@ FCG_FRAMEWORK_EXPORT auto run (
 					);
 					applet->init(device, player);
 				}
+				(void)player.applySceneFormat();
+				for (auto &applet : applets)
+					applet->recreatePipelines(device, player);
 
 				// Info trace
 				SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: startup complete.");
@@ -253,6 +257,11 @@ FCG_FRAMEWORK_EXPORT auto run (
 			{
 				// Store un-refreshed viewport size for detecting size changes after the new frame has been acquired
 				const auto oldViewportSize = window->viewportSize();
+
+				// Requests made in callbacks are applied only between iterations, even without a drawable image.
+				const bool sceneFormatChanged = player.applySceneFormat();
+				if (sceneFormatChanged)
+					pendingRedraws = 2;
 
 				// Begin the new rendering frame. We need it now because the applets might need to interact with the
 				// player in ways that require the current target textures during their update() or gui() hooks (like
@@ -296,14 +305,18 @@ FCG_FRAMEWORK_EXPORT auto run (
 					std::optional<glm::uvec2> ignoredOldSize;
 					window->pollViewportSize(ignoredOldSize);
 				}
-				if (window->viewportSize() != oldViewportSize) {
+				const bool resized = window->viewportSize() != oldViewportSize;
+				if (resized)
 					player.invalidateReadbacks();
+				if (sceneFormatChanged)
+					for (auto &applet : applets)
+						applet->recreatePipelines(device, player);
+				if (resized)
 					for (auto &applet : applets)
 						applet->onViewportResize(device, oldViewportSize, player);
-				}
 
 				// Event handling
-				if (player.continuousRedrawRequested() || pendingRedraws > 0)
+				if (player.continuousRedrawRequested() || pendingRedraws > 0 || player.m_pendingSceneFormat)
 				{
 					// Non-blocking mode: process all pending events without waiting. Any event could change GUI
 					// state, so schedule follow-up redraws to let the GUI fully manifest the results.

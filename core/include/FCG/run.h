@@ -94,11 +94,13 @@
 /// Keep a <tt>\ref fcg::GammaUniforms "GammaUniforms"</tt> member in the applet. Default initialization selects gamma
 /// 2.2 in each channel and final RGB bounds of [0, 1]:
 /// \snippet runtime_examples.cpp presentation_parameters
-/// Create the pass once in <tt>\ref fcg::Applet::init "Applet::init"</tt> using the window format from
+/// Create the pass on the first <tt>\ref fcg::Applet::recreatePipelines "Applet::recreatePipelines"</tt> call using
+/// the window format from
 /// <tt>\ref fcg::Player::swapchainFormat "Player::swapchainFormat"</tt> (scene pipelines use
 /// <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt> for their attachments instead).
 /// The recorder owns the pass and reads the applet's current parameters during each invocation, supplying one uniform
-/// block with the scene texture and sampler:
+/// block with the scene texture and sampler. Retain this pass across scene-format changes, which preserve the window
+/// format, and leave later recorder selections in place:
 /// \snippet runtime_examples.cpp presentation_install
 ///
 /// While the custom recorder is registered, sliders in <tt>\ref fcg::Applet::gui "Applet::gui"</tt> change each
@@ -127,6 +129,19 @@
 /// a fragment shader that supplies the intended final display encoding. Intermediate passes may precede the final
 /// window draw in the same recorder, allowing to inject a chain of complex post-processing effects (screen-space ambient
 /// occlusion, depth-of-field, HDR tonemapping and bloom, temporal anti-aliasing, etc.) if desired.
+///
+/// \subsection fcg_runtime_workflows_scene Selecting scene storage
+/// Set <tt>\ref fcg::PlayerSettings::sceneRenderTargetFormat "PlayerSettings::sceneRenderTargetFormat"</tt> before
+/// running the application, or call <tt>\ref fcg::Player::setSceneFormat "Player::setSceneFormat"</tt> from an applet
+/// callback. The default is \c SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB. Requests require single-sample 2D support
+/// for combined color-target and sampler usage; integer and depth formats are unsupported. Success accepts the
+/// request, and <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt> continues to report
+/// the effective format until it is applied. Requesting that effective format cancels a pending change.
+/// All initialization callbacks finish before the latest request is applied and every applet creates pipelines in
+/// <tt>\ref fcg::Applet::recreatePipelines "Applet::recreatePipelines"</tt>. Runtime requests apply before the next
+/// iteration's frame acquisition, also while minimized; recreation precedes resize callbacks and input. Requests
+/// made during recreation wait until the following iteration. Format changes preserve depth readbacks when the
+/// viewport size stays the same. See \ref fcg_applets_workflows_pipelines for a compiled example.
 ///
 /// \section fcg_runtime_lifetime Ownership and lifetime
 /// <tt>\ref fcg::run "run"</tt> takes ownership of the applets it is given. Run one application at a time, from the
@@ -165,6 +180,9 @@
 #include <string>
 #include <vector>
 
+// SDL3 library
+#include <SDL3/SDL_gpu.h>
+
 // Local includes
 #include "FCG/export.h"
 #include "FCG/applet.h"
@@ -198,6 +216,10 @@ struct PlayerSettings
 	/// Scale the main window's initial and normal client dimensions with the display, as described by
 	/// \c WindowSettings::scaleToDisplay.
 	bool mainWindowScaleToDisplay = true;
+
+	/// Scene color storage. Requires single-sample 2D color-target and sampler support; integer and depth formats
+	/// are unsupported. Invalid configuration is logged and makes \c run return \c EXIT_FAILURE before callbacks.
+	SDL_GPUTextureFormat sceneRenderTargetFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
 };
 
 
@@ -211,8 +233,9 @@ struct PlayerSettings
 /// 	Runs the given applets in the framework's applet player and returns when the player has shut down.
 ///
 /// The function initializes SDL, creates the GPU device, the main window and the GUI, and calls
-/// <tt>\ref fcg::Applet::init "Applet::init"</tt> on each applet in order. It then runs the main loop, invoking the
-/// applet callbacks as described for <tt>\ref fcg::Applet "Applet"</tt>, and blocks until the application is closed
+/// <tt>\ref fcg::Applet::init "Applet::init"</tt> on each applet in order. After applying scene-format requests, it
+/// calls <tt>\ref fcg::Applet::recreatePipelines "Applet::recreatePipelines"</tt> on each applet in order, then runs
+/// the main loop, invoking the applet callbacks as described for <tt>\ref fcg::Applet "Applet"</tt>, and blocks until the application is closed
 /// (by closing the main window, pressing Escape, an OS quit request or
 /// <tt>\ref fcg::Player::requestClose "Player::requestClose"</tt>). Finally, it destroys the applets in reverse order
 /// while the GPU device and the player are still alive, releases all framework resources and shuts down SDL.

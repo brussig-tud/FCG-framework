@@ -66,11 +66,22 @@ public:
 		return value;
 	}
 
-	/// Create all renderer variants against the main pass before rendering starts.
+	/// Create shared attributes and request continuous redraw before rendering starts.
 	void init (fcg::Device &device, fcg::Player &player) override
 	{
 		if (&player.device() != &device)
 			throw std::runtime_error("Player factory device differs");
+		attributes = std::make_unique<fcg::PrimitiveAttributes>(device);
+		player.pushContinuousRedraw();
+	}
+
+	/// Replace renderer variants for the effective target without replacing shared attributes.
+	void recreatePipelines (fcg::Device&, fcg::Player &player) override
+	{
+		quad.reset();
+		quadCulled.reset();
+		box.reset();
+		boxTwoSided.reset();
 		target = player.mainRenderTargetInfo();
 		if (!target)
 			throw std::runtime_error("Main target missing during initialization");
@@ -78,8 +89,7 @@ public:
 		quadCulled.emplace(take(fcg::QuadRenderer::create(player, {.cullMode = SDL_GPU_CULLMODE_BACK})));
 		box.emplace(take(fcg::BoxRenderer::create(player)));
 		boxTwoSided.emplace(take(fcg::BoxRenderer::create(player, {.cullMode = SDL_GPU_CULLMODE_NONE})));
-		attributes = std::make_unique<fcg::PrimitiveAttributes>(device);
-		player.pushContinuousRedraw();
+		++recreations;
 	}
 
 	/// Record a resize notification.
@@ -94,7 +104,18 @@ public:
 	/// Replace shared arrays while earlier frames remain in flight and resize once.
 	void update (fcg::Device&, fcg::Player &player, float) override
 	{
-		if (++frames == 5)
+		++frames;
+		if (frames == 3 || frames == 8 || frames == 11)
+		{
+			const auto format = frames == 3 ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM
+				: frames == 8 ? SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT
+				: SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
+			if (auto result = player.setSceneFormat(format); !result)
+				throw std::runtime_error(result.error().message);
+		}
+		if (frames == 7 && recreations != 2)
+			throw std::runtime_error("Size-only resize recreated renderers");
+		if (frames == 5)
 		{
 			int count = 0;
 			auto **windows = SDL_GetWindows(&count);
@@ -117,7 +138,7 @@ public:
 			update.set<fcg::Attribute::Color>(std::span(colors));
 		}));
 		if (frames >= 15) {
-			success = resized && draws >= 12;
+			success = resized && draws >= 12 && recreations == 4;
 			player.requestClose();
 		}
 	}
@@ -163,6 +184,9 @@ private:
 
 	/// Number of updates.
 	unsigned frames = 0;
+
+	/// Number of completed renderer replacement passes.
+	unsigned recreations = 0;
 
 	/// Number of actual main-pass draws.
 	unsigned draws = 0;

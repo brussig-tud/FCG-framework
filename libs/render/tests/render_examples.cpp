@@ -64,7 +64,7 @@
 }
 /// [attributes]
 
-/// Create a renderer during applet initialization, before the first frame.
+/// Create or replace a renderer from \c Applet::recreatePipelines for the effective scene format.
 /// [player]
 [[nodiscard]] auto createQuads (fcg::Player &player) -> std::expected<fcg::QuadRenderer, fcg::RenderError> {
 	return fcg::QuadRenderer::create(player, {.alphaBlending = true});

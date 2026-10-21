@@ -70,25 +70,14 @@ public:
 		return name;
 	}
 
-	/// \brief
-	/// 	Creates the quad renderer, quad attributes and sampler, then loads the placeholder image
-	/// 	<tt>assets/cgvlogo.png</tt>.
+	/// \brief Creates the quad attributes and sampler, then loads the placeholder image <tt>assets/cgvlogo.png</tt>.
 	///
 	/// \param device The device to create the GPU resources on.
-	/// \param player The player the quad renderer is created for.
+	/// \param player The player running the applet.
 	///
-	/// \throws std::runtime_error if creating the quad renderer, the sampler, the texture or the quad attributes fails.
+	/// \throws std::runtime_error if creating the sampler, the texture or the quad attributes fails.
 	void init (fcg::Device &device, fcg::Player &player) override
 	{
-		// Init our quad renderer
-		if (auto maybeQr
-		    = fcg::QuadRenderer::create(player, {.alphaBlending=true}); maybeQr)
-			qr = std::move(*maybeQr);
-		else
-			throw std::runtime_error(std::format(
-				"Image Viewer: failed to create quad renderer: {}", maybeQr.error().message
-			));
-
 		// Init attribute storage for use with quad renderer
 		attributes.emplace(/* fcg::PrimitiveAttributes::<ctor>: */device);
 
@@ -105,6 +94,26 @@ public:
 
 		// Load initial placeholder image
 		loadImage(device, "assets/cgvlogo.png");
+	}
+
+	/// \brief Replace the quad renderer for the effective scene format.
+	///
+	/// \param device The application's GPU device.
+	/// \param player The player providing the effective scene render target.
+	///
+	/// \throws std::runtime_error If creating the renderer fails.
+	void recreatePipelines (fcg::Device &device, fcg::Player &player) override
+	{
+		qr.reset();
+		// Init our quad renderer
+		if (auto maybeQr
+		    = fcg::QuadRenderer::create(player, {.alphaBlending=true}); maybeQr)
+			qr = std::move(*maybeQr);
+		else
+			throw std::runtime_error(std::format(
+				"Image Viewer: failed to create quad renderer: {}", maybeQr.error().message
+			));
+
 	}
 
 	/// Does nothing, as the applet holds no viewport-dependent resources.
@@ -160,7 +169,7 @@ public:
 		fcg::Player &player
 	) override
 	{
-		if (!texture)
+		if (!texture || !qr)
 			return;
 		fcg::DrawOptions options;
 		options.texture = fcg::PrimitiveTexture{texture->handle(), sampler->handle()};

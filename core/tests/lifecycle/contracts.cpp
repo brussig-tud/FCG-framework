@@ -98,6 +98,9 @@ public:
 	/// Return the name used to look up this non-camera applet.
 	[[nodiscard]] auto name () const -> const std::string& override { return label; }
 
+	/// No scene pipelines are needed by this applet.
+	void recreatePipelines (fcg::Device&, fcg::Player&) override {}
+
 	/// Check camera lookup and obtain the main window for synthetic keyboard input.
 	void init (fcg::Device &device, fcg::Player &player) override
 	{
@@ -267,6 +270,9 @@ public:
 					results.spaceOrder.push_back(index);
 			}
 	}
+
+	/// No scene pipelines are needed by this applet.
+	void recreatePipelines (fcg::Device&, fcg::Player&) override {}
 
 	/// No initialization resources are needed.
 	void init (fcg::Device&, fcg::Player&) override {}

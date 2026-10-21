@@ -16,6 +16,7 @@
 #include <atomic>
 #include <optional>
 #include <concepts>
+#include <expected>
 
 // GLM library
 #include <glm/glm.hpp>
@@ -186,7 +187,8 @@ public:
 	/// \brief Describe the color and depth attachments that \c Applet::render draws into.
 	///
 	/// Use this to create graphics pipelines for rendering the scene. The description is also available before the
-	/// first frame (e.g. in \c Applet::init) and while the window is minimized.
+	/// first frame and while the window is minimized. Create pipelines in \c Applet::recreatePipelines using this
+	/// effective description; accepted requests through \c setSceneFormat are applied at the next lifecycle boundary.
 	///
 	/// \return
 	/// 	The attachment formats and sample count of the scene, or \c std::nullopt if the player has no main window or
@@ -254,6 +256,26 @@ public:
 
 	////
 	// Methods
+
+	/// \brief Request a scene color format, including from any applet callback.
+	///
+	/// Success means the request was accepted. The latest valid request wins; requesting the effective format cancels
+	/// a pending change. Rejected requests preserve existing state. Requests from \c Applet::init are applied after
+	/// all applets initialize and before pipeline creation. Other requests are applied before the next frame begins,
+	/// including while minimized. All applets then receive \c Applet::recreatePipelines before resize notifications,
+	/// input, GUI, updates and rendering. Requests from that callback wait until the next iteration.
+	///
+	/// \pre Call on the main thread with a claimed main window.
+	///
+	/// \param format A non-integer color format supporting single-sample 2D color-target and sampler usage.
+	///
+	/// \return
+	/// 	Nothing when accepted; \c TextureErrorCode::InvalidArgument for an invalid format value,
+	/// 	\c TextureErrorCode::UnsupportedFormat for unsuitable or unsupported formats, or
+	/// 	\c TextureErrorCode::InvalidState when no claimed main window is available.
+	///
+	/// \throws std::logic_error If called off the main thread.
+	[[nodiscard]] auto setSceneFormat (SDL_GPUTextureFormat format) -> std::expected<void, TextureError>;
 
 	/// \brief Set the title of the main window.
 	///
@@ -394,6 +416,10 @@ private:
 	/// Select custom or default presentation for an acquired frame; guard registration during invocation.
 	[[nodiscard]] auto presentFrame () -> std::expected<void, FullscreenError>;
 
+	/// Apply a queued format at a boundary without an active frame. Consume only on success; throw on failure.
+	/// Returns whether the effective format changed.
+	[[nodiscard]] auto applySceneFormat () -> bool;
+
 	/// Destroy the current depth readback and its mapping (mapping first), invalidating all outstanding tokens. Called
 	/// by \c fcg::run at startup and whenever the viewport size changes.
 	void invalidateReadbacks ();
@@ -427,6 +453,9 @@ private:
 
 	/// The currently ongoing frame. Non-owning reference, managed externally.
 	Frame *frame = nullptr;
+
+	/// Latest validated request, owned by the player until the window accepts its immediate configuration change.
+	std::optional<SDL_GPUTextureFormat> m_pendingSceneFormat;
 
 	/// The current clear color of the main window viewport, in linear RGBA space.
 	glm::fvec4 m_clearColor = {0.0097f, 0.0331f, 0.1329f, 1.0f};

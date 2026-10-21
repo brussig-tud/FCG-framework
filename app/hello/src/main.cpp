@@ -56,7 +56,8 @@ public:
 		: shapes{std::make_unique<ConvexPolygon>(), std::make_unique<PlatonicSolid>()}
 	{}
 
-	/// Releases the graphics pipeline created by \c init. The device passed to \c init must still be alive.
+	/// Releases the graphics pipeline created by \c recreatePipelines. The device passed to \c init must still be
+	/// alive.
 	~SimpleShapesApplet() override {
 		if (m_device != nullptr && m_pipeline != nullptr)
 			SDL_ReleaseGPUGraphicsPipeline(m_device->handle(), m_pipeline);
@@ -74,17 +75,25 @@ public:
 		return name;
 	}
 
-	/// \brief Loads the embedded \c simple_shapes shader and creates the graphics pipeline for drawing shapes.
-	///
-	/// The pipeline renders indexed triangle lists into the main render target's color format with a 32-bit float
-	/// depth buffer, using depth testing and writing. On failure, the error is logged and the applet renders nothing.
+	/// \brief Retain the device used for pipeline ownership.
 	///
 	/// \param device The device to create the pipeline on. It must outlive the applet.
 	/// \param player The player providing the main render target's color format.
-	void init (fcg::Device &device, fcg::Player &player) override
-	{
-		// Cache the device so the destructor can release the pipeline.
+	void init (fcg::Device &device, fcg::Player &player) override {
 		m_device = &device;
+	}
+
+	/// \brief Replace the scene pipeline for the player's effective target.
+	///
+	/// Draws indexed triangle lists with depth testing and writing. Failures are logged and leave drawing disabled.
+	///
+	/// \param device The application's GPU device, which outlives the applet.
+	/// \param player The player providing the effective scene render target.
+	void recreatePipelines (fcg::Device &device, fcg::Player &player) override
+	{
+		if (m_pipeline)
+			SDL_ReleaseGPUGraphicsPipeline(m_device->handle(), m_pipeline);
+		m_pipeline = nullptr;
 
 		// Load the embedded app shader stages.
 		auto shader = fcg::res::shader(res::shaders::FS, "simple_shapes");
@@ -101,8 +110,13 @@ public:
 
 		auto *vertexShader = device.createShader(fcg::ShaderStage::VERTEX, vertex->spirv, 1);
 		auto *fragmentShader = device.createShader(fcg::ShaderStage::FRAGMENT, fragment->spirv, 0);
-		if (!vertexShader || !fragmentShader)
-			return;  // createShader already logged the error.
+		if (!vertexShader || !fragmentShader) {
+			if (vertexShader)
+				SDL_ReleaseGPUShader(device.handle(), vertexShader);
+			if (fragmentShader)
+				SDL_ReleaseGPUShader(device.handle(), fragmentShader);
+			return; // createShader already logged the error.
+		}
 
 		// Vertex layout: interleaved position + normal, both vec4.
 		SDL_GPUVertexBufferDescription vertexBufferDesc {};
@@ -132,7 +146,7 @@ public:
 		depthStencilState.enable_depth_write = true;
 		depthStencilState.compare_op = SDL_GPU_COMPAREOP_LESS;
 
-		// Color target matching the swapchain format.
+		// Color target matching the effective scene format.
 		SDL_GPUColorTargetDescription colorTarget {};
 		colorTarget.format = player.mainRenderTargetInfo()->colorFormat;
 

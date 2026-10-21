@@ -59,7 +59,7 @@ namespace fcg {
 /// +X face, +Z and +Y on the -X face, +X and -Z on the +Y face, +X and +Z on the -Y face, +X and +Y on the +Z face,
 /// and -X and +Y on the -Z face. Back faces are culled unless \c RendererOptions::cullMode specifies otherwise.
 ///
-/// Create the renderer once, for example in <tt>Applet::init</tt>, and call \c draw inside an active render pass. A
+/// Create or replace the renderer in <tt>Applet::recreatePipelines</tt>, and call \c draw inside an active render pass. A
 /// moved-from renderer is empty: only assignment and destruction are valid, and \c draw returns
 /// <tt>RenderErrorCode::InvalidState</tt>.
 class FCG_RENDER_EXPORT BoxRenderer final : public PrimitiveRenderer
@@ -97,7 +97,7 @@ public:
 	/// 	Creates a box renderer for the main render pass of \p player.
 	///
 	/// Uses the device of \p player and the target described by <tt>Player::mainRenderTargetInfo</tt>. Call it from
-	/// \c Applet::init or later; it also succeeds while the main window is minimized. The renderer keeps no reference
+	/// \c Applet::recreatePipelines; it also succeeds while the main window is minimized. The renderer keeps no reference
 	/// to \p player. If the formats of the main render target change, create a new renderer.
 	///
 	/// \param player

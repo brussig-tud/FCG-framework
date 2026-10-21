@@ -46,6 +46,9 @@ public:
 		}
 	}
 
+	/// No scene pipelines are needed by this applet.
+	void recreatePipelines (fcg::Device&, fcg::Player&) override {}
+
 	void init (fcg::Device &device, fcg::Player &player) override {}
 	void onViewportResize (fcg::Device &device, const glm::uvec2 &oldViewportSize, fcg::Player &player) override {}
 	void gui (fcg::Device &device, fcg::Player &player) override {}

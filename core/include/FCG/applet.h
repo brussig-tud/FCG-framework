@@ -80,11 +80,30 @@
 /// Handle input in <tt>\ref fcg::Applet::onEvent "onEvent"</tt>; see \ref fcg_events. Define Dear ImGui widgets in
 /// <tt>\ref fcg::Applet::gui "gui"</tt>; see \ref fcg_gui.
 ///
+/// \subsection fcg_applets_workflows_pipelines Creating and recreating pipelines
+/// All applets complete <tt>\ref fcg::Applet::init "init"</tt> before any applet's
+/// <tt>\ref fcg::Applet::recreatePipelines "recreatePipelines"</tt> is called. This gives each applet an opportunity
+/// to check device support and request a more capable scene format through
+/// <tt>\ref fcg::Player::setSceneFormat "Player::setSceneFormat"</tt> when it can use one. The
+/// <tt>\ref fcg::Player "Player"</tt> applies the latest valid request before pipeline creation begins. In
+/// <tt>\ref fcg::Applet::recreatePipelines "recreatePipelines"</tt>, query
+/// <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt> and create pipelines for that
+/// effective format.
+///
+/// Keep images, buffers, samplers and application state in <tt>\ref fcg::Applet::init "init"</tt>. Create and replace
+/// scene pipelines in <tt>\ref fcg::Applet::recreatePipelines "recreatePipelines"</tt>, which runs before the first
+/// frame and after an applied scene-format change, including while minimized. Size-only changes call
+/// <tt>\ref fcg::Applet::onViewportResize "onViewportResize"</tt> without recreating pipelines. Release replaced
+/// pipelines and discard incompatible pipelines if recreation fails. Applets without pipelines implement an empty
+/// override. For example, request floating-point scene storage when the device supports the required combined usage:
+/// \snippet applet_examples.cpp scene_format_applet
+///
 /// \subsection fcg_applets_workflows_render Rendering
 /// <tt>\ref fcg::Applet::render "render"</tt> receives an active render pass targeting the frame's scene texture.
-/// Record the draw calls that should appear in the scene; do not end or re-begin the pass. Create pipelines compatible
-/// with <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt>, and push uniform data through
-/// the command buffer that is passed alongside the pass.
+/// Record the draw calls that should appear in the scene; do not end or re-begin the pass. In
+/// <tt>\ref fcg::Applet::recreatePipelines "recreatePipelines"</tt>, create pipelines compatible with
+/// <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt>. Push uniform data through the
+/// command buffer that is passed alongside the pass.
 /// To apply an effect after all applets have drawn the scene and before Dear ImGui rendering, install a presentation
 /// recorder through <tt>\ref fcg::Player::setPresentationRecorder "Player::setPresentationRecorder"</tt>;
 /// see \ref fcg_runtime_workflows_presentation for a complete example.
@@ -171,13 +190,15 @@ namespace fcg {
 /// The player invokes the callbacks as follows:
 /// 1. <tt>\ref init "init"</tt> once per applet, after the main window, the GPU device and the GUI have been set up
 /// 	and before the first frame.
-/// 2. Once per main-loop iteration:
+/// 2. After every applet completes initialization, <tt>\ref recreatePipelines "recreatePipelines"</tt> on each applet.
+/// 3. Once per main-loop iteration:
+/// 	- <tt>\ref recreatePipelines "recreatePipelines"</tt> if the scene format changed;
 /// 	- <tt>\ref onViewportResize "onViewportResize"</tt> if the size of the main viewport has changed;
 /// 	- <tt>\ref onEvent "onEvent"</tt> for eligible input events of the main window;
 /// 	- <tt>\ref gui "gui"</tt> followed by <tt>\ref update "update"</tt>, applet by applet;
 /// 	- <tt>\ref render "render"</tt>, but only if a frame could be started (for example, not while the window is
 /// 	  minimized).
-/// 3. After the main loop has ended, the applets are destroyed in reverse order. The device and the player are still
+/// 4. After the main loop has ended, the applets are destroyed in reverse order. The device and the player are still
 /// 	valid in the destructors.
 ///
 /// By default, the player waits for input before it starts the next main-loop iteration. Applets that animate
@@ -207,13 +228,36 @@ public:
 
 	/// \brief
 	/// 	Called once after the main window, the GPU device and the GUI have been set up, before the first frame. Use
-	/// 	it to create pipelines, buffers, textures and other resources.
+	/// 	it to create buffers, textures and other resources independent of the scene format.
+	///
+	/// All applets complete <tt>\ref fcg::Applet::init "init"</tt> before any applet's
+	/// <tt>\ref fcg::Applet::recreatePipelines "recreatePipelines"</tt> is called. This gives each applet an opportunity
+	/// to check device support and request a more capable scene format through
+	/// <tt>\ref fcg::Player::setSceneFormat "Player::setSceneFormat"</tt> when it can use one. The
+	/// <tt>\ref fcg::Player "Player"</tt> applies the latest valid request before pipeline creation begins. In
+	/// <tt>\ref fcg::Applet::recreatePipelines "recreatePipelines"</tt>, query
+	/// <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt> and create pipelines for that
+	/// effective format.
 	///
 	/// The main viewport size is already available via <tt>\ref fcg::Player::viewportSize "Player::viewportSize"</tt>.
 	///
 	/// \param device The GPU device that the applet will use for rendering.
 	/// \param player The player running the applet.
 	virtual void init (Device &device, Player &player) = 0;
+
+	/// \brief Create or replace pipelines for the effective scene render target.
+	///
+	/// Called in registration order after all applets complete \c init and after each applied scene-format change.
+	/// Query \c Player::mainRenderTargetInfo for the effective attachment formats and sample count. Runtime calls
+	/// precede resize notifications, input, GUI, updates and rendering, including while minimized. Size-only changes
+	/// do not call this method. Preserve resources and application state independent of the scene format, release
+	/// replaced pipelines, and prevent drawing with incompatible pipelines after a failure. Implement an empty
+	/// override when the applet has no pipelines. Requests through \c Player::setSceneFormat during this callback
+	/// take effect at the next iteration. Exceptions propagate out of \c fcg::run with normal resource cleanup.
+	///
+	/// \param device The GPU device used for rendering.
+	/// \param player The player providing the effective scene render target.
+	virtual void recreatePipelines (Device &device, Player &player) = 0;
 
 	/// \brief
 	/// 	Called at the beginning of a main-loop iteration whenever the size of the main viewport has changed. The main

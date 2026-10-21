@@ -44,7 +44,9 @@
 ///
 /// \section fcg_primitives_usage Getting started
 /// Create the attribute collection and a renderer bound to the main render pass, then draw into an active render
-/// pass:
+/// pass. Create the attribute collection in <tt>\ref fcg::Applet::init "Applet::init"</tt>, then create or replace
+/// the renderer in <tt>\ref fcg::Applet::recreatePipelines "Applet::recreatePipelines"</tt> for the effective scene
+/// format. Keep the attribute collection across these calls:
 /// \snippet render_examples.cpp player
 /// \snippet render_examples.cpp draw
 ///

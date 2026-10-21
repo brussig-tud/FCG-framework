@@ -159,6 +159,9 @@ public:
 	/// 	Unused.
 	void init (Device &device, Player &player) override;
 
+	/// \brief No pipelines are needed by this camera.
+	void recreatePipelines (Device&, Player&) override {};
+
 	/// \brief Adapt the projection to the new viewport aspect ratio, keeping the view height.
 	///
 	/// Also stops a running focus animation and discards a double-click pick in progress.

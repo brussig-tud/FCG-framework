@@ -46,6 +46,7 @@ set(HEADERS
 	gui_scaling.h
 	window_scaling.h
 	camera_utils.h
+	scene_format.h
 )
 
 # Add to our target

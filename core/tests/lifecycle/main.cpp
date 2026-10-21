@@ -84,13 +84,24 @@ public:
 		return name;
 	}
 
-	/// Create a pipeline and request continuous redraws for the automated probe.
+	/// Record the viewport and request continuous redraws for the automated probe.
 	void init (fcg::Device &device, fcg::Player &player) override
 	{
 		notifiedViewport = player.viewportSize();
 		// The frame loop blocks waiting for events, which never arrive in a headless test environment - force redraws
 		// so frames actually render.
 		player.pushContinuousRedraw();
+	}
+
+	/// \brief Replace the scene pipeline for the player's effective target.
+	///
+	/// \param device The application's GPU device, which outlives the applet.
+	/// \param player The player providing the effective scene render target.
+	void recreatePipelines (fcg::Device &device, fcg::Player &player) override
+	{
+		if (pipeline)
+			SDL_ReleaseGPUGraphicsPipeline(gpuDevice, pipeline);
+		pipeline = nullptr;
 
 		// Build a pipeline from the embedded 'triangle' shader. A failure leaves rendered false, so main fails the
 		// test even if the framework exits normally after the requested number of frames.

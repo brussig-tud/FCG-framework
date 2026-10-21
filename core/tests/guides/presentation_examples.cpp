@@ -35,6 +35,9 @@ public:
 		return label;
 	}
 
+	/// No scene pipelines are needed by this applet.
+	void recreatePipelines (fcg::Device&, fcg::Player&) override {}
+
 	/// \brief Use built-in scene presentation without allocating applet resources.
 	///
 	/// \param device The application's GPU device.

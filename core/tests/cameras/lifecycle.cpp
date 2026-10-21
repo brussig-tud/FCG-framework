@@ -87,6 +87,18 @@ public:
 		require(windows && count == 1, "Expected the main window");
 		mainWindow = windows[0];
 		SDL_free(windows);
+	}
+
+	/// \brief Replace the scene pipeline for the player's effective target.
+	///
+	/// \param device The application's GPU device, which outlives the applet.
+	/// \param player The player providing the effective scene render target.
+	void recreatePipelines (fcg::Device &device, fcg::Player &player) override
+	{
+		if (pipeline)
+			SDL_ReleaseGPUGraphicsPipeline(gpu, pipeline);
+		pipeline = nullptr;
+
 		const auto resource = fcg::res::shader("triangle");
 		require(resource.has_value(), "Missing triangle shader");
 		const auto vertex = resource->stage(fcg::ShaderStage::VERTEX);

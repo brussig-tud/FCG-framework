@@ -153,6 +153,9 @@ public:
 	/// Return the scenario name for runtime diagnostics.
 	[[nodiscard]] auto name () const -> const std::string& override { return scenario; }
 
+	/// No scene pipelines are needed by this applet.
+	void recreatePipelines (fcg::Device&, fcg::Player&) override {}
+
 	/// Install a move-only pass and optionally fail after registration.
 	void init (fcg::Device&, fcg::Player &player) override
 	{
@@ -215,6 +218,13 @@ public:
 		++updates;
 		if (scenario == "lifecycle" || scenario == "empty")
 		{
+			if (updates == 2 || updates == 5)
+			{
+				const auto format = updates == 2 ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM
+					: SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT;
+				if (auto result = player.setSceneFormat(format); !result)
+					throw std::runtime_error(result.error().message);
+			}
 			if (phase == 0 && results.calls[0] >= 3) {
 				install(player, 1);
 				require(results.destroyed[0] == 1, "Replacement did not destroy initial capture");
@@ -299,6 +309,8 @@ private:
 			require(context.target.device == &player.device(), "Wrong target device");
 			require(context.target.format == player.swapchainFormat(), "Wrong target format");
 			require(context.scene.device() == &player.device(), "Wrong scene device");
+			require(context.scene.info().format == player.mainRenderTargetInfo()->colorFormat,
+				"Presentation sampled a stale scene format");
 			require(context.sceneSampler.device() == &player.device(), "Wrong sampler device");
 			require(context.target.extent == player.viewportSize(), "Stale target extent");
 			require(context.scene.info().width == context.target.extent.x

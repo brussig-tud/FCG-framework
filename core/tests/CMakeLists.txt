@@ -68,12 +68,29 @@ add_test(NAME runtime-contract-smoke COMMAND runtime-contract-smoke)
 set_tests_properties(runtime-contract-smoke PROPERTIES TIMEOUT 60
 	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
 
+# Configurable scene formats and ordered pipeline replacement through the real runtime.
+add_executable(scene-format-smoke lifecycle/scene_format.cpp)
+target_link_libraries(scene-format-smoke PRIVATE Core)
+foreach(scenario default unorm float negotiate)
+	add_test(NAME scene-format-${scenario} COMMAND scene-format-smoke ${scenario})
+	set_tests_properties(scene-format-${scenario} PROPERTIES TIMEOUT 60
+		FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
+endforeach()
+
+add_executable(window-scene-format-smoke lifecycle/window_scene_format.cpp)
+target_compile_definitions(window-scene-format-smoke PRIVATE FCG_FRAMEWORK_STATIC_DEFINE)
+target_link_libraries(window-scene-format-smoke PRIVATE Core SDL3_shadercross::SDL3_shadercross)
+add_test(NAME window-scene-format-smoke COMMAND window-scene-format-smoke)
+set_tests_properties(window-scene-format-smoke PROPERTIES TIMEOUT 60
+	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
+
 # Substitute narrow SDL and ImGui boundaries in production sources without exporting test hooks from Core.
 add_executable(runtime-failure-smoke lifecycle/failures.cpp)
 target_compile_definitions(runtime-failure-smoke PRIVATE FCG_FRAMEWORK_STATIC_DEFINE)
 target_link_libraries(runtime-failure-smoke PRIVATE Core)
 foreach(scenario normal startup window gui-context gui-platform gui-renderer gui-allocation
-	init name event resize gui update render overlay presentation submit close-submit render-submit logic
+	init name recreate recreate-runtime scene-startup scene-apply scene-minimized
+	event resize gui update render overlay presentation submit close-submit render-submit logic
 	no-image no-image-cancel acquire acquire-cancel attachment attachment-submit)
 	add_test(NAME runtime-failure-${scenario} COMMAND runtime-failure-smoke ${scenario})
 	add_test(NAME runtime-failure-${scenario}-previous-context

@@ -56,6 +56,12 @@
 /// sample count of the scene render pass — create pipelines with these, as also reported by
 /// <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt>.
 /// <tt>\ref fcg::Window::swapchainFormat "swapchainFormat"</tt> returns the presentation format.
+/// Select scene storage through <tt>\ref fcg::WindowSettings::sceneFormat "WindowSettings::sceneFormat"</tt> or
+/// <tt>\ref fcg::Window::setSceneFormat "Window::setSceneFormat"</tt> between frames. The setter changes the effective
+/// format immediately; the next drawable frame allocates color storage. Depth storage is preserved when the size
+/// stays the same. In applications driven by <tt>\ref fcg::run "run"</tt>, use
+/// <tt>\ref fcg::Player::setSceneFormat "Player::setSceneFormat"</tt> and create scene pipelines in
+/// <tt>\ref fcg::Applet::recreatePipelines "Applet::recreatePipelines"</tt>.
 ///
 /// \subsection fcg_windows_workflows_resize Resizing
 /// <tt>\ref fcg::Window::viewportSize "Window::viewportSize"</tt> returns the current viewport size in pixels. Query
@@ -109,6 +115,7 @@
 #include <memory>
 #include <string>
 #include <optional>
+#include <expected>
 
 // GLM library
 #include <glm/glm.hpp>
@@ -179,6 +186,9 @@ struct WindowSettings
 	/// Scale the client dimensions with the display at creation and on display-scale changes, including for
 	/// non-resizable windows. The window manager may constrain the requested dimensions.
 	bool scaleToDisplay = true;
+
+	/// Scene color storage, validated against the GPU device when claimed. Integer and depth formats are unsupported.
+	SDL_GPUTextureFormat sceneFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
 };
 
 
@@ -288,6 +298,24 @@ public:
 
 	////
 	// Methods
+
+	/// \brief Select the scene color format immediately, releasing incompatible color storage.
+	///
+	/// The next drawable frame allocates color storage for this format. Depth storage is preserved. Before the window
+	/// is claimed, device support is checked when claiming it. Rejected requests leave the configuration unchanged.
+	/// Recreate scene pipelines for the effective description from \c renderTargetInfo before drawing again.
+	/// Applications using \c fcg::run request changes through \c Player::setSceneFormat instead.
+	///
+	/// \pre Call on the main thread with no frame in progress.
+	///
+	/// \param format A non-integer color format supporting single-sample 2D color-target and sampler usage.
+	///
+	/// \return
+	/// 	Nothing on success; \c TextureErrorCode::InvalidArgument for an invalid format value, or
+	/// 	\c TextureErrorCode::UnsupportedFormat for an unsuitable or unsupported format.
+	///
+	/// \throws std::logic_error If called off the main thread or while a frame is in progress.
+	[[nodiscard]] auto setSceneFormat (SDL_GPUTextureFormat format) -> std::expected<void, TextureError>;
 
 	/// \brief Adjust the normal window's client dimensions to the current display scale.
 	///
@@ -427,8 +455,10 @@ private:
 	/// The device currently claiming this window, if any.
 	Device *m_device = nullptr;
 
-	/// The scene color texture in sRGB-encoded RGBA8 storage; rendering writes and sampling reads linear values.
-	/// Recreated together with the depth texture whenever the swapchain size changes.
+	/// Configured color format, effective even while color storage is absent.
+	SDL_GPUTextureFormat m_sceneFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
+
+	/// The scene color texture, allocated independently of depth storage for the configured format and acquired extent.
 	std::optional<Texture> sceneTexture;
 
 	/// Nearest-neighbor, clamp-to-edge sampler used for presentation.

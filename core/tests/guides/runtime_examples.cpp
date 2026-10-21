@@ -48,7 +48,10 @@ public:
 		return instanceName;
 	}
 
-	/// \brief Install a move-only gamma correction presentation pass during applet initialization.
+	/// Initialize resources independent of pipeline creation.
+	void init (fcg::Device&, fcg::Player&) override {}
+
+	/// \brief Install a move-only gamma correction presentation pass on the first pipeline-creation callback.
 	///
 	/// \param device The application's GPU device.
 	/// \param player The player that owns the recorder.
@@ -56,8 +59,10 @@ public:
 	/// \throws std::runtime_error If creating the presentation pass fails.
 	/// \throws std::bad_alloc If allocating recorder ownership fails.
 	// [presentation_install]
-	void init (fcg::Device &device, fcg::Player &player) override
+	void recreatePipelines (fcg::Device &device, fcg::Player &player) override
 	{
+		if (presentationInitialized)
+			return;
 		auto pass = fcg::FullscreenPass::gammaCorrection (player.device(), player.swapchainFormat());
 		if (!pass)
 			throw std::runtime_error (pass.error().message);
@@ -73,6 +78,7 @@ public:
 				return pass.record (context.cmdBuffer, context.target, bindings);
 			}
 		);
+		presentationInitialized = true;
 	}
 	// [presentation_install]
 
@@ -124,6 +130,9 @@ private:
 
 	////
 	// Fields
+
+	/// Whether presentation has been configured; preserve any later recorder selection across scene changes.
+	bool presentationInitialized = false;
 
 	/// The presentation parameters read by the recorder on each invocation, defaulting to gamma 2.2 per channel and
 	/// RGB bounds [0, 1].

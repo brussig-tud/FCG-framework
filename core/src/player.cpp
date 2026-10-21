@@ -16,6 +16,7 @@
 #include "FCG/player.h"
 #include "FCG/gui.h"
 #include "FCG/window.h"
+#include "scene_format.h"
 #include "FCG/viewing.h"
 
 
@@ -175,6 +176,33 @@ auto Player::swapchainFormat () const -> SDL_GPUTextureFormat {
 
 auto Player::mainRenderTargetInfo () const -> std::optional<RenderTargetInfo> {
 	return m_window ? m_window->renderTargetInfo() : std::nullopt;
+}
+
+auto Player::setSceneFormat (SDL_GPUTextureFormat format) -> std::expected<void, TextureError>
+{
+	if (!SDL_IsMainThread())
+		throw std::logic_error("Player::setSceneFormat requires the main thread");
+	const auto target = mainRenderTargetInfo();
+	if (!target)
+		return std::unexpected(TextureError{TextureErrorCode::InvalidState, "No claimed main window"});
+	if (auto result = detail::validateSceneFormat(&m_device, format); !result)
+		return result;
+	if (format == target->colorFormat)
+		m_pendingSceneFormat.reset();
+	else
+		m_pendingSceneFormat = format;
+	return {};
+}
+
+auto Player::applySceneFormat () -> bool
+{
+	if (!m_pendingSceneFormat)
+		return false;
+	const auto previous = mainRenderTargetInfo();
+	if (auto result = m_window->setSceneFormat(*m_pendingSceneFormat); !result)
+		throw std::runtime_error("Applying scene format: " + result.error().message);
+	m_pendingSceneFormat.reset();
+	return previous->colorFormat != mainRenderTargetInfo()->colorFormat;
 }
 
 auto Player::viewportSize() const -> glm::uvec2 {
