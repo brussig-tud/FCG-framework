@@ -334,8 +334,8 @@ FCG_FRAMEWORK_EXPORT auto run (
 					}
 					else if (waitTimeoutMs < 0)
 					{
-						// An error while waiting without timeout is fatal – a timeout is not, it just means the
-						// periodic redraw interval expired with no events pending
+						// A false result from an indefinite wait reports an error. Timed waits with no event are treated
+						// as timeouts, since SDL does not reliably distinguish them from failures.
 						SDL_LogError(
 							SDL_LOG_CATEGORY_APPLICATION, "Waiting for events failed: %s", SDL_GetError()
 						);

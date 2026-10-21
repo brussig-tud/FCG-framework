@@ -105,15 +105,14 @@
 /// applets, while the device is still alive. References captured from applet state must remain valid while registered.
 ///
 /// \section fcg_runtime_errors Handling errors
-/// <tt>\ref fcg::run "run"</tt> returns \c EXIT_FAILURE if SDL, the GPU device, the window, the default presentation
-/// pass or the GUI could not be
-/// initialized, or if waiting for events failed; the reason is written to the SDL log. Initialization failures invoke
-/// no applet callbacks; event-wait failures can occur after callbacks have run. With an empty applet list it returns
-/// \c EXIT_SUCCESS after logging a warning. GPU failures while acquiring
-/// or presenting a frame throw \c std::runtime_error, and exceptions from applet callbacks propagate out of the call.
-/// A presentation recorder's returned <tt>\ref fcg::FullscreenError "FullscreenError"</tt> becomes
-/// \c std::runtime_error; exceptions thrown by the recorder propagate unchanged. Either failure stops the run without
-/// falling back to default presentation. The failed frame's displayed contents are unspecified.
+/// <tt>\ref fcg::run "run"</tt> returns \c EXIT_FAILURE if initialization (e.g. of the SDL library, essential rendering
+/// facilities like the GPU device, or ImGui) fails, or if the main loop cannot continue because an indefinite wait for
+/// events reported a failure. The reason for such a critical exit is written to the SDL log. When initialization fails,
+/// no applet callback is ever invoked. With an empty applet list, <tt>\ref fcg::run "run"</tt> returns \c EXIT_SUCCESS
+/// after logging a warning.
+/// GPU failures while acquiring or presenting a frame throw \c std::runtime_error, and exceptions from applet callbacks
+/// or other custom injected code (like \ref fcg::PresentationRecorder "presentation recorders") propagate out of the
+/// call. A failed frame's displayed contents are unspecified.
 ///
 /// \see \ref fcg_applets, \ref fcg_events, \ref fcg_windows
 
@@ -194,14 +193,19 @@ struct PlayerSettings
 /// 	exists, keep its context current, including during applet destruction, and leave context destruction and
 /// 	backend initialization and shutdown to the framework.
 ///
+/// \note
+/// 	When the GUI requires periodic redraws, the runtime uses timed event waits. A wait that produces no event is
+/// 	treated as a timeout and the loop continues. SDL does not provide a reliable distinction between timeout and
+/// 	failure for these waits, so their failures are not guaranteed to be logged or reflected in the return value.
+///
 /// \param applets The applets to run, in callback order. The function takes ownership of them.
 /// \param settings The initial player settings.
 ///
 /// \return
 /// 	\c EXIT_SUCCESS after a normal shutdown, and also when \p applets is empty (in which case a warning is logged and
 /// 	nothing else happens). \c EXIT_FAILURE if SDL, the GPU device, the main window, the default presentation pass
-/// 	or the GUI could not be initialized, or if waiting for events failed. The reason is logged to the SDL log. If initialization fails, no
-/// 	applet callbacks are invoked.
+/// 	or the GUI could not be initialized, or if an indefinite event wait reports failure. The reason is logged to the
+/// 	SDL log. Initialization failures invoke no applet callbacks; event-wait failures can occur after callbacks have run.
 ///
 /// \throws std::runtime_error
 /// 	If acquiring a frame from the main window or presenting it fails at the GPU level.
