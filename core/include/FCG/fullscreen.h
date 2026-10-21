@@ -23,8 +23,8 @@
 /// \c texture2D and samplerless <tt>texelFetch()</tt>.
 ///
 /// \section fcg_fullscreen_usage Getting started
-/// The built-in \c passthrough shader copies one sampled texture to the output unchanged. Create such a pass and
-/// record one draw into a command buffer:
+/// The built-in \c passthrough shader copies one sampled texture to the output unchanged. Create such a pass and record
+/// one draw into a command buffer:
 /// \snippet texture_examples.cpp present
 /// \snippet texture_examples.cpp chain
 /// For a custom effect, create the pass from a fragment shader with
@@ -50,6 +50,24 @@
 /// Chain effects by rendering each pass into an intermediate texture that the next pass samples. The compose example
 /// above records two passes into one command buffer without submitting in between.
 ///
+/// \subsection fcg_fullscreen_workflows_gamma Gamma correction and output bounds
+/// Use <tt>\ref fcg::FullscreenPass::gammaCorrection "gammaCorrection"</tt> to apply a power adjustment to a sampled
+/// texture. Supply one <tt>\ref fcg::GammaUniforms "GammaUniforms"</tt> block with the sampler on every draw. Its
+/// default gamma is 2.2: values above 1 brighten midtones, values below 1 darken them, and 1 keeps their values.
+/// Both this pass and <tt>\ref fcg::FullscreenPass::linearToSRGB "linearToSRGB"</tt> clamp RGB after the adjustment
+/// using <tt>\ref fcg::GammaUniforms::clampRange "clampRange"</tt>, which defaults to [0, 1]. Alpha is unchanged.
+///
+/// <tt>\ref fcg::FullscreenPass::linearToSRGB "linearToSRGB"</tt> first converts linear RGB with the piecewise sRGB
+/// transfer function, then applies gamma and the final bounds. Supply gamma 1 for neutral encoding, as the default
+/// runtime recorder does. The caller supplies finite, nonnegative sampled RGB, finite positive gamma, and ordered clamp
+/// endpoints that are not NaN; these are input requirements, not reported recording errors.
+///
+/// To retain values above 1, render into a floating-point target and use an appropriate upper endpoint in the clamp
+/// range; for example, [0, positive infinity] retains the full dynamic range of every pixel (the output format however
+/// still determines representable values). This example applies the default gamma to an intermediate texture; a window
+/// presentation recorder must also supply the intended final display encoding:
+/// \snippet texture_examples.cpp gamma_intermediate
+///
 /// \section fcg_fullscreen_lifetime Ownership and lifetime
 /// The device must outlive the pass, and target and input textures must outlive the draws that use them. The pass is
 /// move-only; there is no default constructor. Destroying it never waits for the GPU. None of these objects
@@ -60,9 +78,9 @@
 /// <tt>E = \ref fcg::FullscreenError "FullscreenError"</tt>.
 /// Invalid bindings, mismatched resource counts, extents outside 1 to 16384 pixels, uniform blocks outside 1 to 4096
 /// bytes are rejected as <tt>\ref fcg::FullscreenErrorCode::InvalidArgument "InvalidArgument"</tt> without recording
-/// anything. <tt>\ref fcg::FullscreenPass::record "record"</tt> also rejects target textures bound as inputs.
-/// When using <tt>\ref fcg::FullscreenPass::draw "draw"</tt>, the caller must ensure that input textures differ
-/// from the attachment and that the command buffer and render pass meet its compatibility preconditions. A failed
+/// anything. <tt>\ref fcg::FullscreenPass::record "record"</tt> also rejects target textures bound as inputs. When
+/// using <tt>\ref fcg::FullscreenPass::draw "draw"</tt>, the caller must ensure that input textures differ from the
+/// attachment and that the command buffer and render pass meet its compatibility preconditions. A failed
 /// <tt>\ref fcg::FullscreenPass::record "record"</tt> leaves no pass open.
 ///
 /// \see \ref fcg_textures, \ref fcg_buffers
@@ -75,9 +93,14 @@
 //
 
 // C++ STL
+#include <cstddef>
 #include <expected>
 #include <span>
 #include <string>
+#include <type_traits>
+
+// GLM library
+#include <glm/vec2.hpp>
 
 // Framework
 #include <FCG/res.h>
@@ -103,19 +126,17 @@ namespace fcg {
 // Structs and enums
 //
 
-/// The categories of errors reported by fullscreen pass operations.
+/// \brief The categories of errors reported by fullscreen pass operations.
 enum class FullscreenErrorCode
 {
-	/// \brief
-	/// 	A parameter is invalid: e.g. a null command buffer or pass, a mismatched target, an invalid or empty input
-	/// 	resource binding, binding counts that differ from the shader declaration, an output extent outside 1–16384,
-	/// 	a uniform block outside 1–4096 bytes, a non-fragment or empty shader, or a target texture that is also bound
-	/// 	as an input.
+	/// A parameter is invalid: e.g. a null command buffer or pass, a mismatched target, an invalid or empty input
+	/// resource binding, binding counts that differ from the shader declaration, an output extent outside 1–16384, a
+	/// uniform block outside 1–4096 bytes, a non-fragment or empty shader, or a target texture that is also bound as
+	/// an input.
 	InvalidArgument,
 
-	/// \brief
-	/// 	The fullscreen pass is empty, the texture supplied to \c FullscreenTarget::fromTexture is empty,
-	/// 	or a built-in shader is missing.
+	/// The fullscreen pass is empty, the texture supplied to \c FullscreenTarget::fromTexture is empty, or a built-in
+	/// shader is missing.
 	InvalidState,
 
 	/// The output format cannot be rendered to, or the shader declares more resources than supported.
@@ -137,7 +158,7 @@ struct FullscreenError
 	std::string message;
 };
 
-/// A texture and the sampler used to sample it, bound as one fragment shader \c sampler2D.
+/// \brief A texture and the sampler used to sample it, bound as one fragment shader \c sampler2D.
 struct FullscreenTextureBinding
 {
 	/// The texture to sample. It must be single-sample, have \c SDL_GPU_TEXTUREUSAGE_SAMPLER usage and belong to the
@@ -148,8 +169,26 @@ struct FullscreenTextureBinding
 	const Sampler *sampler = nullptr;
 };
 
-/// \brief
-/// 	The fragment shader resources for one fullscreen draw.
+/// \brief Uniform parameters for the built-in gamma correction and sRGB conversion passes.
+///
+/// Supply the bytes of one instance as fragment uniform block zero in \c FullscreenBindings::uniforms on each draw.
+/// The defaults apply gamma 2.2 and clamp the corrected RGB values to [0, 1]. For neutral sRGB encoding, initialize
+/// \c gamma to 1. The parameters are copied during recording and may be changed before the next draw.
+struct alignas(16) GammaUniforms
+{
+	/// The finite, strictly positive gamma; RGB is raised to the power <tt>1 / gamma</tt>. Values above 1 brighten
+	/// midtones, and values below 1 darken them. Alpha is unchanged.
+	float gamma = 2.2f;
+
+	/// The inclusive lower and upper bounds for RGB after gamma correction, in \c x and \c y. The endpoints must be
+	/// ordered and not NaN; infinite endpoints are allowed. Use [0, positive infinity] to retain values above 1.
+	alignas(8) glm::vec2 clampRange{0.f, 1.f};
+};
+
+static_assert(sizeof(GammaUniforms) == 16 && offsetof(GammaUniforms, gamma) == 0);
+static_assert(offsetof(GammaUniforms, clampRange) == 8 && std::is_trivially_copyable_v<GammaUniforms>);
+
+/// \brief The fragment shader resources for one fullscreen draw.
 ///
 /// The number of entries in each span must exactly match the corresponding count in the
 /// <tt>\ref fcg::ShaderResources "ShaderResources"</tt> the pass was created with. Entries are bound in order,
@@ -179,21 +218,19 @@ struct FullscreenBindings
 // Classes
 //
 
-/// \brief
-/// 	A single-sample color attachment that a <tt>\ref fcg::FullscreenPass "FullscreenPass"</tt> can render into.
+/// \brief A single-sample color attachment that a <tt>\ref fcg::FullscreenPass "FullscreenPass"</tt> can render into.
 ///
 /// Create it from a <tt>\ref fcg::Texture "Texture"</tt> with <tt>\ref fromTexture</tt>, or fill in the fields
 /// directly to render into another texture, such as a swapchain image. When filling in the fields directly, the
 /// caller is responsible for their accuracy.
-struct FCG_FRAMEWORK_EXPORT FullscreenTarget
+class FCG_FRAMEWORK_EXPORT FullscreenTarget
 {
 public:
 
 	////
 	// Object construction
 
-	/// \brief
-	/// 	Describe one subresource of a texture as a render target.
+	/// \brief Describe one subresource of a texture as a render target.
 	///
 	/// The target references the texture without owning it. The texture must stay alive until all commands recorded
 	/// with the target have completed on the GPU. When \p load is \c SDL_GPU_LOADOP_CLEAR, the clear color can be set
@@ -215,13 +252,9 @@ public:
 	/// 	is empty, or \c InvalidArgument if it lacks color target usage, is multisampled, the mip level or layer is
 	/// 	out of range, or the load or store operation is invalid.
 	[[nodiscard]] static auto fromTexture (
-		const Texture &texture,
-		Uint32 mipLevel=0,
-		Uint32 layer=0,
-		SDL_GPULoadOp load=SDL_GPU_LOADOP_DONT_CARE,
+		const Texture &texture, Uint32 mipLevel=0, Uint32 layer=0, SDL_GPULoadOp load=SDL_GPU_LOADOP_DONT_CARE,
 		SDL_GPUStoreOp store=SDL_GPU_STOREOP_STORE
-	)
-		-> std::expected<FullscreenTarget, FullscreenError>;
+	) -> std::expected<FullscreenTarget, FullscreenError>;
 
 
 	////
@@ -241,12 +274,11 @@ public:
 	Device *device = nullptr;
 };
 
-/// \brief
-/// 	Draws a single primitive that covers the whole output, shaded by a fragment shader of your choice.
+/// \brief Draws a single primitive that covers the whole output, shaded by a fragment shader of your choice.
 ///
 /// A fullscreen pass is a reusable graphics pipeline for image-processing steps such as copying, color conversion or
 /// post-processing effects. Create a pass for a custom fragment shader with <tt>\ref create</tt>, or use one of the
-/// built-in passes <tt>\ref passthrough</tt> and <tt>\ref linearToSRGB</tt>. Then either let
+/// built-in passes <tt>\ref passthrough</tt>, <tt>\ref linearToSRGB</tt> and <tt>\ref gammaCorrection</tt>. Then either let
 /// <tt>\ref record</tt> begin and end a render pass for a <tt>\ref fcg::FullscreenTarget "FullscreenTarget"</tt>, or
 /// add the draw to a render pass of your own with <tt>\ref draw</tt>.
 ///
@@ -264,8 +296,7 @@ public:
 	////
 	// Object construction/destruction
 
-	/// \brief
-	/// 	Create a fullscreen pass for a custom fragment shader.
+	/// \brief Create a fullscreen pass for a custom fragment shader.
 	///
 	/// \pre \p device outlives the returned pass.
 	///
@@ -285,14 +316,11 @@ public:
 	/// 	a 2D color target, \c InvalidState if the built-in vertex shader is missing, or \c SDLFailure if creating a
 	/// 	shader or the pipeline fails.
 	[[nodiscard]] static auto create (
-		Device &device,
-		const res::ShaderStageData &fragment,
-		const ShaderResources &resources,
+		Device &device, const res::ShaderStageData &fragment, const ShaderResources &resources,
 		SDL_GPUTextureFormat outputFormat
 	) -> std::expected<FullscreenPass, FullscreenError>;
 
-	/// \brief
-	/// 	Create a built-in pass that copies one sampled texture to the output.
+	/// \brief Create a built-in pass that copies one sampled texture to the output.
 	///
 	/// The pass expects exactly one <tt>\ref fcg::FullscreenTextureBinding "FullscreenTextureBinding"</tt> and writes
 	/// the sampled value unchanged. Sampling still applies the texture format, e.g. an sRGB texture is decoded to
@@ -308,25 +336,45 @@ public:
 	[[nodiscard]] static auto passthrough (Device &device, SDL_GPUTextureFormat outputFormat)
 		-> std::expected<FullscreenPass, FullscreenError>;
 
-	/// \brief
-	/// 	Create a built-in pass that encodes one sampled linear texture as sRGB.
+	/// \brief Create a built-in pass that encodes one sampled linear texture as sRGB.
 	///
-	/// The pass expects exactly one <tt>\ref fcg::FullscreenTextureBinding "FullscreenTextureBinding"</tt>. It clamps
-	/// the sampled linear RGB values to [0, 1], applies the sRGB transfer function and writes the result together with
-	/// the unchanged alpha value.
+	/// The pass expects exactly one \c FullscreenTextureBinding and one \c GammaUniforms block at fragment slot zero.
+	/// It applies the piecewise sRGB transfer function to sampled linear RGB, raises the encoded RGB to the power
+	/// <tt>1 / gamma</tt>, then clamps it to \c GammaUniforms::clampRange. Alpha is unchanged. Initialize
+	/// \c GammaUniforms::gamma to 1 for neutral sRGB encoding. Use a floating-point output and [0, positive infinity]
+	/// as the clamp range to retain values above 1. The output format also determines representable values.
 	///
 	/// \pre \p device outlives the returned pass.
+	/// \pre Each draw samples finite, nonnegative RGB and supplies parameters meeting the \c GammaUniforms contract.
 	///
 	/// \param device
 	/// 	The device on which to create the pipeline.
 	/// \param outputFormat
 	/// 	The format of the color attachments the pass will render into. It must be
-	/// 	\c SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM or \c SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM.
+	/// 	\c SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, \c SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM,
+	/// 	\c SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT or \c SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT.
 	///
 	/// \return
 	/// 	The new pass, \c UnsupportedConfiguration for any other output format, \c InvalidState if a built-in shader
 	/// 	is missing, or any error of <tt>\ref create</tt>.
 	[[nodiscard]] static auto linearToSRGB (Device &device, SDL_GPUTextureFormat outputFormat)
+		-> std::expected<FullscreenPass, FullscreenError>;
+
+	/// \brief Create a built-in pass that applies gamma correction to one sampled texture.
+	///
+	/// The pass expects exactly one \c FullscreenTextureBinding and one \c GammaUniforms block at fragment slot zero.
+	/// It raises sampled RGB to the power <tt>1 / gamma</tt>, then clamps it to \c GammaUniforms::clampRange and writes
+	/// it with unchanged alpha. Default-initialized uniforms use gamma 2.2 and the clamp range [0, 1]. The output
+	/// format also determines representable values, including any sRGB encoding performed by that format.
+	///
+	/// \pre \p device outlives the returned pass.
+	/// \pre Each draw samples finite, nonnegative RGB and supplies parameters meeting the \c GammaUniforms contract.
+	///
+	/// \param device The device on which to create the pipeline.
+	/// \param outputFormat The format of the color attachments the pass will render into.
+	///
+	/// \return The new pass, \c InvalidState if a built-in shader is missing, or any error of <tt>\ref create</tt>.
+	[[nodiscard]] static auto gammaCorrection (Device &device, SDL_GPUTextureFormat outputFormat)
 		-> std::expected<FullscreenPass, FullscreenError>;
 
 	/// Release the pipeline. Never waits for the GPU.
@@ -338,12 +386,12 @@ public:
 	/// Not copy-assignable.
 	auto operator= (const FullscreenPass&) -> FullscreenPass& = delete;
 
-	/// Take over the pipeline of another pass, leaving it empty.
+	/// \brief Take over the pipeline of another pass, leaving it empty.
 	///
 	/// \param other The pass to move from.
 	FullscreenPass(FullscreenPass &&other) noexcept;
 
-	/// Release the current pipeline and take over the pipeline of another pass, leaving it empty.
+	/// \brief Release the current pipeline and take over the pipeline of another pass, leaving it empty.
 	///
 	/// \param other The pass to move from.
 	///
@@ -354,21 +402,20 @@ public:
 	////
 	// Accessors
 
-	/// The SDL graphics pipeline, or \c nullptr if empty. The pass keeps ownership; never release it yourself.
+	/// \brief The SDL graphics pipeline, or \c nullptr if empty. The pass keeps ownership; never release it yourself.
 	[[nodiscard]] auto handle () const -> SDL_GPUGraphicsPipeline* { return m_pipeline; }
 
-	/// The device the pass was created on, or \c nullptr if empty.
+	/// \brief The device the pass was created on, or \c nullptr if empty.
 	[[nodiscard]] auto device () const -> Device* { return m_device; }
 
-	/// The color attachment format the pass renders into.
+	/// \brief The color attachment format the pass renders into.
 	[[nodiscard]] auto outputFormat () const -> SDL_GPUTextureFormat { return m_format; }
 
 
 	////
 	// Methods
 
-	/// \brief
-	/// 	Record the fullscreen draw into an active render pass.
+	/// \brief Record the fullscreen draw into an active render pass.
 	///
 	/// Binds the pipeline of this pass, all resources in \p bindings and the uniform blocks, sets viewport and scissor
 	/// to cover \p extent, and draws. The render pass keeps the pipeline and bindings afterwards, so rebind your own
@@ -393,14 +440,10 @@ public:
 	/// 	\p pass is null, \p extent is out of range, or \p bindings is invalid (see
 	/// 	<tt>\ref fcg::FullscreenBindings "FullscreenBindings"</tt>).
 	[[nodiscard]] auto draw (
-		SDL_GPUCommandBuffer *command,
-		SDL_GPURenderPass *pass,
-		glm::uvec2 extent,
-		const FullscreenBindings &bindings
+		SDL_GPUCommandBuffer *command, SDL_GPURenderPass *pass, glm::uvec2 extent, const FullscreenBindings &bindings
 	) const -> std::expected<void, FullscreenError>;
 
-	/// \brief
-	/// 	Record a complete render pass that draws into the given target.
+	/// \brief Record a complete render pass that draws into the given target.
 	///
 	/// Validates the target and bindings, then begins a render pass on \p target, records <tt>\ref draw</tt> and ends
 	/// the pass. The target texture must not also be bound as an input (feedback); this is checked for sampled and
@@ -423,9 +466,7 @@ public:
 	/// 	\p target does not match, \p bindings is invalid or feedback is detected, or \c SDLFailure if the render
 	/// 	pass cannot be begun. Nothing is recorded on failure.
 	[[nodiscard]] auto record (
-		SDL_GPUCommandBuffer *command,
-		const FullscreenTarget &target,
-		const FullscreenBindings &bindings
+		SDL_GPUCommandBuffer *command, const FullscreenTarget &target, const FullscreenBindings &bindings
 	) const -> std::expected<void, FullscreenError>;
 
 

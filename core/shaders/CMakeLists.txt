@@ -8,6 +8,7 @@ fcg_add_shader(triangle
 fcg_add_shader(fullscreen SOURCES fullscreen/fullscreen.vert.glsl)
 fcg_add_shader(passthrough SOURCES fullscreen/passthrough.frag.glsl)
 fcg_add_shader(srgb SOURCES fullscreen/srgb.frag.glsl)
+fcg_add_shader(gamma SOURCES fullscreen/gamma.frag.glsl)
 
 # Custom-command outputs are directory-scoped; finalize here (same scope).
 fcg_finalize_shaders(TARGET fcg-shaders NAMESPACE fcg::res::shaders)

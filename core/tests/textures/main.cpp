@@ -6,10 +6,12 @@
 
 // C++ STL
 #include <array>
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <span>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
@@ -482,14 +484,164 @@ void fullscreen (fcg::Device &device)
 	auto final = take(fcg::Texture::create(device, descriptor(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, {7, 9, 1}, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)));
 	auto encoding = take(fcg::FullscreenPass::linearToSRGB(device, final.info().format));
 	const fcg::FullscreenTextureBinding encodedBinding{&srgb, &filtering};
+	const fcg::GammaUniforms parameters{.gamma = 1.f};
+	const std::span<const std::byte> uniformBlocks[]{std::as_bytes(std::span(&parameters, 1))};
 	command = SDL_AcquireGPUCommandBuffer(device.handle());
-	check(encoding.record(command, take(fcg::FullscreenTarget::fromTexture(final)), {.samplers={&encodedBinding, 1}}));
+	check(encoding.record(command, take(fcg::FullscreenTarget::fromTexture(final)),
+		{.samplers = {&encodedBinding, 1}, .uniforms = uniformBlocks}));
 	require(SDL_SubmitGPUCommandBuffer(command), SDL_GetError());
 	for (const auto pixel : read<std::array<Uint8, 4>>(final))
 		require(pixel == bytes, "Fullscreen triangle coverage, encoding, or alpha differs");
 	auto moved = std::move(encoder);
 	require(!encoder.handle() && !encoder.device(), "Moved fullscreen encoder retained ownership");
 	require(!encoder.draw(nullptr, nullptr, {1, 1}, resources), "Moved fullscreen encoder accepted a draw");
+}
+
+/// Compute the expected RGB transforms in double precision, with alpha taken directly from the source.
+[[nodiscard]] auto correctedColor (
+	const glm::vec4 &source, bool encodeSRGB, float gamma, glm::vec2 bounds
+) -> glm::vec4
+{
+	glm::vec4 result = source;
+	for (int channel = 0; channel < 3; ++channel)
+	{
+		double value = source[channel];
+		if (encodeSRGB)
+			value = value <= .0031308 ? 12.92 * value : 1.055 * std::pow(value, 1.0 / 2.4) - .055;
+		value = std::pow(value, 1.0 / gamma);
+		result[channel] = static_cast<float>(std::clamp(value, double(bounds.x), double(bounds.y)));
+	}
+	return result;
+}
+
+/// Decode each tested attachment format and compare against an independent color-transform reference.
+void checkCorrectedPixels (
+	const fcg::Texture &output, std::span<const glm::vec4> source, bool encodeSRGB, float gamma, glm::vec2 bounds
+)
+{
+	const auto format = output.info().format;
+	const bool normalized = format == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM || format == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
+	std::vector<glm::vec4> actual;
+	if (normalized)
+	{
+		for (const auto &pixel : read<std::array<Uint8, 4>>(output))
+		{
+			glm::vec4 value;
+			for (int channel = 0; channel < 4; ++channel) {
+				const int stored = format == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM && channel < 3 ? 2 - channel : channel;
+				value[channel] = pixel[stored] / 255.f;
+			}
+			actual.push_back(value);
+		}
+	}
+	else if (format == SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT)
+		for (const auto &pixel : read<std::array<Uint16, 4>>(output))
+			actual.emplace_back(glm::unpackHalf1x16(pixel[0]), glm::unpackHalf1x16(pixel[1]),
+				glm::unpackHalf1x16(pixel[2]), glm::unpackHalf1x16(pixel[3]));
+	else
+		actual = read<glm::vec4>(output);
+	require(actual.size() == source.size(), "Gamma output extent differs from the source");
+	const float tolerance = normalized ? 1.01f / 255.f : format == SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT ? .001f : .00002f;
+	for (std::size_t pixel = 0; pixel < actual.size(); ++pixel)
+	{
+		auto expected = correctedColor(source[pixel], encodeSRGB, gamma, bounds);
+		if (normalized)
+			expected = glm::clamp(expected, glm::vec4(0.f), glm::vec4(1.f));
+		for (int channel = 0; channel < 4; ++channel)
+			require(std::isfinite(actual[pixel][channel]) && std::abs(actual[pixel][channel] - expected[channel])
+				<= tolerance * std::max(1.f, std::abs(expected[channel])), "Gamma, final clamping, or alpha differs");
+	}
+}
+
+/// Verify both built-ins, parameter snapshots, final-only bounds, and dynamic presentation recorder captures.
+void gammaCorrection (fcg::Device &device)
+{
+	constexpr auto floatFormat = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
+	const std::array<glm::vec4, 4> source{{
+		{0.f, .0001f, .0031308f, -.25f}, {.0032f, .01f, .18f, .37f},
+		{.25f, .5f, .75f, .72f}, {1.f, 2.f, 4.f, 1.5f}
+	}};
+	const glm::uvec3 extent{source.size(), 1, 1};
+	auto input = take(fcg::Texture::create(device, descriptor(floatFormat, extent)));
+	check(input.upload(std::as_bytes(std::span(source))));
+	auto filtering = sampler(device);
+	const fcg::FullscreenTextureBinding binding{&input, &filtering};
+	const float infinity = std::numeric_limits<float>::infinity();
+	const std::array gammas{.5f, 1.f, 2.f, 2.2f};
+	const std::array<glm::vec2, 3> ranges{{{0.f, 1.f}, {.2f, .7f}, {0.f, infinity}}};
+	const std::array formats{SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM,
+		SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT, floatFormat};
+	constexpr std::size_t cases = 1 + gammas.size() * ranges.size();
+	for (bool encodeSRGB : {false, true})
+	{
+		for (auto format : formats)
+		{
+			auto pass = take(encodeSRGB ? fcg::FullscreenPass::linearToSRGB(device, format)
+				: fcg::FullscreenPass::gammaCorrection(device, format));
+			std::vector<fcg::Texture> outputs;
+			outputs.reserve(cases);
+			auto *command = SDL_AcquireGPUCommandBuffer(device.handle());
+			require(command, SDL_GetError());
+			for (std::size_t index = 0; index < cases; ++index)
+			{
+				outputs.push_back(take(fcg::Texture::create(device, descriptor(format, extent, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET))));
+				const auto target = take(fcg::FullscreenTarget::fromTexture(outputs.back()));
+				fcg::GammaUniforms parameters{};
+				if (index) {
+					parameters.gamma = gammas[(index - 1) / ranges.size()];
+					parameters.clampRange = ranges[(index - 1) % ranges.size()];
+				}
+				const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
+				const fcg::FullscreenBindings bindings{.samplers = {&binding, 1}, .uniforms = uniforms};
+				if (index % 2 == 0)
+				{
+					const auto missing = pass.record(command, target, {.samplers = {&binding, 1}});
+					require(!missing && missing.error().code == fcg::FullscreenErrorCode::InvalidArgument,
+						"Gamma pass accepted a missing uniform block");
+					check(pass.record(command, target, bindings));
+				}
+				else
+				{
+					auto *renderPass = SDL_BeginGPURenderPass(command, &target.color, 1, nullptr);
+					require(renderPass, SDL_GetError());
+					const std::span<const std::byte> excess[]{uniforms[0], uniforms[0]};
+					const auto invalid = pass.draw(command, renderPass, target.extent,
+						{.samplers = {&binding, 1}, .uniforms = excess});
+					require(!invalid && invalid.error().code == fcg::FullscreenErrorCode::InvalidArgument,
+						"Gamma pass accepted excess uniform blocks");
+					const auto result = pass.draw(command, renderPass, target.extent, bindings);
+					SDL_EndGPURenderPass(renderPass);
+					check(result);
+				}
+			}
+			require(SDL_SubmitGPUCommandBuffer(command), SDL_GetError());
+			for (std::size_t index = 0; index < cases; ++index)
+				checkCorrectedPixels(outputs[index], source, encodeSRGB,
+					index ? gammas[(index - 1) / ranges.size()] : 2.2f,
+					index ? ranges[(index - 1) % ranges.size()] : glm::vec2(0.f, 1.f));
+		}
+
+		auto pass = take(encodeSRGB ? fcg::FullscreenPass::linearToSRGB(device, floatFormat)
+			: fcg::FullscreenPass::gammaCorrection(device, floatFormat));
+		fcg::GammaUniforms parameters{.gamma = 1.f, .clampRange = {0.f, infinity}};
+		fcg::PresentationRecorder recorder = [pass = std::move(pass), &parameters] (const fcg::PresentationContext &context)
+			-> std::expected<void, fcg::FullscreenError>
+		{
+			const fcg::FullscreenTextureBinding sourceBinding{&context.scene, &context.sceneSampler};
+			const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
+			return pass.record(context.cmdBuffer, context.target, {.samplers = {&sourceBinding, 1}, .uniforms = uniforms});
+		};
+		auto first = take(fcg::Texture::create(device, descriptor(floatFormat, extent, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)));
+		auto second = take(fcg::Texture::create(device, descriptor(floatFormat, extent, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)));
+		auto *command = SDL_AcquireGPUCommandBuffer(device.handle());
+		require(command, SDL_GetError());
+		check(recorder({input, filtering, command, take(fcg::FullscreenTarget::fromTexture(first))}));
+		parameters = {.gamma = 2.2f, .clampRange = {.2f, .7f}};
+		check(recorder({input, filtering, command, take(fcg::FullscreenTarget::fromTexture(second))}));
+		require(SDL_SubmitGPUCommandBuffer(command), SDL_GetError());
+		checkCorrectedPixels(first, source, encodeSRGB, 1.f, {0.f, infinity});
+		checkCorrectedPixels(second, source, encodeSRGB, 2.2f, {.2f, .7f});
+	}
 }
 
 /// Exercise uploaded top-first image rows, quad UV orientation, linear transparency, and presentation ordering.
@@ -553,7 +705,9 @@ void sceneAndPresentation (fcg::Device &device)
 		device, window->swapchainFormat()))] (const fcg::PresentationContext &context)
 		-> std::expected<void, fcg::FullscreenError> {
 		const fcg::FullscreenTextureBinding binding{&context.scene, &context.sceneSampler};
-		return encoding.record(context.cmdBuffer, context.target, {.samplers={&binding, 1}});
+		const fcg::GammaUniforms parameters{.gamma = 1.f};
+		const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
+		return encoding.record(context.cmdBuffer, context.target, {.samplers = {&binding, 1}, .uniforms = uniforms});
 	};
 	auto *frame = window->beginFrame(device);
 	require(frame && frame->colorTarget() == frame->sceneTarget().handle()
@@ -590,7 +744,9 @@ void sceneAndPresentation (fcg::Device &device)
 		device, window->swapchainFormat()))] (const fcg::PresentationContext &context)
 		-> std::expected<void, fcg::FullscreenError> {
 		const fcg::FullscreenTextureBinding binding{presentationSource, &context.sceneSampler};
-		return encoding.record(context.cmdBuffer, context.target, {.samplers={&binding, 1}});
+		const fcg::GammaUniforms parameters{.gamma = 1.f};
+		const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
+		return encoding.record(context.cmdBuffer, context.target, {.samplers = {&binding, 1}, .uniforms = uniforms});
 	};
 	frame = window->beginFrame(device);
 	require(frame, "Alternate source frame acquisition failed");
@@ -636,7 +792,9 @@ void sceneAndPresentation (fcg::Device &device)
 		rejectsRecording([&] { (void)frame->beginOverlayRenderPass(); });
 		rejectsRecording([&] { window->endFrame(); });
 		const fcg::FullscreenTextureBinding binding{&context.scene, &context.sceneSampler};
-		return encoding.record(context.cmdBuffer, context.target, {.samplers={&binding, 1}});
+		const fcg::GammaUniforms parameters{.gamma = 1.f};
+		const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
+		return encoding.record(context.cmdBuffer, context.target, {.samplers = {&binding, 1}, .uniforms = uniforms});
 	};
 	frame = window->beginFrame(device);
 	require(frame, "Custom presentation frame acquisition failed");
@@ -748,6 +906,7 @@ auto main () -> int
 			transfers(*device, *otherDevice);
 			images(*device);
 			fullscreen(*device);
+			gammaCorrection(*device);
 			sceneAndPresentation(*device);
 			device->waitIdle();
 		}

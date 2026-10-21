@@ -6,6 +6,7 @@
 
 // C++ STL
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <utility>
 
@@ -66,7 +67,9 @@
 	return [pass = std::move(*pass)] (const fcg::PresentationContext &context)
 		-> std::expected<void, fcg::FullscreenError> {
 		const fcg::FullscreenTextureBinding binding{&context.scene, &context.sceneSampler};
-		return pass.record(context.cmdBuffer, context.target, {.samplers = {&binding, 1}});
+		const fcg::GammaUniforms parameters{.gamma = 1.f};
+		const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
+		return pass.record(context.cmdBuffer, context.target, {.samplers = {&binding, 1}, .uniforms = uniforms});
 	};
 }
 // [presentation_setup]

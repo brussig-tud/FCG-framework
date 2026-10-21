@@ -55,28 +55,42 @@
 ///   (<tt>\ref fcg::Player::setPresentationRecorder "setPresentationRecorder"</tt>).
 ///
 /// \subsection fcg_runtime_workflows_presentation Custom scene presentation
-/// By default, the runtime converts the scene's linear colors to sRGB for display. To replace this step, install one
-/// application-wide <tt>\ref fcg::PresentationRecorder "PresentationRecorder"</tt> through
-/// <tt>\ref fcg::Player::setPresentationRecorder "Player::setPresentationRecorder"</tt>. Each rendered frame runs
-/// all <tt>\ref fcg::Applet::render "Applet::render"</tt> scene draws, then the registered presentation recorder,
-/// then Dear ImGui rendering. Without a registration, the player uses its own sRGB presentation recorder.
-/// Presentation is skipped when no window image has been acquired.
+/// By default, the runtime converts the scene's linear colors for display using the piecewise sRGB transfer function
+/// and final RGB bounds of [0, 1]. To customize this step, install one application-wide
+/// <tt>\ref fcg::PresentationRecorder "PresentationRecorder"</tt> through
+/// <tt>\ref fcg::Player::setPresentationRecorder "Player::setPresentationRecorder"</tt> whose job it is to record the
+/// rendering commands for presenting the scene image. Each rendered frame runs all
+/// <tt>\ref fcg::Applet::render "Applet::render"</tt> scene contributions, then the registered presentation recorder,
+/// then Dear ImGui rendering. Presentation is skipped when no window image has been acquired.
 ///
-/// Include <tt>\#include &lt;FCG/frame.h&gt;</tt> for the recorder and the
-/// <tt>\ref fcg::PresentationContext "PresentationContext"</tt> supplied on each invocation.
+/// This example uses <tt>\ref fcg::FullscreenPass::gammaCorrection "FullscreenPass::gammaCorrection"</tt> to present
+/// the scene with an adjustable gamma curve. It samples linear RGB, applies <tt>pow(rgb, vec3(1.0 / gamma))</tt>,
+/// clamps the result and preserves alpha. The default gamma of 2.2 gives a simple approximation to sRGB encoding.
+/// The custom recorder supplies the final display encoding in place of the runtime's standard sRGB conversion.
+/// See \ref fcg_fullscreen_workflows_gamma for gamma, clamp-range and sampled-color requirements.
 ///
-/// Scene pipelines use <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt>;
-/// the final presentation pass instead uses the window format from
-/// <tt>\ref fcg::Player::swapchainFormat "Player::swapchainFormat"</tt>. The recorder must write display-encoded
-/// colors into the supplied window target: a successful recorder replaces the default conversion entirely.
-/// This complete minimal example installs the built-in
-/// <tt>\ref fcg::FullscreenPass::linearToSRGB "FullscreenPass::linearToSRGB"</tt> without additional shader assets.
-/// Include the public headers and create the pass in <tt>\ref fcg::Applet::init "Applet::init"</tt>:
+/// Include the public headers, including <tt>\#include &lt;FCG/frame.h&gt;</tt> for the recorder and the
+/// <tt>\ref fcg::PresentationContext "PresentationContext"</tt> supplied on each invocation:
 /// \snippet runtime_examples.cpp presentation_includes
+/// Keep a <tt>\ref fcg::GammaUniforms "GammaUniforms"</tt> member in the applet. Default initialization selects gamma
+/// 2.2 and final RGB bounds of [0, 1]:
+/// \snippet runtime_examples.cpp presentation_parameters
+/// Create the pass once in <tt>\ref fcg::Applet::init "Applet::init"</tt> using the window format from
+/// <tt>\ref fcg::Player::swapchainFormat "Player::swapchainFormat"</tt>. Scene pipelines use
+/// <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt> for their attachments instead.
+/// The recorder owns the pass and reads the applet's current parameters during each invocation, supplying one uniform
+/// block with the scene texture and sampler:
 /// \snippet runtime_examples.cpp presentation_install
-/// For a custom effect, replace the factory with
-/// <tt>\ref fcg::FullscreenPass::create "FullscreenPass::create"</tt> and a shader that supplies the final display
-/// encoding. Intermediate passes may precede the final window draw in the same recorder.
+///
+/// While the custom recorder is registered, a slider in <tt>\ref fcg::Applet::gui "Applet::gui"</tt> changes the gamma
+/// used for that frame's presentation. Increasing gamma brightens midtones; decreasing it darkens them. The adjustment
+/// affects the scene, with Dear ImGui drawn afterwards. The button calls
+/// <tt>\ref fcg::Player::clearPresentationRecorder "Player::clearPresentationRecorder"</tt> to remove the custom
+/// recorder and restore the runtime's standard piecewise sRGB conversion:
+/// \snippet runtime_examples.cpp presentation_reset
+/// Registration and clearing are main-thread operations. Changes before presentation affect that frame; the latest
+/// registration wins. An empty recorder clears the registration. Clearing restores the runtime's default conversion.
+/// Do not replace or clear a recorder from inside its invocation; either operation throws \c std::logic_error.
 ///
 /// The supplied <tt>\ref fcg::PresentationContext "PresentationContext"</tt> borrows the current scene, sampler,
 /// command buffer and window target for this invocation only. Use these fresh resources each time, including after
@@ -85,12 +99,13 @@
 /// recorder-local binding arrays remain valid for the recording call. End every GPU pass even on error or exception.
 /// Leave command-buffer submission or cancellation, frame completion and frame acquisition to the runtime.
 ///
-/// Registration and clearing are main-thread operations. Changes before presentation affect that frame; the latest
-/// registration wins. An empty recorder clears the registration. Restore the default from an applet action, such as
-/// a button in <tt>\ref fcg::Applet::gui "Applet::gui"</tt>:
-/// \snippet runtime_examples.cpp presentation_reset
-/// Clearing restores the built-in conversion, not a previous recorder. Do not replace or clear a recorder from inside
-/// its invocation; either operation throws \c std::logic_error in that situation.
+/// Captured references to applet parameters must remain valid while the recorder is registered. The runtime clears
+/// recorders before destroying applets. Return recording errors through the recorder's result; exceptions propagate
+/// out of <tt>\ref fcg::run "run"</tt>.
+///
+/// For another custom effect, create a pass with <tt>\ref fcg::FullscreenPass::create "FullscreenPass::create"</tt>
+/// and a fragment shader that supplies the intended final display encoding. Intermediate passes may precede the final
+/// window draw in the same recorder.
 ///
 /// \section fcg_runtime_lifetime Ownership and lifetime
 /// <tt>\ref fcg::run "run"</tt> takes ownership of the applets it is given. Run one application at a time, from the

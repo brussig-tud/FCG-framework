@@ -7,6 +7,7 @@
 // C++ STL
 #include <array>
 #include <expected>
+#include <limits>
 #include <span>
 
 // Framework
@@ -69,7 +70,9 @@
 	if (auto result = effect.record(commands, *target, {.samplers={&first, 1}}); !result)
 		return result;
 	const fcg::FullscreenTextureBinding second{&intermediate, &sampler};
-	return presentation.record(commands, finalTarget, {.samplers={&second, 1}});
+	const fcg::GammaUniforms parameters{.gamma = 1.f};
+	const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
+	return presentation.record(commands, finalTarget, {.samplers = {&second, 1}, .uniforms = uniforms});
 }
 /// [chain]
 
@@ -88,6 +91,32 @@
 	return mapping->readTexel<float>(glm::uvec3(pixel, 0));
 }
 /// [readback]
+
+/// \brief Apply gamma correction to a floating-point intermediate texture, retaining RGB values above 1.
+///
+/// \pre The source has finite, nonnegative RGB and \p target describes a valid floating-point color attachment.
+///
+/// \param commands The unsubmitted command buffer, with no active pass.
+/// \param scene The sampled source texture, kept alive until GPU completion.
+/// \param sampler The sampler, kept alive until GPU completion.
+/// \param target The floating-point output target, kept alive until GPU completion.
+///
+/// \return Nothing on success, or an error from pass creation or recording.
+/// [gamma_intermediate]
+[[nodiscard]] auto correctGamma (
+	SDL_GPUCommandBuffer *commands, const fcg::Texture &scene, const fcg::Sampler &sampler,
+	const fcg::FullscreenTarget &target
+) -> std::expected<void, fcg::FullscreenError>
+{
+	auto pass = fcg::FullscreenPass::gammaCorrection(*target.device, target.format);
+	if (!pass)
+		return std::unexpected(pass.error());
+	const fcg::FullscreenTextureBinding binding{&scene, &sampler};
+	const fcg::GammaUniforms parameters{.clampRange = {0.f, std::numeric_limits<float>::infinity()}};
+	const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
+	return pass->record(commands, target, {.samplers = {&binding, 1}, .uniforms = uniforms});
+}
+/// [gamma_intermediate]
 
 /// Create a built-in pass and record one draw that copies the scene into the given target.
 /// [present]

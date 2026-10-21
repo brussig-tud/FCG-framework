@@ -9,6 +9,7 @@
 #include <expected>
 #include <iostream>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -314,7 +315,9 @@ private:
 				require(results.destroyed[0] == 0, "Self-mutation destroyed executing capture");
 			}
 			const std::array bindings{fcg::FullscreenTextureBinding{&context.scene, &context.sceneSampler}};
-			return pass.record(context.cmdBuffer, context.target, {.samplers = bindings});
+				const fcg::GammaUniforms parameters{.gamma = 1.f};
+				const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
+				return pass.record(context.cmdBuffer, context.target, {.samplers = bindings, .uniforms = uniforms});
 		});
 	}
 

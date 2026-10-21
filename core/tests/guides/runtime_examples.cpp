@@ -8,6 +8,7 @@
 // C++ STL
 #include <expected>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -34,7 +35,7 @@
 //
 
 // [applet_declaration]
-/// An applet that installs a presentation pass and offers a reset action.
+/// An applet that presents the scene with adjustable gamma and offers standard sRGB presentation as a reset action.
 class ExampleApplet : public fcg::Applet
 {
 public:
@@ -47,7 +48,7 @@ public:
 		return instanceName;
 	}
 
-	/// \brief Install a move-only presentation pass during applet initialization.
+	/// \brief Install a move-only gamma correction presentation pass during applet initialization.
 	///
 	/// \param device The application's GPU device.
 	/// \param player The player that owns the recorder.
@@ -57,17 +58,18 @@ public:
 	// [presentation_install]
 	void init (fcg::Device &device, fcg::Player &player) override
 	{
-		auto pass = fcg::FullscreenPass::linearToSRGB (player.device(), player.swapchainFormat());
+		auto pass = fcg::FullscreenPass::gammaCorrection (player.device(), player.swapchainFormat());
 		if (!pass)
 			throw std::runtime_error (pass.error().message);
 		player.setPresentationRecorder (
-			[pass = std::move (*pass)] (const fcg::PresentationContext &context)
+			[this, pass = std::move (*pass)] (const fcg::PresentationContext &context)
 				-> std::expected<void, fcg::FullscreenError>
 			{
 				const fcg::FullscreenTextureBinding sceneBindings[] = {
 					{&context.scene, &context.sceneSampler}
 				};
-				const fcg::FullscreenBindings bindings{.samplers = sceneBindings};
+				const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&gammaUniforms, 1))};
+				const fcg::FullscreenBindings bindings{.samplers = sceneBindings, .uniforms = uniforms};
 				return pass.record (context.cmdBuffer, context.target, bindings);
 			}
 		);
@@ -81,13 +83,20 @@ public:
 	/// \param player The application's player.
 	void onViewportResize (fcg::Device &device, const glm::uvec2 &oldViewportSize, fcg::Player &player) override {}
 
-	/// \brief Offer a button that restores the built-in scene conversion.
+	/// \brief Adjust custom presentation gamma and offer a button that restores standard sRGB conversion.
 	///
 	/// \param device The application's GPU device.
 	/// \param player The player whose presentation recorder is cleared.
 	// [presentation_reset]
-	void gui (fcg::Device &device, fcg::Player &player) override {
-		if (ImGui::Button ("Restore default presentation"))
+	void gui (fcg::Device &device, fcg::Player &player) override
+	{
+		// [presentation_gamma]
+		ImGui::SliderFloat (
+			"Presentation gamma", &gammaUniforms.gamma, .1f, 4.f, "%.3f",
+			ImGuiSliderFlags_AlwaysClamp
+		);
+		// [presentation_gamma]
+		if (ImGui::Button ("Restore default sRGB presentation"))
 			player.clearPresentationRecorder ();
 	}
 	// [presentation_reset]
@@ -110,6 +119,17 @@ public:
 		fcg::Device &device, fcg::RenderState &renderState, SDL_GPURenderPass *renderPass,
 		SDL_GPUCommandBuffer *commandBuffer, fcg::Player &player
 	) override {}
+
+
+private:
+
+	////
+	// Fields
+
+	/// The presentation parameters read by the recorder on each invocation, defaulting to gamma 2.2 and RGB bounds [0, 1].
+	// [presentation_parameters]
+	fcg::GammaUniforms gammaUniforms{};
+	// [presentation_parameters]
 };
 // [applet_declaration]
 

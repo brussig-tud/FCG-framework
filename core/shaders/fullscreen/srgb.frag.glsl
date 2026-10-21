@@ -1,4 +1,13 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+
+//////
+//
+// Includes
+//
+
+#include "gamma.glsl"
 
 
 //////
@@ -41,11 +50,9 @@ void main()
 {
 	// Fetch color and alpha
 	vec4 linear = texture(sourceTex, uv);
-	vec3 rgb = clamp(linear.rgb, 0.0, 1.0);
+	vec3 rgb = linear.rgb;
 
 	// Convert
-	color = vec4(
-		/* to sRGB color: */ mix(1.055*pow(rgb, vec3(1/2.4))-.055, 12.92*rgb, lessThanEqual(rgb, vec3(.0031308))),
-		/*  linear alpha: */ linear.a
-	);
+	vec3 encoded = mix(1.055*pow(rgb, vec3(1/2.4))-.055, 12.92*rgb, lessThanEqual(rgb, vec3(.0031308)));
+	color = vec4(applyGamma(encoded), linear.a);
 }

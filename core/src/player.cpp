@@ -6,6 +6,7 @@
 
 // C++ STL
 #include <format>
+#include <span>
 #include <stdexcept>
 
 // SDL3
@@ -84,17 +85,25 @@ void Player::clearPresentationRecorder () {
 
 auto Player::initializePresentation () -> std::expected<void, FullscreenError>
 {
+	// No presentation without window
 	if (!m_window)
 		return std::unexpected(FullscreenError{FullscreenErrorCode::InvalidState, "No main window to present"});
+
+	// Create our canonical sRGB fullscreen pass
 	auto pass = FullscreenPass::linearToSRGB(m_device, m_window->swapchainFormat());
 	if (!pass)
 		return std::unexpected(pass.error());
-	PresentationRecorder recorder = [pass = std::move(*pass)] (const PresentationContext &context)
-		-> std::expected<void, FullscreenError> {
+
+	// Define the default presentation recorder.
+	m_defaultPresentationRecorder = [pass = std::move(*pass)](const PresentationContext &context)
+	-> std::expected<void, FullscreenError> {
 		const FullscreenTextureBinding binding{&context.scene, &context.sceneSampler};
-		return pass.record(context.cmdBuffer, context.target, {.samplers = {&binding, 1}});
+		const GammaUniforms parameters{.gamma = 1.f};
+		const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
+		return pass.record(
+			context.cmdBuffer, context.target, {.samplers = {&binding, 1}, .uniforms = uniforms}
+		);
 	};
-	m_defaultPresentationRecorder = std::move(recorder);
 	return {};
 }
 

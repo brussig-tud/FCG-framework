@@ -42,16 +42,6 @@ auto validExtent (glm::uvec2 extent) -> bool {
 	return extent.x && extent.y && extent.x <= 16384 && extent.y <= 16384;
 }
 
-/// Create a fullscreen pass from the embedded built-in fragment shader \p name, with one texture/sampler pair.
-auto builtin (fcg::Device &device, SDL_GPUTextureFormat format, const char *name)
-	-> std::expected<fcg::FullscreenPass, fcg::FullscreenError>
-{
-	auto shader = fcg::res::shader(name);
-	if (!shader || !shader->stage(fcg::ShaderStage::FRAGMENT))
-		return error(Code::InvalidState, "Built-in fullscreen fragment shader is missing");
-	return fcg::FullscreenPass::create(device, *shader->stage(fcg::ShaderStage::FRAGMENT), {.samplers=1}, format);
-}
-
 // Anonymous namespace end
 }
 
@@ -76,11 +66,7 @@ namespace fcg {
 // FullscreenTarget
 
 auto FullscreenTarget::fromTexture (
-	const Texture &texture,
-	Uint32 mipLevel,
-	Uint32 layer,
-	SDL_GPULoadOp load,
-	SDL_GPUStoreOp store
+	const Texture &texture, Uint32 mipLevel, Uint32 layer, SDL_GPULoadOp load, SDL_GPUStoreOp store
 ) -> std::expected<FullscreenTarget, FullscreenError>
 {
 	if (!texture.handle())
@@ -109,9 +95,7 @@ auto FullscreenTarget::fromTexture (
 // FullscreenPass
 
 auto FullscreenPass::create (
-	Device &device,
-	const res::ShaderStageData &fragment,
-	const ShaderResources &resources,
+	Device &device, const res::ShaderStageData &fragment, const ShaderResources &resources,
 	SDL_GPUTextureFormat outputFormat
 ) -> std::expected<FullscreenPass, FullscreenError>
 {
@@ -146,7 +130,9 @@ auto FullscreenPass::create (
 	info.target_info.color_target_descriptions = &output;
 	info.target_info.num_color_targets = 1;
 	auto *pipeline = SDL_CreateGPUGraphicsPipeline(device.handle(), &info);
-	auto failure = pipeline ? std::unexpected(FullscreenError{Code::SDLFailure, {}}) : sdlError("Creating fullscreen pipeline");
+	auto failure = pipeline ?
+		  std::unexpected(FullscreenError{Code::SDLFailure, {}})
+		: sdlError("Creating fullscreen pipeline");
 	SDL_ReleaseGPUShader(device.handle(), vertex);
 	SDL_ReleaseGPUShader(device.handle(), pixel);
 	if (!pipeline)
@@ -156,14 +142,39 @@ auto FullscreenPass::create (
 
 auto FullscreenPass::passthrough (Device &device, SDL_GPUTextureFormat outputFormat)
 	-> std::expected<FullscreenPass, FullscreenError> {
-	return builtin(device, outputFormat, "passthrough");
+	auto shader = res::shader("passthrough");
+	if (!shader || !shader->stage(ShaderStage::FRAGMENT))
+		return error(Code::InvalidState, "Built-in passthrough fragment shader is missing");
+	return create(device, *shader->stage(ShaderStage::FRAGMENT), {.samplers = 1}, outputFormat);
 }
 
 auto FullscreenPass::linearToSRGB (Device &device, SDL_GPUTextureFormat outputFormat)
-	-> std::expected<FullscreenPass, FullscreenError> {
-	if (outputFormat != SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM && outputFormat != SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM)
-		return error(Code::UnsupportedConfiguration, "SDR encoding requires an RGBA8 or BGRA8 UNORM output");
-	return builtin(device, outputFormat, "srgb");
+	-> std::expected<FullscreenPass, FullscreenError>
+{
+	if (   outputFormat != SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM && outputFormat != SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM
+	    && outputFormat != SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT
+	    && outputFormat != SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT)
+		return error(
+			Code::UnsupportedConfiguration, "sRGB encoding requires RGBA8/BGRA8 UNORM or RGBA16/RGBA32 float"
+			" output"
+		);
+	auto shader = res::shader("srgb");
+	if (!shader || !shader->stage(ShaderStage::FRAGMENT))
+		return error(Code::InvalidState, "Built-in sRGB fragment shader is missing");
+	return create(
+		device, *shader->stage(ShaderStage::FRAGMENT), {.uniformBuffers = 1, .samplers = 1}, outputFormat
+	);
+}
+
+auto FullscreenPass::gammaCorrection (Device &device, SDL_GPUTextureFormat outputFormat)
+	-> std::expected<FullscreenPass, FullscreenError>
+{
+	auto shader = res::shader("gamma");
+	if (!shader || !shader->stage(ShaderStage::FRAGMENT))
+		return error(Code::InvalidState, "Built-in gamma correction fragment shader is missing");
+	return create(
+		device, *shader->stage(ShaderStage::FRAGMENT), {.uniformBuffers = 1, .samplers = 1}, outputFormat
+	);
 }
 
 FullscreenPass::~FullscreenPass() {
@@ -172,13 +183,15 @@ FullscreenPass::~FullscreenPass() {
 }
 
 FullscreenPass::FullscreenPass(FullscreenPass &&other) noexcept
-	: m_device(std::exchange(other.m_device, nullptr)), m_pipeline(std::exchange(other.m_pipeline, nullptr)),
-	  m_format(other.m_format), m_resources(other.m_resources)
+	: m_device(std::exchange(other.m_device, nullptr)),
+	  m_pipeline(std::exchange(other.m_pipeline, nullptr)), m_format(other.m_format),
+	  m_resources(other.m_resources)
 {}
 
 auto FullscreenPass::operator= (FullscreenPass &&other) noexcept -> FullscreenPass&
 {
-	if (this != &other) {
+	if (this != &other)
+	{
 		if (m_pipeline)
 			SDL_ReleaseGPUGraphicsPipeline(m_device->handle(), m_pipeline);
 		m_device = std::exchange(other.m_device, nullptr);
@@ -193,22 +206,24 @@ auto FullscreenPass::validate (const FullscreenBindings &bindings) const -> std:
 {
 	if (!m_pipeline)
 		return error(Code::InvalidState, "Fullscreen encoder is empty");
-	if (bindings.samplers.size() != m_resources.samplers || bindings.storageTextures.size() != m_resources.storageTextures
-		|| bindings.storageBuffers.size() != m_resources.storageBuffers || bindings.uniforms.size() != m_resources.uniformBuffers)
+	if (   bindings.samplers.size() != m_resources.samplers
+	    || bindings.storageTextures.size() != m_resources.storageTextures
+	    || bindings.storageBuffers.size() != m_resources.storageBuffers
+	    || bindings.uniforms.size() != m_resources.uniformBuffers)
 		return error(Code::InvalidArgument, "Fullscreen binding counts do not match shader resources");
 	for (const auto &binding : bindings.samplers)
-		if (!binding.texture || !binding.sampler || !binding.texture->handle() || !binding.sampler->handle()
-			|| binding.texture->device() != m_device || binding.sampler->device() != m_device
-			|| !(binding.texture->info().usage & SDL_GPU_TEXTUREUSAGE_SAMPLER)
-			|| binding.texture->info().sample_count != SDL_GPU_SAMPLECOUNT_1)
+		if (   !binding.texture || !binding.sampler || !binding.texture->handle() || !binding.sampler->handle()
+		    || binding.texture->device() != m_device || binding.sampler->device() != m_device
+		    || !(binding.texture->info().usage & SDL_GPU_TEXTUREUSAGE_SAMPLER)
+		    || binding.texture->info().sample_count != SDL_GPU_SAMPLECOUNT_1)
 			return error(Code::InvalidArgument, "Fullscreen sampled binding is invalid");
 	for (const auto *texture : bindings.storageTextures)
-		if (!texture || !texture->handle() || texture->device() != m_device
-			|| !(texture->info().usage & SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ))
+		if (   !texture || !texture->handle() || texture->device() != m_device
+		    || !(texture->info().usage & SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ))
 			return error(Code::InvalidArgument, "Fullscreen storage texture binding is invalid");
 	for (const auto *buffer : bindings.storageBuffers)
-		if (!buffer || !buffer->handle() || buffer->device() != m_device
-			|| !(buffer->usage() & SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ))
+		if (   !buffer || !buffer->handle() || buffer->device() != m_device
+		    || !(buffer->usage() & SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ))
 			return error(Code::InvalidArgument, "Fullscreen storage buffer binding is invalid");
 	for (const auto block : bindings.uniforms)
 		if (block.empty() || block.size() > 4096)
@@ -217,16 +232,15 @@ auto FullscreenPass::validate (const FullscreenBindings &bindings) const -> std:
 }
 
 auto FullscreenPass::draw (
-	SDL_GPUCommandBuffer *command,
-	SDL_GPURenderPass *pass,
-	glm::uvec2 extent,
-	const FullscreenBindings &bindings
+	SDL_GPUCommandBuffer *command, SDL_GPURenderPass *pass, glm::uvec2 extent, const FullscreenBindings &bindings
 ) const -> std::expected<void, FullscreenError>
 {
 	if (auto valid = validate(bindings); !valid)
 		return valid;
 	if (!command || !pass || !validExtent(extent))
-		return error(Code::InvalidArgument, "Fullscreen draw requires command, pass, and valid output dimensions");
+		return error(
+			Code::InvalidArgument, "Fullscreen draw requires command, pass, and valid output dimensions"
+		);
 	std::array<SDL_GPUTextureSamplerBinding, 16> samplers{};
 	std::array<SDL_GPUTexture*, 8> textures{};
 	std::array<SDL_GPUBuffer*, 8> buffers{};
@@ -238,11 +252,17 @@ auto FullscreenPass::draw (
 		buffers[i] = bindings.storageBuffers[i]->handle();
 	SDL_BindGPUGraphicsPipeline(pass, m_pipeline);
 	if (!bindings.samplers.empty())
-		SDL_BindGPUFragmentSamplers(pass, 0, samplers.data(), (Uint32)bindings.samplers.size());
+		SDL_BindGPUFragmentSamplers(
+			pass, 0, samplers.data(), (Uint32)bindings.samplers.size()
+		);
 	if (!bindings.storageTextures.empty())
-		SDL_BindGPUFragmentStorageTextures(pass, 0, textures.data(), (Uint32)bindings.storageTextures.size());
+		SDL_BindGPUFragmentStorageTextures(
+			pass, 0, textures.data(), (Uint32)bindings.storageTextures.size()
+		);
 	if (!bindings.storageBuffers.empty())
-		SDL_BindGPUFragmentStorageBuffers(pass, 0, buffers.data(), (Uint32)bindings.storageBuffers.size());
+		SDL_BindGPUFragmentStorageBuffers(
+			pass, 0, buffers.data(), (Uint32)bindings.storageBuffers.size()
+		);
 	for (Uint32 i = 0; i < bindings.uniforms.size(); ++i)
 		(void)pushUniforms(command, ShaderStage::FRAGMENT, i, bindings.uniforms[i]);
 	const SDL_GPUViewport viewport{0.f, 0.f, (float)extent.x, (float)extent.y, 0.f, 1.f};
@@ -254,17 +274,15 @@ auto FullscreenPass::draw (
 }
 
 auto FullscreenPass::record (
-	SDL_GPUCommandBuffer *command,
-	const FullscreenTarget &target,
-	const FullscreenBindings &bindings
+	SDL_GPUCommandBuffer *command, const FullscreenTarget &target, const FullscreenBindings &bindings
 ) const -> std::expected<void, FullscreenError>
 {
 	if (auto valid = validate(bindings); !valid)
 		return valid;
-	if (!command || !target.color.texture || target.device != m_device || target.format != m_format || !validExtent(target.extent)
-		|| target.color.load_op < SDL_GPU_LOADOP_LOAD || target.color.load_op > SDL_GPU_LOADOP_DONT_CARE
-		|| target.color.store_op < SDL_GPU_STOREOP_STORE || target.color.store_op > SDL_GPU_STOREOP_DONT_CARE
-		|| target.color.resolve_texture)
+	if (   !command || !target.color.texture || target.device != m_device || target.format != m_format
+	    || !validExtent(target.extent) || target.color.load_op < SDL_GPU_LOADOP_LOAD
+	    || target.color.load_op > SDL_GPU_LOADOP_DONT_CARE || target.color.store_op < SDL_GPU_STOREOP_STORE
+	    || target.color.store_op > SDL_GPU_STOREOP_DONT_CARE || target.color.resolve_texture)
 		return error(Code::InvalidArgument, "Fullscreen target does not match the encoder");
 	for (const auto &binding : bindings.samplers)
 		if (binding.texture->handle() == target.color.texture)

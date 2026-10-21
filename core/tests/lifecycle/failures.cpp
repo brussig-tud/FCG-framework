@@ -8,6 +8,7 @@
 #include <iostream>
 #include <memory>
 #include <new>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -416,7 +417,9 @@ public:
 				if (scenario == "presentation")
 					throw ProbeFailure();
 				const fcg::FullscreenTextureBinding input{&context.scene, &context.sceneSampler};
-				return pass.record(context.cmdBuffer, context.target, {.samplers = {&input, 1}});
+					const fcg::GammaUniforms parameters{.gamma = 1.f};
+					const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
+					return pass.record(context.cmdBuffer, context.target, {.samplers = {&input, 1}, .uniforms = uniforms});
 			});
 			if (scenario == "event" || scenario == "close-submit")
 			{
