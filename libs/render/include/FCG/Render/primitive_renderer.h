@@ -31,7 +31,8 @@
 
 /// \defgroup fcg_primitives Instanced primitives
 /// \ingroup fcg_modules
-/// \brief Drawing many textured quads and shaded boxes that share per-instance attributes.
+/// \brief
+/// 	Drawing many geometric primitives of the same type at once according to provided per-instance attribute values.
 ///
 /// A <tt>\ref fcg::PrimitiveAttributes "PrimitiveAttributes"</tt> collection holds the per-instance data — position,
 /// extent, orientation, and color — on the GPU, and also offers optional normal and radius sources, which the

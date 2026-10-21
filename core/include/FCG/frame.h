@@ -246,22 +246,26 @@ public:
 	////
 	// Methods
 
-	/// \brief Record presentation after scene rendering and before overlays.
+	/// \brief Record presentation of the scene before overlays.
 	///
 	/// The recorder owns every pass it records and must end all passes even on error or exception. It writes final
 	/// display-encoded window colors. Leave command-buffer submission, frame completion and acquisition to the caller.
 	/// The recorder and context are borrowed only during this call. Obtain fresh scene and target resources each
 	/// invocation, including after resize.
 	///
-	/// \pre Call after ending the scene pass, before presentation or overlays, with a non-empty recorder.
+	/// Presenting without a completed scene pass in this frame leaves the presented contents undefined.
+	///
+	/// \pre
+	/// 	The frame is unfinished, no render pass is active, presentation has not begun, and \p recorder is non-empty.
 	///
 	/// \param recorder The presentation recorder; it is invoked once and is not retained.
 	///
 	/// \return
 	/// 	Nothing on success, the recorder's error on failure, or \c FullscreenErrorCode::InvalidState for invalid
-	/// 	frame state and \c FullscreenErrorCode::InvalidArgument for an empty recorder. Invalid preconditions record
-	/// 	nothing. Recorder failure rejects further scene, presentation and overlay work; finish the frame with
-	/// 	\c Window::endFrame to submit without retrying presentation. Failed window contents are unspecified.
+	/// 	frame state and \c FullscreenErrorCode::InvalidArgument for an empty recorder. Rejection of invalid frame
+	/// 	state or an empty recorder records nothing. Recorder failure rejects further scene, presentation and overlay
+	/// 	work; finish the frame with \c Window::endFrame to submit without retrying presentation. Failed window
+	/// 	contents are unspecified.
 	///
 	/// \throws ... Exceptions from the recorder propagate unchanged; complete the failed frame as for returned errors.
 	[[nodiscard]] auto present (PresentationRecorder &recorder) -> std::expected<void, FullscreenError>;

@@ -36,6 +36,9 @@
 /// \snippet window_examples.cpp presentation_setup
 /// Pass the recorder to <tt>fcg::Frame::present</tt> at the end of each iteration of your frame loop:
 /// \snippet window_examples.cpp frame_loop
+/// The local guard ends the scene pass even if drawing throws. The exception handler attempts to submit the acquired
+/// frame before rethrowing the original exception. If submission also fails during cleanup, its error is logged and
+/// the original exception is preserved.
 ///
 /// \section fcg_windows_workflows Common tasks
 /// \subsection fcg_windows_workflows_frame Recording a frame
@@ -45,7 +48,8 @@
 /// <tt>\ref fcg::Frame::present "present"</tt> with a recorder that writes the final window colors. After successful
 /// presentation, draw the GUI, or anything else that should appear on top of the presented image, in the depth-free
 /// overlay pass from <tt>\ref fcg::Frame::beginOverlayRenderPass "beginOverlayRenderPass"</tt>. Finish with
-/// <tt>\ref fcg::Window::endFrame "endFrame"</tt> to submit the recorded commands.
+/// <tt>\ref fcg::Window::endFrame "endFrame"</tt> to submit the recorded commands. Presenting without a completed
+/// scene pass leaves the presented contents undefined.
 ///
 /// \subsection fcg_windows_workflows_formats Querying formats
 /// <tt>\ref fcg::Window::renderTargetInfo "Window::renderTargetInfo"</tt> returns the color format, depth format and

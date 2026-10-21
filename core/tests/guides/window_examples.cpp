@@ -77,26 +77,39 @@
 /// \param window The claimed window, with no frame in progress.
 /// \param recorder The recorder to borrow for this frame's presentation.
 ///
-/// \throws std::runtime_error If frame acquisition or presentation fails.
-/// \throws ... Recorder exceptions propagate after the acquired frame is submitted.
+/// \throws std::runtime_error If frame acquisition, scene-pass creation, presentation or submission fails.
+/// \throws ...
+/// 	Exceptions from drawing or the recorder propagate unchanged after frame submission is attempted, even if
+/// 	submission also fails.
 // [frame_loop]
 void renderFrame (fcg::Device &device, fcg::Window &window, fcg::PresentationRecorder &recorder)
 {
 	auto *frame = window.beginFrame(device);
 	if (!frame)
-		return; // No window image is available, for example while minimized.
+		return; // <- no window image is available, for example while minimized.
 	try
 	{
-		if (frame->beginRenderPass({0.f, 0.f, 0.f, 1.f})) {
+		if (frame->beginRenderPass({0.f, 0.f, 0.f, 1.f}))
+		{
+			/// Ends the scene pass on every exit from this scope (including exceptions).
+			struct EndRenderPass {
+				fcg::Frame &frame;
+				~EndRenderPass() { frame.endRenderPass(); }
+			} renderPassGuard{*frame};
+
 			// ... record draw calls here ...
-			frame->endRenderPass();
 		}
+		else
+			throw std::runtime_error("Beginning the scene render pass failed");
 		if (auto result = frame->present(recorder); !result)
 			throw std::runtime_error(result.error().message);
-		// Optional overlays can be recorded here, after successful presentation.
 	}
-	catch (...) {
-		window.endFrame();
+	catch (...)
+	{
+		try { window.endFrame(); }
+		catch (...) {
+			// Submission failures are already logged; preserve the original exception.
+		}
 		throw;
 	}
 	window.endFrame();
