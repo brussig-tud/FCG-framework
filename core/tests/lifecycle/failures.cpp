@@ -74,11 +74,29 @@ bool guiCleanupValid = true;
 /// Whether the next frame submission should report failure after consuming its command buffer.
 bool failSubmission = false;
 
+/// Whether the next frame acquisition should succeed without an image.
+bool unavailableImage = false;
+
+/// Whether the next swapchain acquisition should fail before acquiring an image.
+bool failAcquisition = false;
+
+/// Whether the next window attachment allocation should fail after acquiring an image.
+bool failAttachment = false;
+
+/// Whether the next cancellation should report failure after consuming its command buffer.
+bool failCancellation = false;
+
 /// Number of frame submissions, excluding resource uploads made by the library.
 unsigned submissions = 0;
 
+/// Number of acquisition command buffers cancelled.
+unsigned cancellations = 0;
+
 /// Submission diagnostics captured from the real SDL logger.
 std::vector<std::string> submissionLogs;
+
+/// Acquisition and secondary cleanup diagnostics captured in emission order.
+std::vector<std::string> acquisitionLogs;
 
 /// Original SDL log output forwarded by the observer.
 SDL_LogOutputFunction originalLog = nullptr;
@@ -101,6 +119,40 @@ auto submitFrame (SDL_GPUCommandBuffer *command) -> bool {
 	return submitted;
 }
 
+/// Cancel real commands, then optionally report a backend failure without permitting a retry.
+auto cancelFrame (SDL_GPUCommandBuffer *command) -> bool {
+	++cancellations;
+	const bool cancelled = SDL_CancelGPUCommandBuffer(command);
+	if (std::exchange(failCancellation, false))
+		return SDL_SetError("cancellation sentinel");
+	return cancelled;
+}
+
+/// Inject temporary unavailability or an acquisition error without acquiring a real swapchain image.
+auto acquireImage (
+	SDL_GPUCommandBuffer *command, SDL_Window *window, SDL_GPUTexture **texture, Uint32 *width, Uint32 *height
+) -> bool
+{
+	if (std::exchange(unavailableImage, false)) {
+		*texture = nullptr;
+		*width = *height = 0;
+		return true;
+	}
+	if (std::exchange(failAcquisition, false))
+		return SDL_SetError("acquisition sentinel");
+	return SDL_WaitAndAcquireGPUSwapchainTexture(command, window, texture, width, height);
+}
+
+/// Fail attachment creation only after the window has acquired a real image.
+auto createAttachment (SDL_GPUDevice *device, const SDL_GPUTextureCreateInfo *info) -> SDL_GPUTexture*
+{
+	if (std::exchange(failAttachment, false)) {
+		SDL_SetError("attachment sentinel");
+		return nullptr;
+	}
+	return SDL_CreateGPUTexture(device, info);
+}
+
 /// Inject an SDL startup failure without modifying the process environment.
 auto initializeSDL (SDL_InitFlags flags) -> bool {
 	if (scenario == "startup")
@@ -118,9 +170,15 @@ auto createWindow (const char *title, int width, int height, SDL_WindowFlags fla
 }
 
 /// Observe production diagnostics while retaining validation output for CTest.
-void SDLCALL observeLog (void*, int category, SDL_LogPriority priority, const char *message) {
+void SDLCALL observeLog (void*, int category, SDL_LogPriority priority, const char *message)
+{
 	if (std::string(message).starts_with("Submitting the GPU command buffer failed:"))
 		submissionLogs.emplace_back(message);
+	if (std::string(message).starts_with("Acquiring the swapchain texture failed:")
+		|| std::string(message).starts_with("Creating the depth buffer failed:")
+		|| std::string(message).starts_with("Cancelling the unused frame command buffer failed:")
+		|| std::string(message).starts_with("Cleaning up frame acquisition by "))
+		acquisitionLogs.emplace_back(message);
 	if (originalLog)
 		originalLog(originalLogData, category, priority, message);
 }
@@ -221,10 +279,16 @@ void destroyGuiContext (ImGuiContext *context)
 // without introducing test entry points into the public API.
 #define SDL_SubmitGPUCommandBuffer submitFrame
 #include "../../src/frame.cpp"
-#undef SDL_SubmitGPUCommandBuffer
 #define SDL_CreateWindow createWindow
+#define SDL_CancelGPUCommandBuffer cancelFrame
+#define SDL_WaitAndAcquireGPUSwapchainTexture acquireImage
+#define SDL_CreateGPUTexture createAttachment
 #include "../../src/window.cpp"
+#undef SDL_CreateGPUTexture
+#undef SDL_WaitAndAcquireGPUSwapchainTexture
+#undef SDL_CancelGPUCommandBuffer
 #undef SDL_CreateWindow
+#undef SDL_SubmitGPUCommandBuffer
 #define SDL_Init initializeSDL
 #include "../../src/run.cpp"
 #undef SDL_Init
@@ -275,6 +339,9 @@ struct Results
 
 	/// Whether an active-pass logic error left the frame usable.
 	bool logicChecked = false;
+
+	/// Whether direct frame acquisition returned ordinary unavailability without starting a frame.
+	bool unavailableChecked = false;
 };
 
 /// Distinct exception used to check unchanged propagation from callbacks.
@@ -364,6 +431,20 @@ public:
 				require(SDL_SetWindowSize(player.mainWindow()->handle(), (int)extent.x + 64, (int)extent.y + 32),
 					"Could not resize probe window");
 				SDL_SyncWindow(player.mainWindow()->handle());
+			}
+			if (scenario == "no-image" || scenario == "no-image-cancel" || scenario == "acquire"
+				|| scenario == "acquire-cancel" || scenario == "attachment" || scenario == "attachment-submit")
+			{
+				unavailableImage = scenario.starts_with("no-image");
+				failAcquisition = scenario.starts_with("acquire");
+				failAttachment = scenario.starts_with("attachment");
+				failCancellation = scenario.ends_with("-cancel");
+				failSubmission = scenario.ends_with("-submit");
+				auto *frame = player.mainWindow()->beginFrame(device);
+				if (frame)
+					player.mainWindow()->endFrame();
+				require(!frame && scenario == "no-image", "Acquisition failure was not distinguished from unavailability");
+				results.unavailableChecked = true;
 			}
 		}
 		fail("init");
@@ -492,6 +573,7 @@ auto main (int argc, char **argv) -> int
 		bool callbackFailed = false;
 		bool submissionFailed = false;
 		bool allocationFailed = false;
+		bool acquisitionFailed = false;
 		int status = -1;
 		try {
 			status = fcg::run(std::move(applets));
@@ -502,9 +584,23 @@ auto main (int argc, char **argv) -> int
 			require(scenario == "gui-allocation", "Unexpected allocation exception");
 			allocationFailed = true;
 		} catch (const std::runtime_error &error) {
-			require(scenario == "submit" || scenario == "close-submit", error.what());
-			require(submissionLogs == std::vector<std::string>{error.what()}, "Log and exception differ");
-			submissionFailed = true;
+			if (scenario == "submit" || scenario == "close-submit") {
+				require(submissionLogs == std::vector<std::string>{error.what()}, "Log and exception differ");
+				submissionFailed = true;
+			}
+			else
+			{
+				require(scenario == "no-image-cancel" || scenario == "acquire" || scenario == "acquire-cancel"
+					|| scenario == "attachment" || scenario == "attachment-submit", error.what());
+				const std::string expected = scenario == "no-image-cancel"
+					? "Cancelling the unused frame command buffer failed: cancellation sentinel"
+					: scenario.starts_with("acquire")
+						? "Acquiring the swapchain texture failed: acquisition sentinel"
+						: "Creating the depth buffer failed: attachment sentinel";
+				require(error.what() == expected && !acquisitionLogs.empty() && acquisitionLogs.front() == expected,
+					"Acquisition exception changed or differed from its log");
+				acquisitionFailed = true;
+			}
 		}
 		require(results.destroyed == std::vector<unsigned>{2, 1, 0}, "Applets were not destroyed in reverse order");
 		require(results.valid, "Applet or presentation teardown lost its required dependencies");
@@ -533,10 +629,14 @@ auto main (int argc, char **argv) -> int
 		else if (scenario == "gui-allocation")
 			require(allocationFailed && !results.player && !submissions && rendererInitializations == 1,
 				"GUI allocation exception was lost or invoked callbacks");
-		else if (scenario == "normal" || scenario == "logic")
+		else if (scenario == "normal" || scenario == "logic" || scenario == "no-image")
 			require(status == EXIT_SUCCESS && submissions == 1, "Normal close did not finish exactly one frame");
 		else if (scenario == "submit" || scenario == "close-submit")
 			require(submissionFailed && submissions == 1, "Failed submission was retried or suppressed");
+		else if (scenario == "no-image-cancel" || scenario == "acquire" || scenario == "acquire-cancel"
+			|| scenario == "attachment" || scenario == "attachment-submit")
+			require(acquisitionFailed && submissions == (scenario.starts_with("attachment") ? 1u : 0u),
+				"Failed acquisition did not finish its commands exactly once");
 		else
 			require(callbackFailed && submissions == (scenario == "init" || scenario == "name" ? 0u : 1u),
 				"Callback exception was lost");
@@ -544,6 +644,21 @@ auto main (int argc, char **argv) -> int
 			require(submissionLogs.size() == 1 && callbackFailed, "Secondary failure replaced the callback exception");
 		if (scenario == "logic")
 			require(results.logicChecked, "Active-pass rejection was not exercised");
+		if (scenario == "no-image")
+			require(results.unavailableChecked && acquisitionLogs.empty(), "Unavailable frame was not returned cleanly");
+		const bool cancelledAcquisition = scenario.starts_with("no-image") || scenario.starts_with("acquire");
+		require(cancellations == (cancelledAcquisition ? 1u : 0u), "Acquisition cancellation was missing or repeated");
+		if (acquisitionFailed)
+		{
+			const bool secondaryFailure = scenario == "acquire-cancel" || scenario == "attachment-submit";
+			require(acquisitionLogs.size() == (secondaryFailure ? 2u : 1u), "Acquisition diagnostics were missing or repeated");
+			if (secondaryFailure) {
+				const std::string expected = scenario == "acquire-cancel"
+					? "Cleaning up frame acquisition by cancellation failed: cancellation sentinel"
+					: "Cleaning up frame acquisition by submission failed: submission sentinel";
+				require(acquisitionLogs.back() == expected, "Secondary cleanup failure was not logged correctly");
+			}
+		}
 		return 0;
 	} catch (const std::exception &error) {
 		std::cerr << error.what() << '\n';

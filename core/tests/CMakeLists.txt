@@ -73,7 +73,8 @@ add_executable(runtime-failure-smoke lifecycle/failures.cpp)
 target_compile_definitions(runtime-failure-smoke PRIVATE FCG_FRAMEWORK_STATIC_DEFINE)
 target_link_libraries(runtime-failure-smoke PRIVATE Core)
 foreach(scenario normal startup window gui-context gui-platform gui-renderer gui-allocation
-	init name event resize gui update render overlay presentation submit close-submit render-submit logic)
+	init name event resize gui update render overlay presentation submit close-submit render-submit logic
+	no-image no-image-cancel acquire acquire-cancel attachment attachment-submit)
 	add_test(NAME runtime-failure-${scenario} COMMAND runtime-failure-smoke ${scenario})
 	add_test(NAME runtime-failure-${scenario}-previous-context
 		COMMAND runtime-failure-smoke ${scenario} previous-context)

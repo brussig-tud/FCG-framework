@@ -7,6 +7,7 @@
 // C++ STL
 #include <format>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 
 // SDL3 library
@@ -198,11 +199,15 @@ auto Window::beginFrame (Device &device) -> Frame*
 		SDL_LogCritical(SDL_LOG_CATEGORY_ERROR, "%s", msg.c_str());
 		throw std::runtime_error(msg);
 	}
-	// Finish even an exceptional acquisition/allocation path; acquired swapchain images cannot be cancelled.
-	std::unique_ptr<SDL_GPUCommandBuffer, decltype(&SDL_SubmitGPUCommandBuffer)> submission(
-		cmdBuffer, SDL_SubmitGPUCommandBuffer
-	);
 	SDL_GPUTexture *swapchainTexture = nullptr;
+	// Cancel until an image is acquired; afterwards, submit even when attachment creation throws.
+	const auto finishAcquisition = [&swapchainTexture] (SDL_GPUCommandBuffer *command) noexcept {
+		const bool acquired = swapchainTexture != nullptr;
+		if (!(acquired ? SDL_SubmitGPUCommandBuffer(command) : SDL_CancelGPUCommandBuffer(command)))
+			SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Cleaning up frame acquisition by %s failed: %s",
+				acquired ? "submission" : "cancellation", SDL_GetError());
+	};
+	std::unique_ptr<SDL_GPUCommandBuffer, decltype(finishAcquisition)> acquisition(cmdBuffer, finishAcquisition);
 	auto swapchainSize = glm::uvec2(0);
 	if (!SDL_WaitAndAcquireGPUSwapchainTexture(
 		cmdBuffer, m_handle, &swapchainTexture, &swapchainSize.x,
@@ -213,10 +218,14 @@ auto Window::beginFrame (Device &device) -> Frame*
 		throw std::runtime_error(msg);
 	}
 
-	// A missing swapchain texture (e.g. because the window is minimized) is not an error, but the command buffer must
-	// still be submitted. Nothing can be rendered this frame though.
-	if (!swapchainTexture) {
-		SDL_SubmitGPUCommandBuffer(submission.release());
+	// With no image, discard the unused commands and report ordinary unavailability only after successful cleanup.
+	if (!swapchainTexture)
+	{
+		if (!SDL_CancelGPUCommandBuffer(acquisition.release())) {
+			const auto msg = std::format("Cancelling the unused frame command buffer failed: {}", SDL_GetError());
+			SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", msg.c_str());
+			throw std::runtime_error(msg);
+		}
 		return nullptr;
 	}
 
@@ -268,7 +277,7 @@ auto Window::beginFrame (Device &device) -> Frame*
 		Frame::PrivateConstructorKey{}, cmdBuffer, swapchainTexture, depthTexture, *sceneTexture,
 		device, swapchainFormat(), *presentationSampler, swapchainSize
 	);
-	auto _notOwnedAnyLonger = submission.release();
+	auto _notOwnedAnyLonger = acquisition.release();
 	return &m_frame.value();
 }
 

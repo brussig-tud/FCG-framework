@@ -89,8 +89,9 @@
 /// \section fcg_windows_errors Handling errors
 /// <tt>\ref fcg::Window::create "create"</tt> returns \c nullptr on failure, logged to the SDL log.
 /// <tt>\ref fcg::Window::beginFrame "beginFrame"</tt> returns \c nullptr when no frame could be acquired (e.g. while
-/// the window is minimized); skip rendering in that case. Misuse such as overlapping passes or ending a frame with
-/// an active pass throws \c std::logic_error, and GPU-level acquisition failures throw \c std::runtime_error.
+/// the window is minimized); skip rendering and try again later in that case. GPU-level acquisition failures throw
+/// \c std::runtime_error even when no window image is available; no frame is started on those failures. Misuse such
+/// as overlapping passes or ending a frame with an active pass throws \c std::logic_error.
 /// <tt>\ref fcg::Frame::present "Frame::present"</tt> returns presentation errors and propagates recorder exceptions.
 /// After a recorder fails, finish the frame with <tt>\ref fcg::Window::endFrame "endFrame"</tt>; its displayed contents
 /// are unspecified. Ending a frame without presenting also leaves its displayed contents unspecified.
@@ -335,7 +336,8 @@ public:
 	/// 	If another frame of this window is still in progress, or if \c device does not claim this window.
 	/// \throws std::runtime_error
 	/// 	If acquiring the command buffer or the window image fails, or if the depth or scene texture cannot be
-	/// 	created.
+	/// 	created, or if cancelling the unused command buffer when no window image is available fails. Cancellation
+	/// 	failures are logged. These failures leave no new frame active; do not call \c endFrame for the failed attempt.
 	auto beginFrame (Device &device) -> Frame*;
 
 	/// \brief
