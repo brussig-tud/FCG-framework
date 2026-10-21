@@ -95,11 +95,10 @@ auto Player::initializePresentation () -> std::expected<void, FullscreenError>
 		return std::unexpected(pass.error());
 
 	// Define the default presentation recorder.
-	m_defaultPresentationRecorder = [pass = std::move(*pass)](const PresentationContext &context)
+	m_defaultPresentationRecorder = [this, pass = std::move(*pass)](const PresentationContext &context)
 	-> std::expected<void, FullscreenError> {
 		const FullscreenTextureBinding binding{&context.scene, &context.sceneSampler};
-		const GammaUniforms parameters{.gamma = 1.f};
-		const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
+		const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&m_gammaCorrection, 1))};
 		return pass.record(
 			context.cmdBuffer, context.target, {.samplers = {&binding, 1}, .uniforms = uniforms}
 		);

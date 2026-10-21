@@ -113,7 +113,7 @@
 		return std::unexpected(pass.error());
 	const fcg::FullscreenTextureBinding binding{&scene, &sampler};
 	const fcg::GammaUniforms parameters{.clampRange = {0.f, std::numeric_limits<float>::infinity()}};
-	const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
+	const std::span<const std::byte> uniforms[] = {std::as_bytes(std::span(&parameters, 1))};
 	return pass->record(commands, target, {.samplers = {&binding, 1}, .uniforms = uniforms});
 }
 /// [gamma_intermediate]

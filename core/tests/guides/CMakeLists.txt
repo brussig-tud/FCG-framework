@@ -2,6 +2,7 @@
 add_library(guide-examples OBJECT
 	applet_examples.cpp
 	runtime_examples.cpp
+	presentation_examples.cpp
 	event_examples.cpp
 	device_examples.cpp
 	window_examples.cpp

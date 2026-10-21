@@ -25,6 +25,7 @@
 #include "FCG/render_target.h"
 #include "FCG/run.h"
 #include "FCG/applet.h"
+#include "FCG/fullscreen.h"
 #include "FCG/texture.h"
 #include "FCG/frame.h"
 
@@ -66,13 +67,13 @@ namespace fcg {
 // Classes
 //
 
-/// \brief
-/// 	The application-wide state of the <tt>\ref fcg::run</tt> main loop, shared by all running applets.
+/// \brief The application-wide state of the <tt>\ref fcg::run</tt> main loop, shared by all running applets.
 ///
 /// \c fcg::run creates one player and passes it to every callback of every running <tt>\ref Applet</tt>. Through it,
 /// applets can change the main window title, request continuous redrawing (e.g. while animating), ask the application
 /// to close, look up cameras provided by other applets, query the main window's render-target formats and viewport
-/// size, replace scene presentation with a presentation recorder, and read back the depth buffer of the main viewport.
+/// size, adjust gamma correction or replace scene presentation with a presentation recorder, and read back the
+/// depth buffer of the main viewport.
 ///
 /// All callbacks run on the main thread, so the player is meant to be used from there.
 class FCG_FRAMEWORK_EXPORT Player
@@ -89,8 +90,7 @@ public:
 	////
 	// Object construction/destruction
 
-	/// \brief
-	/// 	Create a player for the given device, main window and applets.
+	/// \brief Create a player for the given device, main window and applets.
 	///
 	/// Called by \c fcg::run; applications normally don't call this.
 	///
@@ -121,35 +121,68 @@ public:
 	////
 	// Accessors
 
-	/// \brief
-	/// 	Read-write reference to the linear RGBA clear color of the scene.
+	/// \brief Read-write reference to the linear RGBA clear color of the scene.
 	///
 	/// In every frame, \c fcg::run clears the scene texture to this color right before calling \c Applet::render, so
 	/// changes made in \c Applet::gui or \c Applet::update affect the same frame. Defaults to a dark blue.
 	///
 	/// \return A reference to the clear color, valid for the lifetime of the player.
-	[[nodiscard]] auto clearColor () -> glm::fvec4& { return m_clearColor; }
+	[[nodiscard]] auto clearColor () -> glm::fvec4& {
+		return m_clearColor;
+	}
 
-	/// \brief
-	/// 	Read-only reference to the linear RGBA clear color of the scene.
+	/// \brief Read-only reference to the linear RGBA clear color of the scene.
 	///
 	/// \return A reference to the clear color, valid for the lifetime of the player.
-	[[nodiscard]] auto clearColor () const -> const glm::fvec4& { return m_clearColor; }
+	[[nodiscard]] auto clearColor () const -> const glm::fvec4& {
+		return m_clearColor;
+	}
 
-	/// \brief
-	/// 	The GPU device that applets render with.
+	/// \brief Read-write reference to the gamma and RGB bounds used by built-in scene presentation.
+	///
+	/// Presentation converts linear scene RGB to sRGB, then applies customizable gamma correction by additionally
+	/// raising the sRGB codes to the power of <tt>1/\ref GammaUniforms::gamma "gamma"</tt>. The final color is clamped
+	/// to <tt>\ref GammaUniforms::clampRange "clampRange"</tt>. Gamma defaults to 1 and the bounds to [0, 1]. Gamma
+	/// values above 1 brighten  midtones; values below 1 darken them. Alpha and the GUI overlay are unchanged.
+	///
+	/// The settings are shared by all applets. Changes before presentation, including in <tt>Applet::init</tt>,
+	/// <tt>Applet::gui</tt>, \c Applet::update or <tt>Applet::render</tt>, affect the next presentation.
+	/// \ref fcg::PresentationRecorder "Custom recorders" use their own parameters. Installing or clearing a recorder
+	/// preserves these settings, and clearing resumes built-in presentation with their current values.
+	///
+	/// \pre
+	/// 	Use on the main thread. Supply finite, strictly positive gamma and ordered clamp endpoints that are not
+	/// 	NaN; infinite endpoints are allowed, as described by the \c GammaUniforms contract.
+	///
+	/// \return A reference to the parameters, valid for the lifetime of the player.
+	[[nodiscard]] auto gammaCorrection () -> GammaUniforms& {
+		return m_gammaCorrection;
+	}
+
+	/// \brief Read-only reference to the gamma and RGB bounds used by built-in scene presentation.
+	///
+	/// \pre Use on the main thread.
+	///
+	/// \return A reference to the parameters, valid for the lifetime of the player.
+	[[nodiscard]] auto gammaCorrection () const -> const GammaUniforms& {
+		return m_gammaCorrection;
+	}
+
+	/// \brief The GPU device that applets render with.
 	///
 	/// \return The device, which outlives the player. Accessible through a \c const player as well.
-	[[nodiscard]] auto device () const -> Device& { return m_device; }
+	[[nodiscard]] auto device () const -> Device& {
+		return m_device;
+	}
 
-	/// \brief
-	/// 	The main window shared by all applets.
+	/// \brief The main window shared by all applets.
 	///
 	/// \return The main window, or \c nullptr if the player has no window. The window outlives the player.
-	[[nodiscard]] auto mainWindow () const -> Window* { return m_window; }
+	[[nodiscard]] auto mainWindow () const -> Window* {
+		return m_window;
+	}
 
-	/// \brief
-	/// 	Describe the color and depth attachments that \c Applet::render draws into.
+	/// \brief Describe the color and depth attachments that \c Applet::render draws into.
 	///
 	/// Use this to create graphics pipelines for rendering the scene. The description is also available before the
 	/// first frame (e.g. in \c Applet::init) and while the window is minimized.
@@ -159,8 +192,7 @@ public:
 	/// 	the main window is not claimed by a device (see \c Device::claimWindow).
 	[[nodiscard]] auto mainRenderTargetInfo () const -> std::optional<RenderTargetInfo>;
 
-	/// \brief
-	/// 	The texture format of the images shown in the main window.
+	/// \brief The texture format of the images shown in the main window.
 	///
 	/// Only pipelines that draw directly into the window image, such as GUI overlays, need this format. Pipelines
 	/// rendering the scene use \c mainRenderTargetInfo instead.
@@ -170,8 +202,7 @@ public:
 	/// 	player has no main window or the main window is not claimed by a device.
 	[[nodiscard]] auto swapchainFormat () const -> SDL_GPUTextureFormat;
 
-	/// \brief
-	/// 	The current size of the main window viewport.
+	/// \brief The current size of the main window viewport.
 	///
 	/// \return The viewport size in physical pixels, or <tt>(0, 0)</tt> if the player has no main window.
 	[[nodiscard]] auto viewportSize () const -> glm::uvec2;
@@ -207,14 +238,12 @@ public:
 			return value * scale;
 	}
 
-	/// \brief
-	/// 	Check whether at least one continuous redraw request is active.
+	/// \brief Check whether at least one continuous redraw request is active.
 	///
 	/// \return \c true if the main loop currently runs continuously, \c false if it waits for events.
 	[[nodiscard]] auto continuousRedrawRequested () const -> bool;
 
-	/// \brief
-	/// 	Check whether closing the application was requested.
+	/// \brief Check whether closing the application was requested.
 	///
 	/// \return
 	/// 	\c true after a call to \c requestClose, or after the main window was asked to close (e.g. by the user
@@ -225,8 +254,7 @@ public:
 	////
 	// Methods
 
-	/// \brief
-	/// 	Set the title of the main window.
+	/// \brief Set the title of the main window.
 	///
 	/// The main window is shared by all applets, so the most recently set title wins.
 	///
@@ -256,36 +284,33 @@ public:
 	/// \brief Restore default scene conversion, destroying the registered recorder's captures.
 	///
 	/// Takes effect at the next presentation point and never restores an earlier registration. Clearing an empty
-	/// registration has no effect. Registrations are also cleared before applets are destroyed by \c fcg::run.
+	/// registration has no effect. Built-in presentation uses the current \c gammaCorrection settings, which clearing
+	/// preserves. Registrations are also cleared before applets are destroyed by \c fcg::run.
 	///
 	/// \pre Use on the main thread; referenced capture state must stay alive until clearing finishes.
 	///
 	/// \throws std::logic_error If clearing is attempted during recorder invocation.
 	void clearPresentationRecorder ();
 
-	/// \brief
-	/// 	Add a continuous redraw request.
+	/// \brief Add a continuous redraw request.
 	///
 	/// While at least one request is active, the main loop starts the next frame as soon as possible instead of
 	/// waiting for events. Use this e.g. while an applet is animating. Balance every call with a call to
 	/// <tt>\ref popContinuousRedraw</tt> when continuous redrawing is not needed anymore.
 	void pushContinuousRedraw ();
 
-	/// \brief
-	/// 	Remove a continuous redraw request previously added with <tt>\ref pushContinuousRedraw</tt>.
+	/// \brief Remove a continuous redraw request previously added with <tt>\ref pushContinuousRedraw</tt>.
 	///
 	/// A call without a matching \c pushContinuousRedraw logs a warning and has no effect.
 	void popContinuousRedraw ();
 
-	/// \brief
-	/// 	Request the application to close.
+	/// \brief Request the application to close.
 	///
 	/// \c shouldClose returns \c true afterwards. If the player has a main window, the request is also forwarded to it
 	/// (see \c Window::requestClose). \c fcg::run then leaves its main loop at the next opportunity and shuts down.
 	void requestClose ();
 
-	/// \brief
-	/// 	Find a camera provided by one of the running applets.
+	/// \brief Find a camera provided by one of the running applets.
 	///
 	/// Searches the running applets, in the order they were passed to \c fcg::run, for one that derives from
 	/// <tt>\ref Camera</tt> and whose \c Applet::name equals \c name.
@@ -298,8 +323,7 @@ public:
 	/// 	\c fcg::run and stays valid until the applets are destroyed at shutdown.
 	[[nodiscard]] auto findCamera (std::string_view name) -> std::optional<Camera*>;
 
-	/// \brief
-	/// 	Request a readback of the main viewport's depth buffer, i.e. a download of its contents to the CPU.
+	/// \brief Request a readback of the main viewport's depth buffer, i.e. a download of its contents to the CPU.
 	///
 	/// The readback captures the depth buffer as rendered by the most recently submitted frame. Commands recorded in
 	/// the current frame are not included. Calling this again within the same frame returns the same token, so
@@ -327,8 +351,7 @@ public:
 	/// 	If an earlier readback of this player is in an inconsistent state after a failed retrieval.
 	[[nodiscard]] auto scheduleDepthReadback () -> uint64_t;
 
-	/// \brief
-	/// 	Retrieve the result of a depth readback requested with <tt>\ref scheduleDepthReadback</tt>.
+	/// \brief Retrieve the result of a depth readback requested with <tt>\ref scheduleDepthReadback</tt>.
 	///
 	/// Blocks until the download has finished if it is still pending. Results are always available without waiting
 	/// from the start of the frame after the one in which the readback was requested.
@@ -411,6 +434,9 @@ private:
 
 	/// The current clear color of the main window viewport, in linear RGBA space.
 	glm::fvec4 m_clearColor = {0.0097f, 0.0331f, 0.1329f, 1.0f};
+
+	/// Gamma and final RGB bounds read by the built-in sRGB recorder on every invocation.
+	GammaUniforms m_gammaCorrection{.gamma = 1.f};
 
 	/// The number of currently active continuous redraw requests.
 	std::atomic<unsigned> m_numContinuousRedrawRequests{0};

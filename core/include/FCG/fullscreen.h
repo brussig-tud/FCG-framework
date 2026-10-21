@@ -58,14 +58,15 @@
 /// using <tt>\ref fcg::GammaUniforms::clampRange "clampRange"</tt>, which defaults to [0, 1]. Alpha is unchanged.
 ///
 /// <tt>\ref fcg::FullscreenPass::linearToSRGB "linearToSRGB"</tt> first converts linear RGB with the piecewise sRGB
-/// transfer function, then applies gamma and the final bounds. Supply gamma 1 for neutral encoding, as the default
-/// runtime recorder does. The caller supplies finite, nonnegative sampled RGB, finite positive gamma, and ordered clamp
-/// endpoints that are not NaN; these are input requirements, not reported recording errors.
+/// transfer function, then applies gamma correction and the final bounds. Supply gamma 1 for neutral encoding. Built-in
+/// runtime presentation defaults to gamma 1 and can be adjusted through
+/// <tt>\ref fcg::Player::gammaCorrection "Player::gammaCorrection"</tt>. The caller supplies finite, nonnegative
+/// sampled RGB, finite positive gamma, and ordered clamp endpoints that are not NaN; these are input requirements,
+/// not reported recording errors.
 ///
-/// To retain values above 1, render into a floating-point target and use an appropriate upper endpoint in the clamp
-/// range; for example, [0, positive infinity] retains the full dynamic range of every pixel (the output format however
-/// still determines representable values). This example applies the default gamma to an intermediate texture; a window
-/// presentation recorder must also supply the intended final display encoding:
+/// To keep values above 1, render into a floating-point target (to make sure such values can be represented) and use an
+/// appropriate upper endpoint in the clamp range; for example [0, <em>positive infinity</em>] to retain the full
+/// dynamic range of every pixel, here after applying a simple power-curve gamma correction:
 /// \snippet texture_examples.cpp gamma_intermediate
 ///
 /// \section fcg_fullscreen_lifetime Ownership and lifetime

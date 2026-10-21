@@ -35,7 +35,7 @@
 //
 
 // [applet_declaration]
-/// An applet that presents the scene with adjustable gamma and offers standard sRGB presentation as a reset action.
+/// An applet that presents the scene with a custom gamma curve and offers a return to built-in presentation.
 class ExampleApplet : public fcg::Applet
 {
 public:
@@ -68,7 +68,7 @@ public:
 				const fcg::FullscreenTextureBinding sceneBindings[] = {
 					{&context.scene, &context.sceneSampler}
 				};
-				const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&gammaUniforms, 1))};
+				const std::span<const std::byte> uniforms[] = {std::as_bytes(std::span(&gammaUniforms, 1))};
 				const fcg::FullscreenBindings bindings{.samplers = sceneBindings, .uniforms = uniforms};
 				return pass.record (context.cmdBuffer, context.target, bindings);
 			}
@@ -83,7 +83,7 @@ public:
 	/// \param player The application's player.
 	void onViewportResize (fcg::Device &device, const glm::uvec2 &oldViewportSize, fcg::Player &player) override {}
 
-	/// \brief Adjust custom presentation gamma and offer a button that restores standard sRGB conversion.
+	/// \brief Adjust custom presentation gamma and offer a button that resumes built-in presentation.
 	///
 	/// \param device The application's GPU device.
 	/// \param player The player whose presentation recorder is cleared.
@@ -96,7 +96,7 @@ public:
 			ImGuiSliderFlags_AlwaysClamp
 		);
 		// [presentation_gamma]
-		if (ImGui::Button ("Restore default sRGB presentation"))
+		if (ImGui::Button ("Resume built-in presentation"))
 			player.clearPresentationRecorder ();
 	}
 	// [presentation_reset]

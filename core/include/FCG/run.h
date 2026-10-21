@@ -41,6 +41,8 @@
 /// \subsection fcg_runtime_workflows_player Player services
 /// Through the <tt>\ref fcg::Player "Player"</tt>, applets can:
 /// - query and change the scene clear color (<tt>\ref fcg::Player::clearColor "clearColor"</tt>);
+/// - adjust built-in scene gamma correction and RGB bounds
+///   (<tt>\ref fcg::Player::gammaCorrection "gammaCorrection"</tt>);
 /// - request continuous redraws while animating
 ///   (<tt>\ref fcg::Player::pushContinuousRedraw "pushContinuousRedraw"</tt>);
 /// - look up a camera applet by name (<tt>\ref fcg::Player::findCamera "findCamera"</tt>);
@@ -54,9 +56,24 @@
 /// - replace the main window's scene presentation
 ///   (<tt>\ref fcg::Player::setPresentationRecorder "setPresentationRecorder"</tt>).
 ///
+/// \subsection fcg_runtime_workflows_gamma Adjusting built-in gamma correction
+/// Built-in scene presentation converts linear colors to sRGB, applies gamma correction, then clamps RGB. Use
+/// <tt>\ref fcg::Player::gammaCorrection "Player::gammaCorrection"</tt> to read or change the application-wide
+/// <tt>\ref fcg::GammaUniforms "GammaUniforms"</tt> parameters. The player's gamma defaults to 1, preserving standard
+/// sRGB conversion, and the final RGB bounds default to [0, 1]. Values above 1 brighten midtones; values below 1
+/// darken them. Alpha is unchanged, and Dear ImGui is drawn afterwards with its own colors.
+///
+/// In an applet's <tt>\ref fcg::Applet::gui "Applet::gui"</tt> callback, use a slider to change gamma and a button
+/// to reset gamma to 1 and bounds to [0, 1]:
+/// \snippet presentation_examples.cpp builtin_gamma
+/// Changes before presentation, including in <tt>\ref fcg::Applet::init "Applet::init"</tt>,
+/// <tt>\ref fcg::Applet::gui "Applet::gui"</tt>, <tt>\ref fcg::Applet::update "Applet::update"</tt> or
+/// <tt>\ref fcg::Applet::render "Applet::render"</tt>, affect the next presentation. Supply finite positive gamma
+/// and ordered clamp endpoints that are not NaN; infinite endpoints are allowed. See
+/// \ref fcg_fullscreen_workflows_gamma for output bounds and sampled-color requirements.
+///
 /// \subsection fcg_runtime_workflows_presentation Custom scene presentation
-/// By default, the runtime converts the scene's linear colors for display using the piecewise sRGB transfer function
-/// and final RGB bounds of [0, 1]. To customize this step, install one application-wide
+/// To replace built-in presentation, install one application-wide
 /// <tt>\ref fcg::PresentationRecorder "PresentationRecorder"</tt> through
 /// <tt>\ref fcg::Player::setPresentationRecorder "Player::setPresentationRecorder"</tt> whose job it is to record the
 /// rendering commands for presenting the scene image. Each rendered frame runs all
@@ -76,8 +93,8 @@
 /// 2.2 and final RGB bounds of [0, 1]:
 /// \snippet runtime_examples.cpp presentation_parameters
 /// Create the pass once in <tt>\ref fcg::Applet::init "Applet::init"</tt> using the window format from
-/// <tt>\ref fcg::Player::swapchainFormat "Player::swapchainFormat"</tt>. Scene pipelines use
-/// <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt> for their attachments instead.
+/// <tt>\ref fcg::Player::swapchainFormat "Player::swapchainFormat"</tt> (scene pipelines use
+/// <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt> for their attachments instead).
 /// The recorder owns the pass and reads the applet's current parameters during each invocation, supplying one uniform
 /// block with the scene texture and sampler:
 /// \snippet runtime_examples.cpp presentation_install
@@ -86,11 +103,12 @@
 /// used for that frame's presentation. Increasing gamma brightens midtones; decreasing it darkens them. The adjustment
 /// affects the scene, with Dear ImGui drawn afterwards. The button calls
 /// <tt>\ref fcg::Player::clearPresentationRecorder "Player::clearPresentationRecorder"</tt> to remove the custom
-/// recorder and restore the runtime's standard piecewise sRGB conversion:
+/// recorder and resume built-in sRGB presentation using the player's current gamma correction settings:
 /// \snippet runtime_examples.cpp presentation_reset
 /// Registration and clearing are main-thread operations. Changes before presentation affect that frame; the latest
-/// registration wins. An empty recorder clears the registration. Clearing restores the runtime's default conversion.
-/// Do not replace or clear a recorder from inside its invocation; either operation throws \c std::logic_error.
+/// registration wins. An empty recorder clears the registration. Custom recorders use their own parameters; installing
+/// or clearing one preserves <tt>\ref fcg::Player::gammaCorrection "Player::gammaCorrection"</tt> settings. Do not
+/// replace or clear a recorder from inside its invocation; either operation throws \c std::logic_error.
 ///
 /// The supplied <tt>\ref fcg::PresentationContext "PresentationContext"</tt> borrows the current scene, sampler,
 /// command buffer and window target for this invocation only. Use these fresh resources each time, including after
@@ -103,9 +121,10 @@
 /// recorders before destroying applets. Return recording errors through the recorder's result; exceptions propagate
 /// out of <tt>\ref fcg::run "run"</tt>.
 ///
-/// For another custom effect, create a pass with <tt>\ref fcg::FullscreenPass::create "FullscreenPass::create"</tt>
-/// and a fragment shader that supplies the intended final display encoding. Intermediate passes may precede the final
-/// window draw in the same recorder.
+/// For other custom effects, create a pass with <tt>\ref fcg::FullscreenPass::create "FullscreenPass::create"</tt> and
+/// a fragment shader that supplies the intended final display encoding. Intermediate passes may precede the final
+/// window draw in the same recorder, allowing to inject a chain of complex post-processing effects (screen-space ambient
+/// occlusion, depth-of-field, HDR tonemapping and bloom, temporal anti-aliasing, etc.) if desired.
 ///
 /// \section fcg_runtime_lifetime Ownership and lifetime
 /// <tt>\ref fcg::run "run"</tt> takes ownership of the applets it is given. Run one application at a time, from the
