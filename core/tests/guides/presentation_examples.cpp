@@ -57,9 +57,11 @@ public:
 	{
 		ImGui::Begin("Scene presentation");
 		auto &correction = player.gammaCorrection();
-		ImGui::SliderFloat("Gamma", &correction.gamma, .1f, 4.f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+		ImGui::SliderFloat ("Red gamma", &correction.gamma.r, .1f, 4.f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+		ImGui::SliderFloat ("Green gamma", &correction.gamma.g, .1f, 4.f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+		ImGui::SliderFloat ("Blue gamma", &correction.gamma.b, .1f, 4.f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
 		if (ImGui::Button("Reset gamma and RGB bounds"))
-			correction = {.gamma = 1.f};
+			correction = {.gamma = glm::vec3(1)};
 		ImGui::End();
 	}
 	// [builtin_gamma]

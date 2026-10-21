@@ -417,7 +417,7 @@ public:
 				if (scenario == "presentation")
 					throw ProbeFailure();
 				const fcg::FullscreenTextureBinding input{&context.scene, &context.sceneSampler};
-					const fcg::GammaUniforms parameters{.gamma = 1.f};
+					const fcg::GammaUniforms parameters{.gamma = glm::vec3(1)};
 					const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
 					return pass.record(context.cmdBuffer, context.target, {.samplers = {&input, 1}, .uniforms = uniforms});
 			});

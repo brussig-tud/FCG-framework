@@ -59,17 +59,18 @@
 /// \subsection fcg_runtime_workflows_gamma Adjusting built-in gamma correction
 /// Built-in scene presentation converts linear colors to sRGB, applies gamma correction, then clamps RGB. Use
 /// <tt>\ref fcg::Player::gammaCorrection "Player::gammaCorrection"</tt> to read or change the application-wide
-/// <tt>\ref fcg::GammaUniforms "GammaUniforms"</tt> parameters. The player's gamma defaults to 1, preserving standard
-/// sRGB conversion, and the final RGB bounds default to [0, 1]. Values above 1 brighten midtones; values below 1
-/// darken them. Alpha is unchanged, and Dear ImGui is drawn afterwards with its own colors.
+/// <tt>\ref fcg::GammaUniforms "GammaUniforms"</tt> parameters. The player's gamma defaults to 1 in each of the red,
+/// green, and blue channels, preserving standard sRGB conversion, and the final RGB bounds default to [0, 1].
+/// Values above 1 brighten a channel's midtones; values below 1 darken them. Alpha is unchanged, and Dear ImGui is
+/// drawn afterwards with its own internal color management.
 ///
-/// In an applet's <tt>\ref fcg::Applet::gui "Applet::gui"</tt> callback, use a slider to change gamma and a button
-/// to reset gamma to 1 and bounds to [0, 1]:
+/// In an applet's <tt>\ref fcg::Applet::gui "Applet::gui"</tt> callback, use one slider per channel to change gamma
+/// and a button to reset all three gamma values to 1 and bounds to [0, 1]:
 /// \snippet presentation_examples.cpp builtin_gamma
 /// Changes before presentation, including in <tt>\ref fcg::Applet::init "Applet::init"</tt>,
 /// <tt>\ref fcg::Applet::gui "Applet::gui"</tt>, <tt>\ref fcg::Applet::update "Applet::update"</tt> or
-/// <tt>\ref fcg::Applet::render "Applet::render"</tt>, affect the next presentation. Supply finite positive gamma
-/// and ordered clamp endpoints that are not NaN; infinite endpoints are allowed. See
+/// <tt>\ref fcg::Applet::render "Applet::render"</tt>, affect the next presentation. Supply finite positive gamma in
+/// each channel and ordered clamp endpoints that are not NaN; infinite endpoints are allowed. See
 /// \ref fcg_fullscreen_workflows_gamma for output bounds and sampled-color requirements.
 ///
 /// \subsection fcg_runtime_workflows_presentation Custom scene presentation
@@ -81,8 +82,9 @@
 /// then Dear ImGui rendering. Presentation is skipped when no window image has been acquired.
 ///
 /// This example uses <tt>\ref fcg::FullscreenPass::gammaCorrection "FullscreenPass::gammaCorrection"</tt> to present
-/// the scene with an adjustable gamma curve. It samples linear RGB, applies <tt>pow(rgb, vec3(1.0 / gamma))</tt>,
-/// clamps the result and preserves alpha. The default gamma of 2.2 gives a simple approximation to sRGB encoding.
+/// the scene with an adjustable gamma curve per channel. It samples linear RGB, applies <tt>pow(rgb, 1/gamma)</tt>
+/// componentwise, clamps the result and preserves alpha. The default gamma of 2.2 in each channel gives a simple
+/// approximation to sRGB encoding.
 /// The custom recorder supplies the final display encoding in place of the runtime's standard sRGB conversion.
 /// See \ref fcg_fullscreen_workflows_gamma for gamma, clamp-range and sampled-color requirements.
 ///
@@ -90,7 +92,7 @@
 /// <tt>\ref fcg::PresentationContext "PresentationContext"</tt> supplied on each invocation:
 /// \snippet runtime_examples.cpp presentation_includes
 /// Keep a <tt>\ref fcg::GammaUniforms "GammaUniforms"</tt> member in the applet. Default initialization selects gamma
-/// 2.2 and final RGB bounds of [0, 1]:
+/// 2.2 in each channel and final RGB bounds of [0, 1]:
 /// \snippet runtime_examples.cpp presentation_parameters
 /// Create the pass once in <tt>\ref fcg::Applet::init "Applet::init"</tt> using the window format from
 /// <tt>\ref fcg::Player::swapchainFormat "Player::swapchainFormat"</tt> (scene pipelines use
@@ -99,9 +101,9 @@
 /// block with the scene texture and sampler:
 /// \snippet runtime_examples.cpp presentation_install
 ///
-/// While the custom recorder is registered, a slider in <tt>\ref fcg::Applet::gui "Applet::gui"</tt> changes the gamma
-/// used for that frame's presentation. Increasing gamma brightens midtones; decreasing it darkens them. The adjustment
-/// affects the scene, with Dear ImGui drawn afterwards. The button calls
+/// While the custom recorder is registered, sliders in <tt>\ref fcg::Applet::gui "Applet::gui"</tt> change each
+/// channel's gamma for that frame's presentation. Increasing gamma brightens midtones; decreasing it darkens them.
+/// The adjustment affects the scene, with Dear ImGui drawn afterwards. The button calls
 /// <tt>\ref fcg::Player::clearPresentationRecorder "Player::clearPresentationRecorder"</tt> to remove the custom
 /// recorder and resume built-in sRGB presentation using the player's current gamma correction settings:
 /// \snippet runtime_examples.cpp presentation_reset

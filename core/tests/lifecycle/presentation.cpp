@@ -156,6 +156,11 @@ public:
 	/// Install a move-only pass and optionally fail after registration.
 	void init (fcg::Device&, fcg::Player &player) override
 	{
+		const auto &correction = std::as_const(player).gammaCorrection();
+		require(correction.gamma == glm::vec3(1) && correction.clampRange == glm::vec2(0, 1),
+			"Built-in presentation did not default to neutral RGB gamma and unit bounds");
+		if (scenario == "lifecycle" || scenario == "empty")
+			player.gammaCorrection() = {.gamma = {.5f, 1.f, 2.f}, .clampRange = {.2f, .7f}};
 		int count = 0;
 		auto **windows = SDL_GetWindows(&count);
 		if (windows && count == 1)
@@ -202,6 +207,11 @@ public:
 	/// Replace and reset on frame boundaries, and bound every scenario.
 	void update (fcg::Device&, fcg::Player &player, float) override
 	{
+		if (scenario == "lifecycle" || scenario == "empty") {
+			const auto &correction = std::as_const(player).gammaCorrection();
+			require(correction.gamma == glm::vec3(.5f, 1.f, 2.f) && correction.clampRange == glm::vec2(.2f, .7f),
+				"Presentation registration, replacement, or clearing changed built-in RGB correction");
+		}
 		++updates;
 		if (scenario == "lifecycle" || scenario == "empty")
 		{
@@ -315,9 +325,9 @@ private:
 				require(results.destroyed[0] == 0, "Self-mutation destroyed executing capture");
 			}
 			const std::array bindings{fcg::FullscreenTextureBinding{&context.scene, &context.sceneSampler}};
-				const fcg::GammaUniforms parameters{.gamma = 1.f};
-				const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
-				return pass.record(context.cmdBuffer, context.target, {.samplers = bindings, .uniforms = uniforms});
+			const fcg::GammaUniforms parameters{.gamma = glm::vec3(1)};
+			const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
+			return pass.record(context.cmdBuffer, context.target, {.samplers = bindings, .uniforms = uniforms});
 		});
 	}
 

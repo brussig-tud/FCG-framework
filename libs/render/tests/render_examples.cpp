@@ -57,7 +57,7 @@
 {
 	return attributes.setAttributes([&] (fcg::PrimitiveAttributes::Update &update) {
 		update.set<fcg::Attribute::Position>(positions);
-		update.set<fcg::Attribute::Extent>(glm::vec3(1.f));
+		update.set<fcg::Attribute::Extent>(glm::vec3(1));
 		update.set<fcg::Attribute::Orientation>(orientations);
 		update.set<fcg::Attribute::Color>(colors);
 	});

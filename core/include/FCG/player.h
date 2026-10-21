@@ -140,19 +140,20 @@ public:
 
 	/// \brief Read-write reference to the gamma and RGB bounds used by built-in scene presentation.
 	///
-	/// Presentation converts linear scene RGB to sRGB, then applies customizable gamma correction by additionally
-	/// raising the sRGB codes to the power of <tt>1/\ref GammaUniforms::gamma "gamma"</tt>. The final color is clamped
-	/// to <tt>\ref GammaUniforms::clampRange "clampRange"</tt>. Gamma defaults to 1 and the bounds to [0, 1]. Gamma
-	/// values above 1 brighten  midtones; values below 1 darken them. Alpha and the GUI overlay are unchanged.
+	/// Presentation converts linear scene RGB to sRGB, then raises each encoded channel to the power of its reciprocal
+	/// <tt>\ref GammaUniforms::gamma component</tt>, in red, green, blue order. The final color is clamped to
+	/// <tt>\ref GammaUniforms::clampRange</tt>. Gamma defaults to 1 in every channel and the bounds to [0, 1]. Gamma
+	/// values above 1 brighten that channel's midtones; values below 1 darken them. Alpha and the GUI overlay are
+	/// unchanged.
 	///
 	/// The settings are shared by all applets. Changes before presentation, including in <tt>Applet::init</tt>,
-	/// <tt>Applet::gui</tt>, \c Applet::update or <tt>Applet::render</tt>, affect the next presentation.
+	/// <tt>Applet::gui</tt>, \c Applet::update or <tt>Applet::render</tt> affect the next presentation.
 	/// \ref fcg::PresentationRecorder "Custom recorders" use their own parameters. Installing or clearing a recorder
 	/// preserves these settings, and clearing resumes built-in presentation with their current values.
 	///
 	/// \pre
-	/// 	Use on the main thread. Supply finite, strictly positive gamma and ordered clamp endpoints that are not
-	/// 	NaN; infinite endpoints are allowed, as described by the \c GammaUniforms contract.
+	/// 	Use on the main thread. Supply finite, strictly positive gamma in each channel and ordered clamp endpoints
+	/// 	that are not NaN; infinite endpoints are allowed, as described by the \c GammaUniforms contract.
 	///
 	/// \return A reference to the parameters, valid for the lifetime of the player.
 	[[nodiscard]] auto gammaCorrection () -> GammaUniforms& {
@@ -315,8 +316,7 @@ public:
 	/// Searches the running applets, in the order they were passed to \c fcg::run, for one that derives from
 	/// <tt>\ref Camera</tt> and whose \c Applet::name equals \c name.
 	///
-	/// \param name
-	/// 	The applet name of the camera to look for.
+	/// \param name The applet name of the camera to look for.
 	///
 	/// \return
 	/// 	A pointer to the first matching camera, or \c std::nullopt if there is none. The camera is owned by
@@ -341,8 +341,7 @@ public:
 	/// 	At least one frame has been rendered since startup or the last viewport resize. Otherwise, the depth values
 	/// 	are undefined.
 	///
-	/// \return
-	/// 	A token for retrieving the result with \c getDepthReadbackResult.
+	/// \return A token for retrieving the result with \c getDepthReadbackResult.
 	///
 	/// \throws std::runtime_error
 	/// 	If no frame is currently being rendered (e.g. in \c Applet::init or while the window is minimized), or if
@@ -353,20 +352,17 @@ public:
 
 	/// \brief Retrieve the result of a depth readback requested with <tt>\ref scheduleDepthReadback</tt>.
 	///
-	/// Blocks until the download has finished if it is still pending. Results are always available without waiting
-	/// from the start of the frame after the one in which the readback was requested.
+	/// Blocks until the download has finished if it is still pending. Results are guaranteed to be available (i.e.,
+	/// without waiting) in the next frame after the one in which the readback was requested.
 	///
-	/// The result covers the whole viewport at the time of the request, one 32-bit floating-point depth value per
-	/// pixel (format \c SDL_GPU_TEXTUREFORMAT_D32_FLOAT). Read individual values with
-	/// <tt>readTexel<float>({x, y, 0})</tt>, where <tt>(x, y)</tt> are pixel coordinates with the origin in the
-	/// top-left corner. Depth values range from 0 to 1. Pixels not covered by any geometry keep the value 1 that the
-	/// scene pass clears the depth buffer to (the far plane).
+	/// The result covers the whole viewport at the time of the request, one 32-bit floating-point depth value per pixel
+	/// (format \c SDL_GPU_TEXTUREFORMAT_D32_FLOAT). Read individual values with <tt>readTexel<float>({x, y, 0})</tt>,
+	/// where <tt>(x, y)</tt> are pixel coordinates with the origin in the top-left corner. Depth values range from 0 to
+	/// 1. Pixels not covered by any geometry keep the that the scene pass clears the depth buffer to.
 	///
-	/// \pre
-	/// 	\c token was returned by \c scheduleDepthReadback and has not been invalidated since (see there).
+	/// \pre \c token was returned by \c scheduleDepthReadback and has not been invalidated since (see there).
 	///
-	/// \param token
-	/// 	The token returned by \c scheduleDepthReadback.
+	/// \param token The token returned by \c scheduleDepthReadback.
 	///
 	/// \return
 	/// 	A reference to the downloaded depth values. It stays valid until a newer readback is requested in a later
@@ -388,8 +384,8 @@ private:
 	/// Query the attached GUI's retained coordinate scale, or one when no GUI is attached.
 	[[nodiscard]] auto guiUnitScale () const noexcept -> float;
 
-	/// Create the default recorder for the claimed main window. Returns a resource-creation error on failure;
-	/// recorder allocation exceptions propagate. Called before applet initialization.
+	/// Create the default recorder for the claimed main window. Returns a resource-creation error on failure; recorder
+	/// allocation exceptions propagate. Called before applet initialization.
 	[[nodiscard]] auto initializePresentation () -> std::expected<void, FullscreenError>;
 
 	/// Release both recorders before applet destruction and window unclaim. No recorder may be executing.
@@ -436,7 +432,7 @@ private:
 	glm::fvec4 m_clearColor = {0.0097f, 0.0331f, 0.1329f, 1.0f};
 
 	/// Gamma and final RGB bounds read by the built-in sRGB recorder on every invocation.
-	GammaUniforms m_gammaCorrection{.gamma = 1.f};
+	GammaUniforms m_gammaCorrection{.gamma = glm::vec3(1)};
 
 	/// The number of currently active continuous redraw requests.
 	std::atomic<unsigned> m_numContinuousRedrawRequests{0};
@@ -445,11 +441,11 @@ private:
 	std::atomic<bool> m_closeRequested{false};
 
 	/// The pending or completed depth readback, if any. Kept at a stable address on the heap because
-	/// \c depthMapping refers into it; the mapping must therefore always be reset before this pointer.
+	/// <tt>\ref depthMapping</tt> refers into it; the mapping must therefore always be reset before this pointer.
 	std::unique_ptr<TextureReadback> depthReadback;
 
-	/// CPU access to the downloaded depth values of \c depthReadback, created once the download has finished.
-	/// Destroyed before \c depthReadback.
+	/// CPU access to the downloaded depth values of \c depthReadback, created once the download has finished. Destroyed
+	/// before \c depthReadback.
 	std::optional<TextureReadback::Mapping> depthMapping;
 
 	/// The token handed out for \c depthReadback, i.e. the value of \c readbackToken in the frame it was requested.

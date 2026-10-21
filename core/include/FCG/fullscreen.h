@@ -53,16 +53,18 @@
 /// \subsection fcg_fullscreen_workflows_gamma Gamma correction and output bounds
 /// Use <tt>\ref fcg::FullscreenPass::gammaCorrection "gammaCorrection"</tt> to apply a power adjustment to a sampled
 /// texture. Supply one <tt>\ref fcg::GammaUniforms "GammaUniforms"</tt> block with the sampler on every draw. Its
-/// default gamma is 2.2: values above 1 brighten midtones, values below 1 darken them, and 1 keeps their values.
+/// gamma components control red, green, and blue independently and default to 2.2. Values above 1 brighten a
+/// channel's midtones, values below 1 darken them, and 1 keeps their values. Assign <tt>glm::vec3(value)</tt> to
+/// <tt>\ref fcg::GammaUniforms::gamma "gamma"</tt> to adjust all three channels equally.
 /// Both this pass and <tt>\ref fcg::FullscreenPass::linearToSRGB "linearToSRGB"</tt> clamp RGB after the adjustment
 /// using <tt>\ref fcg::GammaUniforms::clampRange "clampRange"</tt>, which defaults to [0, 1]. Alpha is unchanged.
 ///
 /// <tt>\ref fcg::FullscreenPass::linearToSRGB "linearToSRGB"</tt> first converts linear RGB with the piecewise sRGB
-/// transfer function, then applies gamma correction and the final bounds. Supply gamma 1 for neutral encoding. Built-in
-/// runtime presentation defaults to gamma 1 and can be adjusted through
+/// transfer function, then applies gamma correction and the final bounds. Supply <tt>glm::vec3(1)</tt> as gamma for
+/// neutral encoding. Built-in runtime presentation defaults to gamma 1 in each channel and can be adjusted through
 /// <tt>\ref fcg::Player::gammaCorrection "Player::gammaCorrection"</tt>. The caller supplies finite, nonnegative
-/// sampled RGB, finite positive gamma, and ordered clamp endpoints that are not NaN; these are input requirements,
-/// not reported recording errors.
+/// sampled RGB, finite positive gamma in every channel, and ordered clamp endpoints that are not NaN; these are
+/// input requirements, not reported recording errors.
 ///
 /// To keep values above 1, render into a floating-point target (to make sure such values can be represented) and use an
 /// appropriate upper endpoint in the clamp range; for example [0, <em>positive infinity</em>] to retain the full
@@ -173,21 +175,26 @@ struct FullscreenTextureBinding
 /// \brief Uniform parameters for the built-in gamma correction and sRGB conversion passes.
 ///
 /// Supply the bytes of one instance as fragment uniform block zero in \c FullscreenBindings::uniforms on each draw.
-/// The defaults apply gamma 2.2 and clamp the corrected RGB values to [0, 1]. For neutral sRGB encoding, initialize
-/// \c gamma to 1. The parameters are copied during recording and may be changed before the next draw.
+/// The defaults apply gamma 2.2 to each channel and clamp the corrected RGB values to [0, 1]. For neutral sRGB
+/// encoding, initialize \c gamma to <tt>glm::vec3(1)</tt>. The parameters are copied during recording and may be
+/// changed before the next draw.
 struct alignas(16) GammaUniforms
 {
-	/// The finite, strictly positive gamma; RGB is raised to the power <tt>1 / gamma</tt>. Values above 1 brighten
-	/// midtones, and values below 1 darken them. Alpha is unchanged.
-	float gamma = 2.2f;
+	/// Gamma for red, green, and blue, respectively. Each component must be finite and strictly positive; each RGB
+	/// channel is raised to the power of its reciprocal gamma. Values above 1 brighten that channel's midtones, values
+	/// below 1 darken them, and 1 preserves them. Alpha is unchanged. Assign <tt>glm::vec3(value)</tt> to adjust all
+	/// three channels equally.
+	alignas(16) glm::vec3 gamma{2.2f};
 
-	/// The inclusive lower and upper bounds for RGB after gamma correction, in \c x and \c y. The endpoints must be
-	/// ordered and not NaN; infinite endpoints are allowed. Use [0, positive infinity] to retain values above 1.
-	alignas(8) glm::vec2 clampRange{0.f, 1.f};
+	/// The inclusive lower and upper bounds for RGB after gamma correction, stored in the <tt>vec2</tt>'s \c x and \c y
+	/// components, respectively. The endpoints must be ordered and not <tt>NaN</tt>; infinite endpoints are allowed.
+	/// Use [0, <em>positive infinity</em>] to retain all possible values ≥1.
+	alignas(8) glm::vec2 clampRange{0, 1};
 };
 
-static_assert(sizeof(GammaUniforms) == 16 && offsetof(GammaUniforms, gamma) == 0);
-static_assert(offsetof(GammaUniforms, clampRange) == 8 && std::is_trivially_copyable_v<GammaUniforms>);
+static_assert(sizeof(GammaUniforms) == 32 && alignof(GammaUniforms) == 16);
+static_assert(offsetof(GammaUniforms, gamma) == 0 && offsetof(GammaUniforms, clampRange) == 16);
+static_assert(std::is_trivially_copyable_v<GammaUniforms>);
 
 /// \brief The fragment shader resources for one fullscreen draw.
 ///
@@ -340,10 +347,11 @@ public:
 	/// \brief Create a built-in pass that encodes one sampled linear texture as sRGB.
 	///
 	/// The pass expects exactly one \c FullscreenTextureBinding and one \c GammaUniforms block at fragment slot zero.
-	/// It applies the piecewise sRGB transfer function to sampled linear RGB, raises the encoded RGB to the power
-	/// <tt>1 / gamma</tt>, then clamps it to \c GammaUniforms::clampRange. Alpha is unchanged. Initialize
-	/// \c GammaUniforms::gamma to 1 for neutral sRGB encoding. Use a floating-point output and [0, positive infinity]
-	/// as the clamp range to retain values above 1. The output format also determines representable values.
+	/// It applies the piecewise sRGB transfer function to sampled linear RGB, raises each encoded channel to the power
+	/// of its reciprocal gamma, then clamps RGB to \c GammaUniforms::clampRange. Alpha is unchanged. Initialize
+	/// \c GammaUniforms::gamma to <tt>glm::vec3(1)</tt> for neutral sRGB encoding. Use a floating-point output and
+	/// [0, <em>positive infinity</em>] as the clamp range to retain values above 1. The output format also determines
+	/// representable values.
 	///
 	/// \pre \p device outlives the returned pass.
 	/// \pre Each draw samples finite, nonnegative RGB and supplies parameters meeting the \c GammaUniforms contract.
@@ -364,9 +372,10 @@ public:
 	/// \brief Create a built-in pass that applies gamma correction to one sampled texture.
 	///
 	/// The pass expects exactly one \c FullscreenTextureBinding and one \c GammaUniforms block at fragment slot zero.
-	/// It raises sampled RGB to the power <tt>1 / gamma</tt>, then clamps it to \c GammaUniforms::clampRange and writes
-	/// it with unchanged alpha. Default-initialized uniforms use gamma 2.2 and the clamp range [0, 1]. The output
-	/// format also determines representable values, including any sRGB encoding performed by that format.
+	/// It raises each sampled RGB channel to the power of its reciprocal gamma, then clamps RGB to
+	/// \c GammaUniforms::clampRange and writes it with unchanged alpha. Default-initialized uniforms use gamma 2.2
+	/// in each channel and the clamp range [0, 1]. The output format also determines representable values, including
+	/// any sRGB encoding performed by that format.
 	///
 	/// \pre \p device outlives the returned pass.
 	/// \pre Each draw samples finite, nonnegative RGB and supplies parameters meeting the \c GammaUniforms contract.

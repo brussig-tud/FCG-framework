@@ -70,7 +70,7 @@
 	if (auto result = effect.record(commands, *target, {.samplers={&first, 1}}); !result)
 		return result;
 	const fcg::FullscreenTextureBinding second{&intermediate, &sampler};
-	const fcg::GammaUniforms parameters{.gamma = 1.f};
+	const fcg::GammaUniforms parameters{.gamma = glm::vec3(1)};
 	const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&parameters, 1))};
 	return presentation.record(commands, finalTarget, {.samplers = {&second, 1}, .uniforms = uniforms});
 }

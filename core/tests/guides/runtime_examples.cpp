@@ -91,10 +91,9 @@ public:
 	void gui (fcg::Device &device, fcg::Player &player) override
 	{
 		// [presentation_gamma]
-		ImGui::SliderFloat (
-			"Presentation gamma", &gammaUniforms.gamma, .1f, 4.f, "%.3f",
-			ImGuiSliderFlags_AlwaysClamp
-		);
+		ImGui::SliderFloat ("Red gamma", &gammaUniforms.gamma.r, .1f, 4.f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+		ImGui::SliderFloat ("Green gamma", &gammaUniforms.gamma.g, .1f, 4.f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+		ImGui::SliderFloat ("Blue gamma", &gammaUniforms.gamma.b, .1f, 4.f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
 		// [presentation_gamma]
 		if (ImGui::Button ("Resume built-in presentation"))
 			player.clearPresentationRecorder ();
@@ -126,7 +125,8 @@ private:
 	////
 	// Fields
 
-	/// The presentation parameters read by the recorder on each invocation, defaulting to gamma 2.2 and RGB bounds [0, 1].
+	/// The presentation parameters read by the recorder on each invocation, defaulting to gamma 2.2 per channel and
+	/// RGB bounds [0, 1].
 	// [presentation_parameters]
 	fcg::GammaUniforms gammaUniforms{};
 	// [presentation_parameters]

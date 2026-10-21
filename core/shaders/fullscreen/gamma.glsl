@@ -9,9 +9,11 @@
 //
 
 /// Gamma and final RGB bounds; matches the C++ GammaUniforms layout.
-layout(std140, set=3, binding=0) uniform GammaUniforms
-{
-	float gamma;
+layout(std140, set=3, binding=0) uniform GammaUniforms {
+	/// Per-channel gamma values
+	vec3 gamma;
+
+	/// Common channel clamp range
 	vec2 clampRange;
 } gammaUniforms;
 
@@ -22,10 +24,10 @@ layout(std140, set=3, binding=0) uniform GammaUniforms
 // Functions
 //
 
-/// Apply reciprocal-gamma correction followed by clamping, including when gamma is one.
-vec3 applyGamma (vec3 rgb) {
-	if (gammaUniforms.gamma != 1.0)
-		rgb = pow(rgb, vec3(1.0 / gammaUniforms.gamma));
+/// Apply per-channel reciprocal-gamma correction and clamp even channels with neutral gamma.
+vec3 applyGamma (in vec3 rgb) {
+	if (any(notEqual(gammaUniforms.gamma, vec3(1))))
+		rgb = mix(pow(rgb, 1/gammaUniforms.gamma), rgb, equal(gammaUniforms.gamma, vec3(1)));
 	return clamp(rgb, vec3(gammaUniforms.clampRange.x), vec3(gammaUniforms.clampRange.y));
 }
 
