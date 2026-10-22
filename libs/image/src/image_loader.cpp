@@ -114,6 +114,11 @@ auto ImageLoader::global () -> ImageLoader& {
 	static auto *loader = new ImageLoader;
 	// Initialize storage before touching the anchor: deferred TU initialization may itself call global().
 	detail::linkSDLImageHandler();
+	detail::linkRadianceHDRHandler();
+	detail::linkPFMImageHandler();
+#if FCG_IMAGE_HAS_OPENEXR
+	detail::linkOpenEXRImageHandler();
+#endif
 	return *loader;
 }
 

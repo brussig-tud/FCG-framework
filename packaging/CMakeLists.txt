@@ -2,6 +2,22 @@
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
+# License notices for the embedded HDR decoder and source-built EXR libraries/codecs.
+install(FILES "${fcg_stb_SOURCE_DIR}/LICENSE" DESTINATION "${CMAKE_INSTALL_DATADIR}/FCG/licenses/stb"
+	COMPONENT FCG_Runtime)
+if(FCG_OPENEXR_BUILT_HERE)
+	install(FILES "${OpenEXR_SOURCE_DIR}/LICENSE.md" DESTINATION "${CMAKE_INSTALL_DATADIR}/FCG/licenses/OpenEXR"
+		COMPONENT FCG_Runtime)
+	install(FILES "${OpenEXR_SOURCE_DIR}/external/OpenJPH/LICENSE"
+		DESTINATION "${CMAKE_INSTALL_DATADIR}/FCG/licenses/OpenJPH" COMPONENT FCG_Runtime)
+	install(FILES "${OpenEXR_SOURCE_DIR}/external/deflate/COPYING"
+		DESTINATION "${CMAKE_INSTALL_DATADIR}/FCG/licenses/libdeflate" COMPONENT FCG_Runtime)
+endif()
+if(FCG_IMATH_BUILT_HERE)
+	install(FILES "${Imath_SOURCE_DIR}/LICENSE.md" DESTINATION "${CMAKE_INSTALL_DATADIR}/FCG/licenses/Imath"
+		COMPONENT FCG_Runtime)
+endif()
+
 if (NOT DEFINED FCG_INSTALL_CMAKEDIR)
 	set(FCG_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/FCG" CACHE STRING "Path to FCG Framework CMake files")
 endif()

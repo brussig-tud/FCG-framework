@@ -16,10 +16,10 @@ fcg_register_documentation(
     LIBRARY Image
     LINK_TARGET FCG-Framework::Image
     OVERVIEW fcg_image_overview
-    MODULES fcg_images fcg_image_loading fcg_sdl_image fcg_pixel_formats fcg_pixel_access
+    MODULES fcg_images fcg_image_loading fcg_sdl_image fcg_radiance_hdr fcg_pfm fcg_openexr fcg_pixel_formats fcg_pixel_access
     INPUTS "${CMAKE_CURRENT_LIST_DIR}/../libs/image/include/FCG/Image"
     EXAMPLE_DIRS "${CMAKE_CURRENT_LIST_DIR}/../libs/image/tests"
-    PREDEFINED FCG_IMAGE_EXPORT=
+    PREDEFINED FCG_IMAGE_EXPORT= FCG_IMAGE_HAS_OPENEXR=1
 )
 
 fcg_register_documentation(

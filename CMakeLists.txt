@@ -46,6 +46,7 @@ string(COMPARE EQUAL "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}" is_top_
 option(FCG_INCLUDE_PACKAGING "Include packaging rules for the FCG Framework library" "${is_top_level}")
 option(FCG_BUILD_DOCUMENTATION "Enable the optional framework documentation target" "${is_top_level}")
 option(FCG_BUILD_TESTS "Build the framework test suite" "${is_top_level}")
+option(FCG_IMAGE_OPENEXR "Enable OpenEXR image decoding" OFF)
 
 # Resolve all build dependencies and optional tools before configuring any consumers.
 include(cmake/Dependencies.cmake)

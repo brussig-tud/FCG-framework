@@ -14,8 +14,13 @@ target_compile_definitions(Image PUBLIC "$<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:F
 # Third-party target export follows Core's existing build-interface-only packaging contract.
 target_link_libraries(Image
 	PUBLIC Core "$<BUILD_INTERFACE:SDL3::SDL3>"
-	PRIVATE "$<BUILD_INTERFACE:fcg-sdl-image>"
+	PRIVATE "$<BUILD_INTERFACE:fcg-sdl-image>" "$<BUILD_INTERFACE:fcg-stb-image>"
 )
+if(FCG_IMAGE_OPENEXR)
+	target_link_libraries(Image PRIVATE "$<BUILD_INTERFACE:fcg-openexr>")
+endif()
+set(FCG_IMAGE_HAS_OPENEXR "${FCG_IMAGE_OPENEXR}")
+configure_file(src/features.h.in include/FCG/Image/features.h)
 
 # Capability details are private and must never be copied by the installed include-directory rules.
 get_target_property(image_formats fcg-sdl-image FCG_SDL_IMAGE_FORMATS)

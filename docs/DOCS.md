@@ -139,6 +139,37 @@ the corresponding shared preset to exercise supplied targets, source defaults, c
 framework/backend static/shared combinations without downloading dependencies during the tests.
 
 
+### Floating-point image formats
+
+Radiance HDR (`hdr`, `rgbe`) and Portable Float Map (`pfm`) handlers are always built. Their outputs retain binary32
+HDR values. They register with the global loader at priority -90, before SDL_image at -100. Image's public feature
+header provides numeric `FCG_IMAGE_HAS_OPENEXR` for conditional C++ usage.
+
+Set `FCG_IMAGE_OPENEXR=ON` before adding the framework to enable EXR. With the option OFF, startup never discovers or
+fetches OpenEXR or its dependencies. With it ON, FCG reuses `OpenEXR::OpenEXR`, prefers an installed OpenEXR >= 3.4.14,
+then falls back to source-pinned 3.4.14. Source fallbacks use static PIC libraries and disable tools, examples, tests,
+Python, and upstream installation by default. Explicit upstream options are respected. Imath reuses its target/package,
+with source fallback v3.2.2. OpenEXR manages compression dependencies, including its vendored libdeflate/OpenJPH fallbacks.
+
+The independent stb source is pinned to commit `a7d4c2175630e1ea5b6f8dd00ab96fed0b97b96d`. Its implementation has internal
+linkage and only HDR enabled. SDL_image's private stb implementation and applications' own copies remain independent.
+For offline builds use `CPM_fcg_stb_SOURCE`, `CPM_OpenEXR_SOURCE`, and `CPM_Imath_SOURCE`; use the corresponding
+`CPM_DOWNLOAD_<name>=ON` settings when forcing source resolution. No dependencies are downloaded by the tests.
+
+PFM supports conventional bottom-to-top RGB/grayscale, LF/CRLF headers, both byte orders, and scale multiplication.
+Radiance supports RGBE flat/scanline RLE in `-Y height +X width` order. EXR supports full-resolution HALF/FLOAT RGB/Y
+with optional alpha in single-part non-deep scanline/tiled files, using the data window. See the module guides for
+the supported subsets. EXR alpha association and HDR stored exposure are preserved. Unidentified source color encoding
+remains unspecified; conversion/upload requires a known interpretation. Loading does not perform display tonemapping.
+
+The existing installed-target contract still requires external dependencies to be supplied separately. Source-built
+EXR fallbacks are static; supplied shared packages remain externally managed. Bundled decoder license notices accompany
+the framework installation. Installed public headers never require stb/OpenEXR headers.
+
+Run `ctest --preset release-custom -R 'image-|dependencies|install|documentation'` and the corresponding shared
+configuration after building. Enable EXR in one configuration to include `image-exr-smoke`. The optional second argument
+to that executable points to teaching assets for checking EXR/PFM sample equality; normal CTest runs use small fixtures.
+
 ### SDL_image formats and codecs
 
 `FCG_SHARED_LIBS` selects framework linkage; `FCG_USE_SHARED_SDL` selects SDL linkage, defaulting to the framework

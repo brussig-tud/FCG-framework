@@ -19,6 +19,7 @@
 
 // Local includes
 #include "FCG/Image/image_loader.h"
+#include "FCG/Image/features.h"
 
 
 
@@ -109,6 +110,17 @@ auto imageSDLError (ImageErrorCode code, const char *operation) -> std::unexpect
 /// \c ImageLoader::global calls this function, which keeps that translation unit, and with it the registration,
 /// from being dropped when the library is linked statically.
 void linkSDLImageHandler ();
+
+/// Retain the translation unit registering the always-built Radiance HDR decoder in static archives.
+void linkRadianceHDRHandler ();
+
+/// Retain the translation unit registering the always-built PFM decoder in static archives.
+void linkPFMImageHandler ();
+
+#if FCG_IMAGE_HAS_OPENEXR
+/// Retain the optional OpenEXR decoder in static archives.
+void linkOpenEXRImageHandler ();
+#endif
 
 
 

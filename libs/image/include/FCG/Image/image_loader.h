@@ -17,6 +17,8 @@
 /// "ImageFormatHandler"</tt>s in order of descending priority until one succeeds. The shipped SDL_image handler
 /// covers the formats the SDL_image build provides. Register your own handlers to load formats SDL_image does not
 /// know, or to route loading through custom code.
+/// Floating-point images use the built-in handlers in \ref fcg_radiance_hdr, \ref fcg_pfm and, when enabled,
+/// \ref fcg_openexr.
 ///
 /// \section fcg_image_loading_usage Getting started
 /// \snippet image_examples.cpp includes
@@ -30,7 +32,7 @@
 /// \section fcg_image_loading_workflows Common tasks
 /// \subsection fcg_image_loading_workflows_registry Choosing a loader instance
 /// <tt>\ref fcg::ImageLoader::global "ImageLoader::global()"</tt> is the shared process-wide loader, with the
-/// SDL_image handler pre-registered; the load above went through it. A locally constructed
+/// SDL_image, Radiance HDR and PFM handlers pre-registered, plus OpenEXR when enabled. A locally constructed
 /// <tt>\ref fcg::ImageLoader "ImageLoader"</tt> starts empty and is useful when a module needs its own set of handlers:
 /// \snippet image_examples.cpp independent
 /// <tt>\ref fcg::ImageLoader::fileFormats "fileFormats"</tt> lists which formats a loader advertises, e.g. for building
@@ -281,6 +283,9 @@ public:
 	/// -100, so handlers registered with the default priority 0 are tried first. Handlers registered through
 	/// \c FormatHandlerRegistration are added to this loader as well. The loader is created on the first call and is
 	/// never destroyed, so it stays usable until the process ends.
+	/// The \c RadianceHDRFormatHandler and \c PFMImageFormatHandler use IDs <tt>"radiance_hdr"</tt> and
+	/// <tt>"pfm"</tt> with priority -90. When enabled, \c OpenEXRImageFormatHandler uses <tt>"openexr"</tt>
+	/// at priority -90. Signature-based HDR handlers precede the SDL_image handler.
 	///
 	/// Creating the loader on first use is thread-safe. All operations on the returned loader must be externally
 	/// serialized like for any other \c ImageLoader.

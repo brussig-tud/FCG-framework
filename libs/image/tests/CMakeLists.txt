@@ -1,5 +1,5 @@
 # Compile the exact snippets included in the public component guides.
-add_library(image-examples OBJECT image_examples.cpp pixel_examples.cpp)
+add_library(image-examples OBJECT image_examples.cpp pixel_examples.cpp hdr_examples.cpp)
 target_link_libraries(image-examples PRIVATE ${FCG_PROJECT_NAME}::Image)
 
 add_executable(image-smoke main.cpp)
@@ -9,7 +9,23 @@ add_test(NAME image-smoke COMMAND image-smoke "${CMAKE_CURRENT_SOURCE_DIR}/fixtu
 # This consumer names no concrete handler: it proves automatic backend retention in static and shared builds.
 add_executable(image-global-smoke global.cpp)
 target_link_libraries(image-global-smoke PRIVATE ${FCG_PROJECT_NAME}::Image)
-add_test(NAME image-global-smoke COMMAND image-global-smoke)
+add_test(NAME image-global-smoke COMMAND image-global-smoke "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/float.exr")
+
+add_executable(image-hdr-smoke hdr.cpp application_stb.cpp)
+set_source_files_properties(application_stb.cpp PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+target_link_libraries(image-hdr-smoke PRIVATE Image fcg-stb-image)
+add_test(NAME image-hdr-smoke COMMAND image-hdr-smoke "${CMAKE_CURRENT_SOURCE_DIR}/fixtures" "${CMAKE_CURRENT_BINARY_DIR}/hdr-scratch")
+if(FCG_IMAGE_OPENEXR)
+    add_executable(image-exr-smoke exr.cpp)
+    target_link_libraries(image-exr-smoke PRIVATE Image fcg-openexr)
+    add_test(NAME image-exr-smoke COMMAND image-exr-smoke "${CMAKE_CURRENT_BINARY_DIR}/exr-scratch")
+
+    # Local third-party images are optional; an incomplete set is reported as skipped at runtime.
+    add_test(NAME image-exr-assets COMMAND image-exr-smoke
+        "${CMAKE_CURRENT_BINARY_DIR}/exr-scratch" "${PROJECT_SOURCE_DIR}/assets")
+    set_tests_properties(image-exr-assets PROPERTIES SKIP_RETURN_CODE 77)
+    set_tests_properties(image-exr-smoke image-exr-assets PROPERTIES FAIL_REGULAR_EXPRESSION "EXR_ERR_")
+endif()
 
 # A custom registrar lives in an independently compiled translation unit with no main() references to its symbols.
 add_library(image-test-registration OBJECT registration.cpp)

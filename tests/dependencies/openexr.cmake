@@ -1,0 +1,41 @@
+
+# No real downloads in dependency selection tests.
+set(CPM_OpenEXR_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/must-not-fetch-openexr")
+set(CPM_Imath_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/must-not-fetch-imath")
+set(FCG_IMAGE_OPENEXR ON)
+if(MODE MATCHES "^exr-disabled")
+    set(FCG_IMAGE_OPENEXR OFF)
+    set(OpenEXR_DIR "${CMAKE_CURRENT_LIST_DIR}/exr-sentinel")
+    set(Imath_DIR "${CMAKE_CURRENT_LIST_DIR}/exr-sentinel")
+    if(MODE STREQUAL "exr-disabled-provided")
+        add_library(OpenEXR::OpenEXR INTERFACE IMPORTED)
+    endif()
+elseif(MODE STREQUAL "exr-provided")
+    add_library(OpenEXR::OpenEXR INTERFACE IMPORTED)
+elseif(MODE STREQUAL "exr-provided-shared")
+    add_library(OpenEXR::OpenEXR SHARED IMPORTED)
+    set_target_properties(OpenEXR::OpenEXR PROPERTIES
+        IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/provided-openexr${CMAKE_SHARED_LIBRARY_SUFFIX}"
+        IMPORTED_IMPLIB "${CMAKE_CURRENT_BINARY_DIR}/provided-openexr.lib"
+        INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}")
+elseif(MODE STREQUAL "exr-package")
+    set(OpenEXR_DIR "${CMAKE_CURRENT_BINARY_DIR}/package-exr")
+    file(MAKE_DIRECTORY "${OpenEXR_DIR}")
+    file(WRITE "${OpenEXR_DIR}/OpenEXRConfig.cmake"
+        "set(OpenEXR_FOUND TRUE)\nadd_library(OpenEXR::OpenEXR INTERFACE IMPORTED)\n")
+    file(WRITE "${OpenEXR_DIR}/OpenEXRConfigVersion.cmake"
+        "set(PACKAGE_VERSION 3.4.14)\nset(PACKAGE_VERSION_COMPATIBLE TRUE)\n")
+    set(CPM_USE_LOCAL_PACKAGES ON)
+elseif(MODE MATCHES "^exr-source|^exr-overrides")
+    set(CPM_OpenEXR_SOURCE "${CMAKE_CURRENT_LIST_DIR}/exr-source")
+    set(CPM_Imath_SOURCE "${CMAKE_CURRENT_LIST_DIR}/imath-source")
+    set(CPM_DOWNLOAD_OpenEXR ON)
+    set(CPM_DOWNLOAD_Imath ON)
+    if(MODE STREQUAL "exr-overrides")
+        set(OPENEXR_BUILD_TOOLS ON CACHE BOOL "Exercise caller option preservation")
+    endif()
+elseif(MODE STREQUAL "exr-missing")
+    set(CMAKE_DISABLE_FIND_PACKAGE_OpenEXR TRUE)
+else()
+    message(FATAL_ERROR "Unknown EXR fixture mode ${MODE}")
+endif()

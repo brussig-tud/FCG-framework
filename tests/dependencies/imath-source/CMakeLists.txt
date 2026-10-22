@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.31)
+project(Imath VERSION 3.2.2 LANGUAGES CXX)
+add_library(Imath::Imath INTERFACE IMPORTED GLOBAL)
+if(BUILD_SHARED_LIBS OR NOT CMAKE_POSITION_INDEPENDENT_CODE OR IMATH_INSTALL)
+    message(FATAL_ERROR "Imath fallback must be static/PIC without upstream installation")
+endif()

@@ -2,6 +2,7 @@
 if(FCG_SDL_IMAGE_BUILT_HERE AND SDL3_BINARY_DIR)
     get_target_property(image_dependency_source SDL3_image::SDL3_image SOURCE_DIR)
     set(dependency_sources)
+	list(APPEND dependency_sources "-DCPM_fcg_stb_SOURCE=${fcg_stb_SOURCE_DIR}")
     foreach(package glslang SDL_shadercross cpp-embedlib)
         list(APPEND dependency_sources "-DCPM_${package}_SOURCE=${${package}_SOURCE_DIR}")
     endforeach()

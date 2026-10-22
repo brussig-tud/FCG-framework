@@ -11,7 +11,8 @@
 /// \page fcg_image_overview Image library overview
 ///
 /// The Image library decodes image files into CPU pixel data that you can inspect, process, or hand to the GPU. It is
-/// built on SDL_image and supports the formats that its build provides (BMP, GIF, JPG, PNG, TGA, WebP, and more).
+/// supports Radiance HDR and Portable Float Map, optional OpenEXR, and the formats its SDL_image build provides
+/// (BMP, GIF, JPG, PNG, TGA, WebP, and more).
 ///
 /// Link your application against \verbatim FCG-Framework::Image \endverbatim and include
 /// <tt>\#include &lt;FCG/Image/image_loader.h&gt;</tt> for the generic loader, or
@@ -23,6 +24,7 @@
 ///   <tt>\ref fcg::Image::upload "Image::upload"</tt> into a \ref fcg_textures "texture".
 /// - Loading by file extension or by content: \ref fcg_image_loading.
 /// - Using SDL_image directly, or teaching the loader additional formats: \ref fcg_sdl_image.
+/// - Loading floating-point HDR pixels: \ref fcg_radiance_hdr, \ref fcg_pfm, and \ref fcg_openexr.
 ///
 /// The library provides explicit format conversion and scoped CPU pixel processing. For these tasks, start with
 /// \ref fcg_pixel_formats and \ref fcg_pixel_access. Saving and animation sequences are outside its scope.
@@ -36,6 +38,8 @@
 /// target_link_libraries(my_app PRIVATE FCG-Framework::Image)
 /// \endcode
 /// The full build and codec reference is part of the framework's maintainer documentation.
+/// Radiance HDR and PFM are always available. Enable OpenEXR before adding the framework with
+/// <tt>set(FCG_IMAGE_OPENEXR ON CACHE BOOL "Enable OpenEXR decoding")</tt>.
 
 
 
@@ -497,8 +501,8 @@ public:
 	/// 	Creates a sampled 2D GPU texture with the contents of this image.
 	///
 	/// The texture has the size of the image, one mip level, one layer, a sample count of 1 and sampler usage. The top
-	/// row of the image becomes the first texture row, i.e. texture coordinate <tt>v = 0</tt>. Alpha is straight (not
-	/// premultiplied), and a color key is turned into alpha: keyed pixels get alpha 0. Shaders always sample linear
+	/// row of the image becomes the first texture row, i.e. texture coordinate <tt>v = 0</tt>. Alpha association is
+	/// preserved, and a color key is turned into alpha: keyed pixels get alpha 0. Shaders always sample linear
 	/// color values:
 	/// - Images with sRGB colors and at most 8 bits per channel become an 8-bit sRGB texture in RGBA or BGRA order,
 	///   which the sampler decodes to linear values.
@@ -509,6 +513,8 @@ public:
 	///
 	/// Query the resulting format with <tt>Texture::info().format</tt>. The upload is submitted without waiting for the
 	/// GPU, and the image itself is left unchanged; it may be modified or destroyed as soon as this method returns.
+	/// RGB sources need established primaries and transfer characteristics before uploading; label a known source
+	/// encoding with \c SDL_SetSurfaceColorspace when the file does not identify it.
 	///
 	/// \param device
 	/// 	The device that creates the texture. It must outlive the returned texture.
@@ -516,8 +522,8 @@ public:
 	/// \return
 	/// 	The texture, or an error:
 	/// 	- \c ImageErrorCode::InvalidState if the image is empty or has an active pixel access session;
-	/// 	- \c ImageErrorCode::UnsupportedFormat if the image has a color key and a pixel format with more than
-	/// 	  32 bits per pixel;
+	/// 	- \c ImageErrorCode::UnsupportedFormat if RGB encoding is insufficiently described, or the image has a
+	/// 	  color key and a pixel format with more than 32 bits per pixel;
 	/// 	- \c ImageErrorCode::SDLFailure if converting the image, applying its color key or locking a surface
 	/// 	  failed;
 	/// 	- \c ImageErrorCode::GPUFailure if the device cannot sample the required texture format, or if creating

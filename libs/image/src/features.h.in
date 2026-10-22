@@ -1,0 +1,25 @@
+
+#ifndef __FCG_IMAGE_FEATURES_H__
+#define __FCG_IMAGE_FEATURES_H__
+
+
+//////
+//
+// Includes
+//
+
+// C++ STL
+/* nothing here yet */
+
+
+
+//////
+//
+// Constants
+//
+
+/// Whether this Image library provides the OpenEXR format handler, as numeric zero or one.
+#cmakedefine01 FCG_IMAGE_HAS_OPENEXR
+
+
+#endif // ifndef __FCG_IMAGE_FEATURES_H__

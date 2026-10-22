@@ -17,7 +17,8 @@
 /// build provides — typically PNG, JPEG, BMP, GIF, TGA and QOI; <tt>\ref fcg::ImageFormatHandler::fileFormats
 /// "fileFormats"</tt> lists them. This is the handler that <tt>\ref fcg::ImageLoader::global
 /// "ImageLoader::global()"</tt> ships with, and the usual way to load images; use it directly when the backend choice
-/// should be explicit.
+/// should be explicit. Floating-point formats use the handlers described in \ref fcg_radiance_hdr,
+/// \ref fcg_pfm and \ref fcg_openexr.
 ///
 /// \section fcg_sdl_image_usage Getting started
 /// \snippet image_examples.cpp direct

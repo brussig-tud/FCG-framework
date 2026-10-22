@@ -40,12 +40,15 @@ To use the framework in your own project, add it as a CMake dependency (e.g. via
 | --- | --- | --- |
 | `FCG_SHARED_LIBS` | `BUILD_SHARED_LIBS`, else `OFF` | Build the framework libraries as shared libraries. |
 | `FCG_USE_SHARED_SDL` | framework linkage | Link SDL3 and SDL_image as shared libraries. |
+| `FCG_IMAGE_OPENEXR` | `OFF` | Enable OpenEXR image decoding; dependency resolution occurs only when enabled. |
 | `FCG_BUILD_APPS` | `ON` | Build the demo apps in the `app/` directory. |
 | `FCG_BUILD_APP_...` | `ON` | Toggle building individual demo apps (overridden when `FCG_BUILD_APPS` is `OFF`). |
 | `FCG_INCLUDE_PACKAGING` | `ON` for top-level builds | Include install and packaging rules. |
 | `FCG_BUILD_DOCUMENTATION` | `ON` for top-level builds | Enable the `fcg-docs` documentation target (requires Doxygen). |
 
 The formats of a source-built *SDL_image* are configured through the upstream `SDLIMAGE_*` options; see `docs/DOCS.md` for details.
+Radiance HDR and Portable Float Map loading are always included. OpenEXR is optional. All three retain floating-point
+HDR values; source color encoding must be known before conversion or GPU upload.
 
 
 # Overview

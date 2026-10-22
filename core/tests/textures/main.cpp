@@ -279,6 +279,15 @@ constexpr static float srgbTol = 1.8e-3f;
 /// Exercise native linear precision, format expansion, alpha, color keys, source preservation, and HDR.
 void images (fcg::Device &device)
 {
+	// Unidentified floating RGB must not silently acquire an sRGB interpretation during upload.
+	auto unidentified = take(fcg::Image::adopt(SDL_CreateSurface(1, 1, SDL_PIXELFORMAT_RGB96_FLOAT)));
+	require(SDL_SetSurfaceColorspace(unidentified.handle(), static_cast<SDL_Colorspace>(SDL_DEFINE_COLORSPACE(
+		SDL_COLOR_TYPE_RGB, SDL_COLOR_RANGE_FULL, SDL_COLOR_PRIMARIES_UNSPECIFIED,
+		SDL_TRANSFER_CHARACTERISTICS_LINEAR, SDL_MATRIX_COEFFICIENTS_IDENTITY, SDL_CHROMA_LOCATION_NONE))), SDL_GetError());
+	const auto unidentifiedUpload = unidentified.upload(device);
+	require(!unidentifiedUpload && unidentifiedUpload.error().code == fcg::ImageErrorCode::UnsupportedFormat,
+		"Upload accepted unidentified RGB primaries");
+
 	for (auto format : {SDL_PIXELFORMAT_RGBA32, SDL_PIXELFORMAT_BGRA32})
 	{
 		auto image = take(fcg::Image::adopt(SDL_CreateSurface(2, 2, format)));

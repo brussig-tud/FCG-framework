@@ -544,6 +544,13 @@ auto Image::upload (Device &device) const -> std::expected<Texture, ImageError>
 		return std::unexpected(ImageError{ImageErrorCode::InvalidState, "Upload requires an available image"});
 	auto *surface = m_handle;
 	const auto colorspace = SDL_GetSurfaceColorspace(surface);
+	if (SDL_COLORSPACETYPE(colorspace) == SDL_COLOR_TYPE_RGB
+		&& (SDL_COLORSPACEPRIMARIES(colorspace) == SDL_COLOR_PRIMARIES_UNSPECIFIED
+			|| SDL_COLORSPACEPRIMARIES(colorspace) == SDL_COLOR_PRIMARIES_UNKNOWN
+			|| SDL_COLORSPACETRANSFER(colorspace) == SDL_TRANSFER_CHARACTERISTICS_UNSPECIFIED
+			|| SDL_COLORSPACETRANSFER(colorspace) == SDL_TRANSFER_CHARACTERISTICS_UNKNOWN))
+		return std::unexpected(ImageError{ImageErrorCode::UnsupportedFormat,
+			"Image upload requires a known RGB encoding; assign the source colorspace before uploading"});
 	const auto *details = SDL_GetPixelFormatDetails(surface->format);
 	const bool srgb8 = colorspace == SDL_COLORSPACE_SRGB && details
 		&& !SDL_ISPIXELFORMAT_FLOAT(surface->format) && !SDL_ISPIXELFORMAT_FOURCC(surface->format)

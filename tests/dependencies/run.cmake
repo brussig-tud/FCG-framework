@@ -8,6 +8,7 @@ function(run)
 endfunction()
 
 set(common "-DFCG_SOURCE=${FCG_SOURCE}" "-DIMAGE_DEPENDENCY_SOURCE=${IMAGE_DEPENDENCY_SOURCE}"
+    "-DCPM_fcg_stb_SOURCE=${CPM_fcg_stb_SOURCE}"
     "-DSDL3_DIR=${SDL3_DIR}" "-DCMAKE_C_COMPILER=${TEST_C_COMPILER}" "-DCMAKE_CXX_COMPILER=${TEST_CXX_COMPILER}"
     "-DTEST_BACKEND_SHARED=${TEST_BACKEND_SHARED}" "-DCMAKE_BUILD_TYPE=Debug"
     "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
@@ -23,10 +24,22 @@ foreach(mode provided provided-namespaced provided-imported provided-empty packa
     avif-overrides avif-save avif-alternate-encoder avif-shared avif-vendored
     tiff-provided-modern tiff-provided-legacy tiff-provided-raw tiff-package-normal tiff-package-cache
     tiff-local tiff-cache tiff-overrides tiff-shared tiff-deps-shared tiff-vendored
-    tiff-runtime tiff-runtime-deps tiff-unresolved)
+    tiff-runtime tiff-runtime-deps tiff-unresolved
+    exr-disabled exr-disabled-provided exr-provided exr-package exr-source exr-overrides)
     run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${TEST_BINARY}/${mode}" -G "${TEST_GENERATOR}"
         ${common} "-DMODE=${mode}" -DFRAMEWORK_SHARED=OFF)
 endforeach()
+foreach(mode exr-source exr-disabled)
+    run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${TEST_BINARY}/exr-reconfigure" -G "${TEST_GENERATOR}"
+        ${common} "-DMODE=${mode}" -DFRAMEWORK_SHARED=OFF)
+endforeach()
+run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${TEST_BINARY}/exr-provided-shared" -G "${TEST_GENERATOR}"
+    ${common} -DMODE=exr-provided-shared -DFRAMEWORK_SHARED=ON)
+execute_process(COMMAND "${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${TEST_BINARY}/exr-missing" -G "${TEST_GENERATOR}"
+    ${common} -DMODE=exr-missing -DFRAMEWORK_SHARED=OFF RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(result EQUAL 0 OR NOT "${out}\n${err}" MATCHES "OpenEXR|openexr")
+    message(FATAL_ERROR "Expected explicit EXR enablement to fail without its dependency: ${result}\n${out}\n${err}")
+endif()
 foreach(mode imageio-default imageio wic)
     run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}/tiff-native" -B "${TEST_BINARY}/native/${mode}"
         "-DFCG_SOURCE=${FCG_SOURCE}" "-DMODE=${mode}")
