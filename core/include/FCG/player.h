@@ -37,6 +37,9 @@
 // Forward declarations
 //
 
+// Dear ImGui types
+struct ImVec2;
+
 // Framework types
 namespace fcg {
 	class Gui;
@@ -44,9 +47,6 @@ namespace fcg {
 	class Frame;
 	class Camera;
 }
-
-// Dear ImGui types
-struct ImVec2;
 
 
 

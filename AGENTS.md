@@ -61,6 +61,32 @@ The block `// C++ STL` should always be included. If no STL headers are needed, 
 ```
 
 
+### *Forward declarations*:
+
+Group declarations by origin, with each group introduced by a short `//` comment naming that origin. Third-party groups come first, followed by the project's framework types. Use the labels `// Opaque SDL3 types` and `// Opaque Dear ImGui types` for opaque types of those libraries, and `// Framework types` for types from this project. Other libraries use `// <Library> types`, with a short qualifier when needed, e.g. `// cpp-embedlib types, as defined by the generated resource headers`. Do not end group comments with a period.
+
+Declare third-party types at global scope, one per line, using the same elaborated-type specifier (`struct` or `union`) as their definition:
+```C++
+// Opaque SDL3 types
+struct SDL_GPUDevice;
+struct SDL_GPURenderPass;
+```
+
+Declare framework types in a single tab-indented `namespace fcg` block and open nested namespaces inside it, rather than using qualified names in separate namespace blocks. Mark an implementation-detail namespace with a trailing comment:
+```C++
+// Framework types
+namespace fcg {
+	class Device;
+	class Frame;
+	namespace detail { // implementation details
+		class GuiScaling;
+	}
+}
+```
+
+Do not use export macros or doc comments on forward declarations. Leave no blank lines between declarations within a group, and exactly one blank line between groups. Omit the section entirely when nothing needs to be forward-declared.
+
+
 ### *Module-private symbols*:
 must open and close an anonymous namespace like so:
 ```C++
@@ -192,6 +218,51 @@ Whether the opening brace is on the same line as the struct name depends on how 
 
 
 ## Documenting the code
+
+### General commenting
+
+Avoid long, monolithic code sequences. Structure them into smaller logical blocks, each started by a short explanatory comment summarizing the purpose of the block. This summary typically uses double-slash `//` style.
+
+If a local scope is needed for a block, always open it with a single-line block comment `/* Descriptive local scope comment */ {`. The contents of this block comment can be descriptive for the entire scope if it is short (instead of the explanatory `//` comment), otherwise fall back to the usual separate `//`-style comment explaining the purpose of the block, with a generic scope-opening comment on the next line:
+```C++
+/// Do an independent prope of the file before forwarding the path to the loader. This way, we prevent it accepting the
+/// older v1 format which we want to reject for security reasons.
+/* open local scope */ {
+	std::ifstream file("data.bin", std::ios::binary);
+    int ver;
+    file >> ver;
+    if (ver < 2)
+        return false;
+}
+```
+The opening brace of such an explicitly opened local scope *always* goes on the same line as the comment, separated by a single space; it never goes on the next line.
+
+A 2-level hierarchy may be used to structure long blocks that are awkward to separate into smaller top-level blocks. The sub-blocks should be tightly packed without a blank line in between, with each sub-block opened by an explanatory comment of the form `// - description of the logical sub block`, or if a local scope is needed, `/* - description of the logical sub block */ {` (note the lower-case first letter). Simple toy example:
+```C++
+/// Perform initial sanity checks on the data
+/// - preamble
+std::vector<std::string> problems;
+std::vector<uint8_t> serialized;
+bool okay = true;
+/* - check size and stride */ {
+    auto view = data.acquireExclusiveView();
+    unsigned size = view.computeSize();
+    unsigned stride = view.computeStride();
+    if (size < stride) {
+        okay = false;
+        problems.emplace_back("data does not contain a full record");
+    }
+    if (size % stride != 0)
+        // not typically an issue, we will tolerate but log the problem
+        problems.emplace_back("data contains excess bytes");
+}  
+/// - serialize to bytes
+if (okay)
+    serialized = data.serializeToBytes(data);
+else
+    throw MalformedDataException(problems);
+```
+
 
 ### Doc comments
 
