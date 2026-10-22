@@ -170,8 +170,22 @@ examples, and optional libyuv default to `OFF`. Enable `SDLIMAGE_AVIF_SAVE` to a
 defaults to static with position-independent code; explicit `SDLIMAGE_AVIF_SHARED` or `SDLIMAGE_DEPS_SHARED` choices
 are respected. Supplied or installed SDL_image backends retain their existing capabilities and do not trigger this
 codec resolution. Normal variables, cache entries, and standard CPM source/download overrides remain supported.
+
+To enable TIFF loading, set `SDLIMAGE_TIF=ON` before adding the framework. For a source-built, non-vendored SDL_image
+using libtiff, FCG reuses a supplied `TIFF::tiff`, `TIFF::TIFF`, or `tiff` target, otherwise preferring an installed
+libtiff package (minimum version 4.0) before fetching libtiff 4.7.2. Use `CPM_TIFF_SOURCE` to supply a source checkout
+and `CPM_DOWNLOAD_TIFF=ON` to force source resolution. Source-built libtiff detects installed compression libraries;
+FCG does not fetch them. Deflate, JPEG, and other optional compression formats therefore depend on available
+libraries and the caller's upstream libtiff options. Tools, tests, contributed programs, documentation, the C++
+wrapper, OpenGL support, and upstream installation default to disabled. Codec linkage defaults to static with
+position-independent code; `SDLIMAGE_TIF_SHARED` takes precedence over `SDLIMAGE_DEPS_SHARED`, and explicit
+`tiff-static` settings are respected. Dynamic loading requires a shared libtiff. FCG installs its source-built shared
+TIFF runtime alongside the framework. SDL_image's native ImageIO backend (enabled by default on Apple platforms) and
+explicitly enabled Windows WIC backend do not need libtiff and skip this resolution. Supplied or installed SDL_image,
+disabled TIFF discovery, and an explicit dynamic TIFF library path also retain SDL_image's own handling.
+
 Set `SDLIMAGE_VENDORED=ON` to use SDL_image's own codec submodules instead; enabled submodules are fetched with the
-pinned SDL_image checkout. Enable `SDLIMAGE_JXL`, `SDLIMAGE_TIF`, or `SDLIMAGE_PNG_LIBPNG` similarly.
+pinned SDL_image checkout. Enable `SDLIMAGE_JXL` or `SDLIMAGE_PNG_LIBPNG` similarly.
 `SDLIMAGE_STRICT` makes missing dependencies a configuration error rather than silently disabling a requested codec.
 Vendored codecs link statically by default (`SDLIMAGE_DEPS_SHARED=OFF`), keeping them inside SDL_image.
 Options also work with `-D` on the command line. Prebuilt packages may support more or fewer formats.

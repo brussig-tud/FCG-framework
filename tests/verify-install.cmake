@@ -28,7 +28,7 @@ foreach(library Core Image Render Extras)
 endforeach()
 
 # The source-built shared backend must accompany the installed framework runtime.
-foreach(runtime IMAGE_RUNTIME AVIF_RUNTIME)
+foreach(runtime IMAGE_RUNTIME AVIF_RUNTIME TIFF_RUNTIME)
     if(${runtime} AND NOT EXISTS "${PREFIX}/lib/${${runtime}}" AND NOT EXISTS "${PREFIX}/bin/${${runtime}}")
         list(APPEND missing "${${runtime}} runtime")
     endif()

@@ -9,6 +9,9 @@ if(FCG_SDL_IMAGE_BUILT_HERE AND SDL3_BINARY_DIR)
         get_directory_property(avif_aom_source DIRECTORY "${libavif_SOURCE_DIR}" DEFINITION libaom_SOURCE_DIR)
         list(APPEND dependency_sources "-DTEST_LIBAVIF_SOURCE=${libavif_SOURCE_DIR}" "-DTEST_LIBAOM_SOURCE=${avif_aom_source}")
     endif()
+    if(FCG_LIBTIFF_BUILT_HERE)
+        list(APPEND dependency_sources "-DTEST_LIBTIFF_SOURCE=${TIFF_SOURCE_DIR}")
+    endif()
     add_test(NAME dependencies-smoke COMMAND "${CMAKE_COMMAND}"
         "-DFCG_SOURCE=${PROJECT_SOURCE_DIR}"
         "-DTEST_SOURCE=${CMAKE_CURRENT_LIST_DIR}"

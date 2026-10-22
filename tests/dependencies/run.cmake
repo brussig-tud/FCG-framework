@@ -20,9 +20,32 @@ endforeach()
 foreach(mode provided provided-namespaced provided-imported provided-empty package package-visible png-normal png-cache disabled unresolved
     avif-provided avif-package-normal avif-package-cache avif-local avif-system avif-dav1d avif-gav1
     avif-codec-provided avif-provided-dav1d
-    avif-overrides avif-save avif-alternate-encoder avif-shared avif-vendored)
+    avif-overrides avif-save avif-alternate-encoder avif-shared avif-vendored
+    tiff-provided-modern tiff-provided-legacy tiff-provided-raw tiff-package-normal tiff-package-cache
+    tiff-local tiff-cache tiff-overrides tiff-shared tiff-deps-shared tiff-vendored
+    tiff-runtime tiff-runtime-deps tiff-unresolved)
     run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${TEST_BINARY}/${mode}" -G "${TEST_GENERATOR}"
         ${common} "-DMODE=${mode}" -DFRAMEWORK_SHARED=OFF)
+endforeach()
+foreach(mode imageio-default imageio wic)
+    run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}/tiff-native" -B "${TEST_BINARY}/native/${mode}"
+        "-DFCG_SOURCE=${FCG_SOURCE}" "-DMODE=${mode}")
+endforeach()
+# Reconfiguration must follow current linkage choices rather than retain framework-generated cache defaults.
+foreach(pair "tiff-local;OFF" "tiff-shared;ON" "tiff-local;OFF")
+    list(GET pair 0 mode)
+    list(GET pair 1 shared)
+    run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${TEST_BINARY}/tiff-reconfigure" -G "${TEST_GENERATOR}"
+        ${common} "-DMODE=${mode}" "-DSDLIMAGE_TIF_SHARED=${shared}" -DFRAMEWORK_SHARED=OFF)
+endforeach()
+foreach(pair "tiff-conflict;requires shared libtiff" "tiff-unresolved-strict;TIFF")
+    list(GET pair 0 mode)
+    list(GET pair 1 diagnostic)
+    execute_process(COMMAND "${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${TEST_BINARY}/${mode}" -G "${TEST_GENERATOR}"
+        ${common} "-DMODE=${mode}" -DFRAMEWORK_SHARED=OFF RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+    if(result EQUAL 0 OR NOT "${out}\n${err}" MATCHES "${diagnostic}")
+        message(FATAL_ERROR "Expected TIFF configuration failure for ${mode}: ${result}\n${out}\n${err}")
+    endif()
 endforeach()
 execute_process(COMMAND "${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${TEST_BINARY}/avif-no-decoder" -G "${TEST_GENERATOR}"
     ${common} -DMODE=avif-no-decoder -DFRAMEWORK_SHARED=OFF RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
@@ -80,8 +103,40 @@ if(TEST_LIBAVIF_SOURCE AND TEST_LIBAOM_SOURCE)
             "-DTEST_LIBAVIF_SOURCE=${TEST_LIBAVIF_SOURCE}" "-DTEST_LIBAOM_SOURCE=${TEST_LIBAOM_SOURCE}")
         run("${CMAKE_COMMAND}" --build "${binary}" --target optional-codec Extras --config Debug --parallel)
         include("${binary}/consumer-Debug.cmake")
-        run("${consumer}" "${IMAGE_DEPENDENCY_SOURCE}/test/sample.avif" 23 42)
+        run("${consumer}" "${IMAGE_DEPENDENCY_SOURCE}/test/sample.avif" 23 42 AVIF)
         run("${CMAKE_COMMAND}" --install "${binary}" --config Debug --prefix "${binary}/prefix")
+    endforeach()
+endif()
+if(TEST_LIBTIFF_SOURCE)
+    foreach(pair "tiff-real-normal;OFF" "tiff-real-shared-cache;ON")
+        list(GET pair 0 mode)
+        list(GET pair 1 shared)
+        set(binary "${TEST_BINARY}/${mode}-${shared}")
+        run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${binary}" -G "${TEST_GENERATOR}"
+            ${common} "-DMODE=${mode}" "-DFRAMEWORK_SHARED=${shared}"
+            "-DTEST_LIBTIFF_SOURCE=${TEST_LIBTIFF_SOURCE}")
+        run("${CMAKE_COMMAND}" --build "${binary}" --target optional-codec Extras --config Debug --parallel)
+        include("${binary}/consumer-Debug.cmake")
+        if(EXISTS "${binary}/tiff-runtime-Debug.cmake" AND NOT CMAKE_HOST_WIN32)
+            include("${binary}/tiff-runtime-Debug.cmake")
+            if(CMAKE_HOST_APPLE)
+                set(tiff_loader_path "DYLD_LIBRARY_PATH=${tiff_runtime_dir}:$ENV{DYLD_LIBRARY_PATH}")
+            else()
+                set(tiff_loader_path "LD_LIBRARY_PATH=${tiff_runtime_dir}:$ENV{LD_LIBRARY_PATH}")
+            endif()
+            run("${CMAKE_COMMAND}" -E env "${tiff_loader_path}"
+                "${consumer}" "${IMAGE_DEPENDENCY_SOURCE}/test/sample.tif" 23 42 TIFF)
+        else()
+            run("${consumer}" "${IMAGE_DEPENDENCY_SOURCE}/test/sample.tif" 23 42 TIFF)
+        endif()
+        run("${CMAKE_COMMAND}" --install "${binary}" --config Debug --prefix "${binary}/prefix")
+        file(GLOB exports "${binary}/prefix/lib/cmake/Fixture/*.cmake")
+        foreach(export IN LISTS exports)
+            file(READ "${export}" contents)
+            if(contents MATCHES "fcg-sdl-image|TIFF::|FCG_LIBTIFF_BUILT_HERE")
+                message(FATAL_ERROR "TIFF implementation details leaked into ${export}")
+            endif()
+        endforeach()
     endforeach()
 endif()
 message(STATUS "Common dependency startup, caller overrides, target reuse, linkage and export checks passed")

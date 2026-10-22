@@ -47,6 +47,13 @@ if (FCG_INCLUDE_PACKAGING)
 			set(avif_runtime "$<TARGET_FILE_NAME:avif>")
 		endif()
 	endif()
+	set(tiff_runtime "")
+	if(FCG_LIBTIFF_BUILT_HERE)
+		get_target_property(tiff_runtime_type tiff TYPE)
+		if(tiff_runtime_type STREQUAL "SHARED_LIBRARY")
+			set(tiff_runtime "$<TARGET_FILE_NAME:tiff>")
+		endif()
+	endif()
 	add_test(
 		NAME install-smoke
 		COMMAND "${CMAKE_COMMAND}"
@@ -61,6 +68,7 @@ if (FCG_INCLUDE_PACKAGING)
 			"-DPREFIX=${CMAKE_CURRENT_BINARY_DIR}/install-prefix"
 			"-DIMAGE_RUNTIME=${image_runtime}"
 			"-DAVIF_RUNTIME=${avif_runtime}"
+			"-DTIFF_RUNTIME=${tiff_runtime}"
 			-P "${CMAKE_CURRENT_SOURCE_DIR}/verify-install.cmake"
 	)
 	set_tests_properties(install-smoke-verify PROPERTIES
