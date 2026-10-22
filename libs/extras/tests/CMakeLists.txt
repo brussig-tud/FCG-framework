@@ -1,6 +1,6 @@
 
-# Compile the dialog snippets and Image-dependent filter example against their public targets.
-add_library(extras-examples OBJECT file_dialog_examples.cpp)
+# Compile the module-guide snippets against their public targets.
+add_library(extras-examples OBJECT file_dialog_examples.cpp extras_gui_examples.cpp)
 target_link_libraries(extras-examples PRIVATE Extras Image)
 add_executable(extras-public-smoke public.cpp $<TARGET_OBJECTS:extras-examples>)
 target_link_libraries(extras-public-smoke PRIVATE Extras Image)

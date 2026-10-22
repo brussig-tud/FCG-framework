@@ -36,7 +36,7 @@ fcg_register_documentation(
     LIBRARY Extras
     LINK_TARGET FCG-Framework::Extras
     OVERVIEW fcg_extras_overview
-    MODULES fcg_file_dialogs
+    MODULES fcg_file_dialogs fcg_extra_gui
     INPUTS "${CMAKE_CURRENT_LIST_DIR}/../libs/extras/include/FCG/Extras"
     EXAMPLE_DIRS "${CMAKE_CURRENT_LIST_DIR}/../libs/extras/tests"
     PREDEFINED FCG_EXTRAS_EXPORT=

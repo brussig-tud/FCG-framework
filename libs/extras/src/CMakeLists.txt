@@ -3,6 +3,7 @@
 set(SOURCES
 	file_dialog.cpp
 	file_filters.cpp
+	gui.cpp
 )
 
 # Collect headers
@@ -11,6 +12,7 @@ set(HEADERS
 	${FCG_EXTRAS_BASE_DIR}/include/FCG/Extras/all.h
 	${FCG_EXTRAS_BASE_DIR}/include/FCG/Extras/file_dialog.h
 	${FCG_EXTRAS_BASE_DIR}/include/FCG/Extras/file_filters.h
+	${FCG_EXTRAS_BASE_DIR}/include/FCG/Extras/gui.h
 
 	# Internal
 	#<none yet>
