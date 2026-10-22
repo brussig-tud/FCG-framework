@@ -8,8 +8,31 @@
 #include <cmath>
 #include <utility>
 
+// SDL3 library
+#include <SDL3/SDL_properties.h>
+#include <SDL3/SDL_surface.h>
+
 // Local includes
 #include "image_internal.h"
+
+
+
+//////
+//
+// Module-private symbols
+//
+
+// Anonymous namespace begin
+namespace {
+
+/// Surface property names shared by all annotation readers, writers and conversion copies.
+constexpr std::array loadAdjustmentProperties{
+	"fcg.image.load.color_primaries", "fcg.image.load.transfer_characteristics",
+	"fcg.image.load.color_range", "fcg.image.load.colorspace"
+};
+
+// Anonymous namespace end
+}
 
 
 
@@ -27,6 +50,59 @@ namespace fcg::detail {
 //
 // Function implementations
 //
+
+auto filterImageLoadAdjustments (
+	ImageLoadAdjustments adjustments, SDL_Colorspace recorded, SDL_Colorspace current
+) -> ImageLoadAdjustments
+{
+	if (SDL_COLORSPACEPRIMARIES(recorded) != SDL_COLORSPACEPRIMARIES(current))
+		adjustments.colorPrimaries = ImageLoadAdjustment::None;
+	if (SDL_COLORSPACETRANSFER(recorded) != SDL_COLORSPACETRANSFER(current))
+		adjustments.transferCharacteristics = ImageLoadAdjustment::None;
+	if (SDL_COLORSPACERANGE(recorded) != SDL_COLORSPACERANGE(current))
+		adjustments.colorRange = ImageLoadAdjustment::None;
+	return adjustments;
+}
+
+auto readImageLoadAdjustments (SDL_Surface &surface) -> std::expected<ImageLoadAdjustments, ImageError>
+{
+	const auto properties = SDL_GetSurfaceProperties(&surface);
+	if (!properties)
+		return imageSDLError(ImageErrorCode::SDLFailure, "Reading image loading annotations");
+	if (!SDL_HasProperty(properties, loadAdjustmentProperties[3]))
+		return ImageLoadAdjustments{};
+	const auto read = [properties] (const char *name) {
+		const auto value = SDL_GetNumberProperty(properties, name, 0);
+		return value >= 0 && value <= 3 ? static_cast<ImageLoadAdjustment>(value) : ImageLoadAdjustment::None;
+	};
+	const auto recorded = static_cast<SDL_Colorspace>(SDL_GetNumberProperty(properties, loadAdjustmentProperties[3], 0));
+	return filterImageLoadAdjustments({read(loadAdjustmentProperties[0]), read(loadAdjustmentProperties[1]),
+		read(loadAdjustmentProperties[2])}, recorded, SDL_GetSurfaceColorspace(&surface));
+}
+
+auto writeImageLoadAdjustments (SDL_Surface &surface, ImageLoadAdjustments adjustments)
+	-> std::expected<void, ImageError>
+{
+	const auto properties = SDL_GetSurfaceProperties(&surface);
+	if (!properties)
+		return imageSDLError(ImageErrorCode::SDLFailure, "Writing image loading annotations");
+	// Clear copied records too: explicitly converted components must not regain old annotations after SDL edits.
+	if (adjustments.colorPrimaries == ImageLoadAdjustment::None
+		&& adjustments.transferCharacteristics == ImageLoadAdjustment::None
+		&& adjustments.colorRange == ImageLoadAdjustment::None) {
+		for (const auto *name : loadAdjustmentProperties)
+			if (SDL_HasProperty(properties, name) && !SDL_ClearProperty(properties, name))
+				return imageSDLError(ImageErrorCode::SDLFailure, "Clearing image loading annotations");
+		return {};
+	}
+	const std::array values{static_cast<Sint64>(adjustments.colorPrimaries),
+		static_cast<Sint64>(adjustments.transferCharacteristics), static_cast<Sint64>(adjustments.colorRange),
+		static_cast<Sint64>(SDL_GetSurfaceColorspace(&surface))};
+	for (std::size_t i = 0; i < values.size(); ++i)
+		if (!SDL_SetNumberProperty(properties, loadAdjustmentProperties[i], values[i]))
+			return imageSDLError(ImageErrorCode::SDLFailure, "Writing image loading annotations");
+	return {};
+}
 
 auto imageRGBColorspace (SDL_ColorPrimaries primaries, SDL_TransferCharacteristics transfer) -> SDL_Colorspace {
 	return static_cast<SDL_Colorspace>(SDL_DEFINE_COLORSPACE(SDL_COLOR_TYPE_RGB, SDL_COLOR_RANGE_FULL,

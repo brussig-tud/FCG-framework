@@ -86,7 +86,8 @@
 /// management for identified images. <tt>\ref fcg::Image::uploadStoredSamples "uploadStoredSamples"</tt> preserves
 /// samples regardless of metadata. Preservation takes priority over an enabled fallback where its policy applies.
 /// An identified custom gamut or unsupported transfer is distinct from missing metadata: conditional preservation
-/// and metadata guesses retain that declaration. Use unconditional sample preservation when the shader should
+/// treats that declaration as established. Handlers may convert source encodings during decoding; these policies
+/// operate on the returned image. Use unconditional sample preservation when the shader should
 /// interpret those values itself. Sample preservation does not make encoded colors linear.
 /// To establish metadata on a newly loaded image instead, use
 /// <tt>\ref fcg::ImageLoader::loadAndGuess "ImageLoader::loadAndGuess"</tt> or the inherited handler alias
@@ -300,9 +301,12 @@ public:
 	////
 	// Methods
 
-	/// \brief Snapshot the current storage, palette, transparency and color encoding.
+	/// \brief Snapshot the current storage, palette, transparency, color encoding and loading annotations.
 	///
-	/// \return Metadata, or \c ImageErrorCode::InvalidState for an empty image. External metadata edits are reflected.
+	/// \return
+	/// 	Metadata, \c ImageErrorCode::InvalidState for an empty image, \c ImageErrorCode::UnsupportedFormat for
+	/// 	unrecognized storage, or \c ImageErrorCode::SDLFailure if surface metadata cannot be queried. External
+	/// 	metadata edits are reflected.
 	[[nodiscard]] auto pixelInfo () const -> std::expected<ImagePixelInfo, ImageError>;
 
 	/// \brief Analyze potential conversion effects without allocating output pixels or scanning sample values.
@@ -318,6 +322,8 @@ public:
 	///
 	/// Omitted colorspace preserves RGB encoding and white-point units. A changed colorspace uses its default
 	/// white-point units. Relative HDR headroom is retained, and tone mapping is disabled.
+	/// The output retains loading annotations for unchanged color components and clears annotations for changed ones;
+	/// this explicit conversion does not add loading adaptations. This image's annotations remain unchanged.
 	/// Source and destination RGB encoding must be supported even when only the pixel layout changes. Use
 	/// \c ImageLoader::loadAndGuess or \c ImageFormatHandler::loadAndGuess to supply missing metadata when loading,
 	/// or \c uploadStoredSamples when only a GPU texture of the stored numeric samples is needed.

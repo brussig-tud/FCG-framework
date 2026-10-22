@@ -32,6 +32,17 @@
 /// <tt>\ref fcg::ImageLoader::loadAndGuess "ImageLoader::loadAndGuess"</tt> or the inherited handler operation
 /// <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt>. To upload numeric samples
 /// without interpreting color, see <tt>\ref fcg::Image::uploadStoredSamples "Image::uploadStoredSamples"</tt>.
+///
+/// \subsection fcg_pixel_formats_workflows_loading Inspecting loading actions
+/// <tt>\ref fcg::ImagePixelInfo::loadAdjustments "ImagePixelInfo::loadAdjustments"</tt> reports whether loading guessed
+/// or adapted each color property. Test the flags of <tt>\ref fcg::ImageLoadAdjustment "ImageLoadAdjustment"</tt> with
+/// the bitwise operators; a property can be both guessed and adapted:
+/// \snippet pixel_examples.cpp loading_adjustments
+/// <tt>\ref fcg::ImageLoadAdjustment::None "None"</tt> means no loading action was recorded. It does not prove that a
+/// source declaration exists. Explicit <tt>\ref fcg::Image::converted "Image::converted"</tt> clears annotations only
+/// for color components it changes and retains annotations for unchanged components. An annotation is hidden if a raw
+/// SDL colorspace edit changes that component; restoring the recorded value can reveal it again. Pixel writes and
+/// texture uploads retain the CPU image's annotations.
 
 
 
@@ -183,6 +194,39 @@ struct PixelFormatInfo
 	bool directAccess = false;
 };
 
+/// Flags describing a loader's actions on one color property.
+enum class ImageLoadAdjustment : unsigned
+{
+	/// No loader action is recorded; this does not establish that the source explicitly declared the property.
+	None = 0x0,
+
+	/// The loader inferred a missing source property from the input and format conventions.
+	Guessed = 0x1,
+
+	/// The loader adapted samples to a different value of this color property while decoding.
+	Adapted = 0x2,
+
+	/// The loader inferred the source property and then adapted samples using that inferred interpretation.
+	GuessedAndAdapted = Guessed | Adapted
+};
+
+/// \brief Recorded loader actions for the image's current color properties.
+///
+/// Each field defaults to \c ImageLoadAdjustment::None. These annotations describe loading actions, including
+/// adaptations performed during decoding; explicit \c Image::converted operations do not add loading actions.
+/// They do not classify unreported defaults or transformations inside a third-party decoder.
+struct ImageLoadAdjustments
+{
+	/// Loader actions on color primaries and their reference white point.
+	ImageLoadAdjustment colorPrimaries = ImageLoadAdjustment::None;
+
+	/// Loader actions on the transfer characteristics.
+	ImageLoadAdjustment transferCharacteristics = ImageLoadAdjustment::None;
+
+	/// Loader actions on the color range.
+	ImageLoadAdjustment colorRange = ImageLoadAdjustment::None;
+};
+
 /// An owning snapshot of image storage and color metadata.
 struct ImagePixelInfo
 {
@@ -200,6 +244,13 @@ struct ImagePixelInfo
 
 	/// Color encoding retained by native and convenience pixel access.
 	SDL_Colorspace colorspace = SDL_COLORSPACE_UNKNOWN;
+
+	/// \brief Loader actions recorded for matching current color components.
+	///
+	/// An annotation is suppressed when its component differs from the value recorded by the loader. Restoring that
+	/// value through raw SDL access can make the annotation visible again. \c Image::converted permanently clears
+	/// annotations on the output's changed color components and preserves those on unchanged components.
+	ImageLoadAdjustments loadAdjustments{};
 
 	/// Whether a palette is attached.
 	bool hasPalette = false;
@@ -297,6 +348,28 @@ struct PixelConversionInfo
 //
 // Functions
 //
+
+/// \brief Combine loader-action flags.
+///
+/// \param left First set of actions.
+/// \param right Second set of actions.
+///
+/// \return The union of both sets; guessing combined with adaptation is \c ImageLoadAdjustment::GuessedAndAdapted.
+[[nodiscard]] constexpr auto operator | (ImageLoadAdjustment left, ImageLoadAdjustment right) noexcept
+	-> ImageLoadAdjustment {
+	return static_cast<ImageLoadAdjustment>(static_cast<unsigned>(left) | static_cast<unsigned>(right));
+}
+
+/// \brief Select the loader-action flags present in both operands.
+///
+/// \param left First set of actions.
+/// \param right Second set of actions.
+///
+/// \return The shared actions, or \c ImageLoadAdjustment::None if there are none.
+[[nodiscard]] constexpr auto operator & (ImageLoadAdjustment left, ImageLoadAdjustment right) noexcept
+	-> ImageLoadAdjustment {
+	return static_cast<ImageLoadAdjustment>(static_cast<unsigned>(left) & static_cast<unsigned>(right));
+}
 
 /// \brief Describe a native storage format independently of any image.
 ///

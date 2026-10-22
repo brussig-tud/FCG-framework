@@ -116,29 +116,48 @@ auto ImageFormatHandler::loadAndGuess (const std::filesystem::path &path) const 
 	return load(path, {true, true, true});
 }
 
-auto ImageFormatHandler::finishLoading (std::expected<Image, ImageError> image, ImageLoaderOptions options)
-	-> std::expected<Image, ImageError>
+auto ImageFormatHandler::finishLoading (
+	std::expected<Image, ImageError> image, ImageLoaderOptions options, SDL_Colorspace guesses,
+	ImageLoadAdjustments adjustments
+) -> std::expected<Image, ImageError>
 {
 	if (!image || !image->handle())
 		return image;
-	if (!options.guessColorPrimaries && !options.guessTransferCharacteristics && !options.guessColorRange)
-		return image;
+	const bool infer = options.guessColorPrimaries || options.guessTransferCharacteristics || options.guessColorRange;
 	const auto original = SDL_GetSurfaceColorspace(image->handle());
 	if (SDL_ISPIXELFORMAT_FOURCC(image->format()))
 		return image;
 	// Missing components are filled independently; custom components are explicit and remain untouched.
-	const auto assumed = detail::imageRGBColorspace(
-		options.guessColorPrimaries ? SDL_COLOR_PRIMARIES_BT709 : SDL_COLORSPACEPRIMARIES(original),
-		!options.guessTransferCharacteristics ? SDL_COLORSPACETRANSFER(original)
-			: SDL_ISPIXELFORMAT_FLOAT(image->format()) ? SDL_TRANSFER_CHARACTERISTICS_LINEAR
-			: SDL_TRANSFER_CHARACTERISTICS_SRGB);
 	const auto fallback = static_cast<SDL_Colorspace>(SDL_DEFINE_COLORSPACE(SDL_COLOR_TYPE_RGB,
-		options.guessColorRange ? SDL_COLOR_RANGE_FULL : SDL_COLORSPACERANGE(original),
-		SDL_COLORSPACEPRIMARIES(assumed), SDL_COLORSPACETRANSFER(assumed),
+		options.guessColorRange ? SDL_COLORSPACERANGE(guesses) : SDL_COLORSPACERANGE(original),
+		options.guessColorPrimaries ? SDL_COLORSPACEPRIMARIES(guesses) : SDL_COLORSPACEPRIMARIES(original),
+		options.guessTransferCharacteristics ? SDL_COLORSPACETRANSFER(guesses) : SDL_COLORSPACETRANSFER(original),
 		SDL_MATRIX_COEFFICIENTS_IDENTITY, SDL_CHROMA_LOCATION_NONE));
-	const auto encoding = detail::fillImageEncoding(original, fallback);
+	const auto encoding = infer ? detail::fillImageEncoding(original, fallback) : original;
+	if (encoding == original && adjustments.colorPrimaries == ImageLoadAdjustment::None
+		&& adjustments.transferCharacteristics == ImageLoadAdjustment::None && adjustments.colorRange == ImageLoadAdjustment::None)
+		return image;
+	// Preserve matching forwarded annotations and combine completed actions with actual new inferences.
+	const auto previous = detail::readImageLoadAdjustments(*image->handle());
+	if (!previous)
+		return std::unexpected(previous.error());
+	adjustments.colorPrimaries = adjustments.colorPrimaries | previous->colorPrimaries;
+	adjustments.transferCharacteristics = adjustments.transferCharacteristics | previous->transferCharacteristics;
+	adjustments.colorRange = adjustments.colorRange | previous->colorRange;
+	const auto primaries = SDL_COLORSPACEPRIMARIES(encoding);
+	const auto transfer = SDL_COLORSPACETRANSFER(encoding);
+	if (SDL_COLORSPACEPRIMARIES(original) != primaries
+		&& primaries != SDL_COLOR_PRIMARIES_UNKNOWN && primaries != SDL_COLOR_PRIMARIES_UNSPECIFIED)
+		adjustments.colorPrimaries = adjustments.colorPrimaries | ImageLoadAdjustment::Guessed;
+	if (SDL_COLORSPACETRANSFER(original) != transfer
+		&& transfer != SDL_TRANSFER_CHARACTERISTICS_UNKNOWN && transfer != SDL_TRANSFER_CHARACTERISTICS_UNSPECIFIED)
+		adjustments.transferCharacteristics = adjustments.transferCharacteristics | ImageLoadAdjustment::Guessed;
+	if (SDL_COLORSPACERANGE(original) != SDL_COLORSPACERANGE(encoding) && SDL_COLORSPACERANGE(encoding) != SDL_COLOR_RANGE_UNKNOWN)
+		adjustments.colorRange = adjustments.colorRange | ImageLoadAdjustment::Guessed;
 	if (encoding != original && !SDL_SetSurfaceColorspace(image->handle(), encoding))
-		return detail::imageSDLError(ImageErrorCode::SDLFailure, "Assigning image metadata assumptions");
+		return detail::imageSDLError(ImageErrorCode::SDLFailure, "Assigning inferred image metadata");
+	if (auto recorded = detail::writeImageLoadAdjustments(*image->handle(), adjustments); !recorded)
+		return std::unexpected(recorded.error());
 	return image;
 }
 

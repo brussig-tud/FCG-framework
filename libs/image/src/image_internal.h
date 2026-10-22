@@ -61,6 +61,18 @@ struct EncodedImage
 // Functions
 //
 
+/// Suppress annotations independently when the current color component differs from its recorded value.
+[[nodiscard]] auto filterImageLoadAdjustments (
+	ImageLoadAdjustments adjustments, SDL_Colorspace recorded, SDL_Colorspace current
+) -> ImageLoadAdjustments;
+
+/// Read surface-owned loader annotations, suppressing components that no longer match the recorded encoding.
+[[nodiscard]] auto readImageLoadAdjustments (SDL_Surface &surface) -> std::expected<ImageLoadAdjustments, ImageError>;
+
+/// Store annotations against the surface's current encoding, removing all records when every action is absent.
+[[nodiscard]] auto writeImageLoadAdjustments (SDL_Surface &surface, ImageLoadAdjustments adjustments)
+	-> std::expected<void, ImageError>;
+
 /// Build a full-range RGB encoding with independently identified primaries and transfer.
 [[nodiscard]] auto imageRGBColorspace (SDL_ColorPrimaries primaries, SDL_TransferCharacteristics transfer)
 	-> SDL_Colorspace;

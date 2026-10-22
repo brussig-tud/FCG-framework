@@ -15,7 +15,7 @@
 /// Use <tt>\ref fcg::OpenEXRImageFormatHandler "OpenEXRImageFormatHandler"</tt> directly or load through
 /// <tt>\ref fcg::ImageLoader::global "ImageLoader::global"</tt>.
 /// The returned extent is the data window, rebased to pixel <tt>(0, 0)</tt>. Recognized color metadata supplies
-/// the encoding; unidentified components remain unspecified unless loader assumptions are enabled. Enable
+/// the encoding; unidentified components remain unspecified unless loader inference requests are enabled. Enable
 /// <tt>FCG_IMAGE_OPENEXR</tt> before configuring the framework.
 ///
 /// \section fcg_openexr_usage Getting started
@@ -28,7 +28,9 @@
 /// each representable component; for example, linear Rec.2020 and linear P3-D65 can be uploaded with color conversion.
 /// With an absent, empty or <tt>unknown</tt> identifier, explicit chromaticities establish primaries and linear transfer.
 /// Without either attribute, transfer is linear and primaries are unspecified; an empty or <tt>unknown</tt> identifier
-/// without chromaticities leaves transfer unspecified too.
+/// without chromaticities leaves transfer unspecified too. Enabled inference requests choose BT.709 primaries,
+/// linear transfer and full range for missing components. These are this handler's fallbacks; an absent identifier
+/// does not establish the source gamut. Guessing retains decoded samples.
 ///
 /// ACES and Adobe RGB gamuts, the <tt>data</tt> identifier and unrecognized identifiers retain custom components.
 /// Recognized gamma and HLG transfers can also be unsupported for color conversion. Missing-metadata guesses retain
@@ -97,7 +99,7 @@ namespace fcg {
 /// \brief Decodes single-part flat OpenEXR color images into RGB or RGBA 32-bit floating-point pixels.
 ///
 /// The returned extent is the data window, rebased to pixel <tt>(0, 0)</tt>. Recognized color metadata supplies
-/// the encoding; unidentified components remain unspecified unless loader assumptions are enabled. The inherited
+/// the encoding; unidentified components remain unspecified unless loader inference requests are enabled. The inherited
 /// \c loadAndGuess supplies missing metadata. Identified custom components, including ACES gamuts and the
 /// <tt>data</tt> identifier, are retained. Enable <tt>FCG_IMAGE_OPENEXR</tt> before configuring the framework.
 ///
@@ -141,7 +143,7 @@ public:
 	///
 	/// \param bytes Encoded input, borrowed for this call.
 	/// \param hint Optional extension; the signature determines whether this decoder can load the input.
-	/// \param options Optional assumptions for missing RGB metadata; \c loadAndGuess enables every assumption.
+	/// \param options Requests to infer missing RGB metadata; \c loadAndGuess enables every request.
 	///
 	/// \return
 	/// 	The image, \c ImageErrorCode::InvalidArgument for invalid arguments,

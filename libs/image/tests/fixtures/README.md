@@ -20,6 +20,8 @@ third-party image content. It tests generic-only static registration without lin
 HDR/PFM tests construct original small encoded inputs in memory. EXR-enabled tests generate additional PIZ/ZIP,
 HALF/FLOAT and tiled/scanline files with the OpenEXR writer in the test scratch directory. Generated color-metadata
 fixtures cover primary and white-point recognition, explicit transfers, selective guessing, and metadata precedence.
+Radiance fixtures also check gamma decoding and RGB/XYZ conversion with Bradford white adaptation against independent
+reference values. Primary guessing uses the conventional Radiance gamut, whose conversion changes numeric samples.
 
 The regular tests do not require the 3 versions of the third-party "memorial" image. With OpenEXR enabled, the separate
 `image-exr-assets` test compares local `assets/memorial.exr`, `assets/memorial.hdr`, and `assets/memorial.pfm` when all
@@ -28,6 +30,6 @@ present, decoding errors or mismatched samples fail the comparison. The images a
 not included among these fixtures.
 
 The GPU `texture-smoke` test also uses any locally available Memorial file supported by the enabled handlers. It
-compares texture samples with decoded samples after loading with guesses, using an upload fallback, and using both
-sample-preservation policies. Missing files are ignored; EXR is checked only when its handler is enabled. The mandatory
-generated-fixture tests continue to cover the upload policies without any teaching assets.
+compares texture samples with the image returned by each loading route: guessing, an upload fallback, and both
+sample-preservation policies. Missing files are ignored; EXR is checked only when its handler is enabled. A mandatory
+generated Radiance fixture checks conversion and upload of negative and above-one components without teaching assets.

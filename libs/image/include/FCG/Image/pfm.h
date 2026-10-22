@@ -16,7 +16,10 @@
 /// <tt>\ref fcg::ImageLoader::global "ImageLoader::global"</tt>.
 /// Both endian orders and LF/CRLF text headers are supported, with comments and blank lines between records.
 /// The raster must consume the remaining input. By default, color primaries and transfer are unspecified; loader
-/// options or the inherited <tt>\ref fcg::ImageFormatHandler::loadAndGuess "loadAndGuess"</tt> can supply assumptions.
+/// options or the inherited <tt>\ref fcg::ImageFormatHandler::loadAndGuess "loadAndGuess"</tt> can request inference.
+///
+/// This handler guesses BT.709 primaries and linear transfer when the corresponding requests are enabled. Range is
+/// full. These format-specific fallbacks label the decoded samples without changing them.
 ///
 /// \section fcg_pfm_usage Getting started
 /// \snippet hdr_examples.cpp pfm_direct
@@ -80,7 +83,8 @@ namespace fcg {
 ///
 /// Both endian orders and LF/CRLF text headers are supported, with comments and blank lines between records.
 /// The raster must consume the remaining input. Color primaries and transfer are unspecified by default; use
-/// \c ImageLoaderOptions or the inherited \c loadAndGuess to supply missing metadata.
+/// \c ImageLoaderOptions or the inherited \c loadAndGuess to infer missing metadata. This handler chooses BT.709
+/// primaries and linear transfer for enabled requests; range is full. Guessing retains decoded samples.
 ///
 /// \note
 ///         Rows use the conventional bottom-to-top file order, including when a producer uses another
@@ -122,7 +126,7 @@ public:
 	///
 	/// \param bytes Encoded input, borrowed for this call.
 	/// \param hint Optional extension; the signature determines whether this decoder can load the input.
-	/// \param options Optional assumptions for missing RGB metadata; \c loadAndGuess enables every assumption.
+	/// \param options Requests to infer missing RGB metadata; \c loadAndGuess enables every request.
 	///
 	/// \return
 	/// 	The image, \c ImageErrorCode::InvalidArgument for invalid arguments,

@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <span>
 #include <stdexcept>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -571,7 +572,35 @@ void imageUploadPolicies (fcg::Device &device)
 	(void)take(yuv.uploadStoredSamplesWithFallback(device, SDL_COLORSPACE_SRGB));
 }
 
-/// Compare optional local HDR uploads with native stored samples, without committing third-party assets.
+/// Upload a generated Radiance image after conventional-gamut inference and conversion.
+void imageRadianceUpload (fcg::Device &device)
+{
+	const std::string_view header = "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 1\n";
+	const auto prefix = std::as_bytes(std::span(header));
+	std::vector<std::byte> bytes(prefix.begin(), prefix.end());
+	for (const unsigned value : {0u, 128u, 0u, 130u})
+		bytes.push_back(static_cast<std::byte>(value));
+	auto image = take(fcg::ImageLoader::global().loadAndGuess(bytes, "png"));
+	require(SDL_GetSurfaceColorspace(image.handle()) == SDL_COLORSPACE_SRGB_LINEAR,
+		"Radiance inferred output was not linear BT.709");
+	const auto before = take(image.pixelInfo()).loadAdjustments;
+	require(before.colorPrimaries == fcg::ImageLoadAdjustment::GuessedAndAdapted,
+		"Radiance inference/adaptation was not annotated");
+	const auto uploaded = read<glm::vec4>(take(image.upload(device)))[0];
+	(void)take(image.uploadWithFallback(device, SDL_COLORSPACE_SRGB_LINEAR));
+	(void)take(image.uploadStoredSamples(device));
+	const auto after = take(image.pixelInfo()).loadAdjustments;
+	require(before.colorPrimaries == after.colorPrimaries && before.transferCharacteristics == after.transferCharacteristics
+		&& before.colorRange == after.colorRange, "Upload changed CPU loading annotations");
+	std::array<float, 3> expected;
+	std::memcpy(expected.data(), image.handle()->pixels, sizeof(expected));
+	for (unsigned c = 0; c < 3; ++c)
+		near(uploaded[c], expected[c]);
+	require(uploaded.r < 0 && uploaded.g > 1 && uploaded.b > 0,
+		"Radiance conversion/upload clipped negative or HDR values");
+}
+
+/// Compare optional local HDR uploads with their returned image samples, without committing third-party assets.
 void imageAssetUploads (fcg::Device &device, const std::filesystem::path &directory)
 {
 	for (const auto *name : {"memorial.hdr", "memorial.pfm", "memorial.exr"})
@@ -580,20 +609,22 @@ void imageAssetUploads (fcg::Device &device, const std::filesystem::path &direct
 			|| !std::filesystem::is_regular_file(directory / name))
 			continue;
 		auto image = take(fcg::ImageLoader::global().load(directory / name));
+		auto guessed = take(fcg::ImageLoader::global().loadAndGuess(directory / name));
 		require(!image.upload(device), "Default asset upload guessed missing metadata");
 		for (unsigned route = 0; route < 4; ++route)
 		{
+			const auto &source = route == 3 ? guessed : image;
 			auto uploaded = route == 0 ? image.uploadWithFallback(device, SDL_COLORSPACE_SRGB_LINEAR)
 				: route == 1 ? image.uploadStoredSamples(device) : route == 2 ? image.uploadStoredSamplesIfUnknown(device)
-				: take(fcg::ImageLoader::global().loadAndGuess(directory / name)).upload(device);
+				: guessed.upload(device);
 			const auto pixels = read<glm::vec4>(take(std::move(uploaded)));
 			float peak = 0;
 			for (unsigned y = 0; y < unsigned(image.height()); ++y)
 				for (unsigned x = 0; x < unsigned(image.width()); ++x)
 				{
 					std::array<float, 3> original;
-					std::memcpy(original.data(), static_cast<const std::byte*>(image.handle()->pixels)
-						+ std::size_t(y) * image.pitch() + std::size_t(x) * 12, 12);
+					std::memcpy(original.data(), static_cast<const std::byte*>(source.handle()->pixels)
+						+ std::size_t(y) * source.pitch() + std::size_t(x) * 12, 12);
 					const auto pixel = pixels[std::size_t(y) * image.width() + x];
 					for (unsigned c = 0; c < 3; ++c)
 						near(pixel[c], original[c]);
@@ -1072,6 +1103,7 @@ auto main (int argc, char **argv) -> int
 			transfers(*device, *otherDevice);
 			images(*device);
 			imageUploadPolicies(*device);
+			imageRadianceUpload(*device);
 			if (argc > 1)
 				imageAssetUploads(*device, argv[1]);
 			fullscreen(*device);

@@ -302,7 +302,8 @@ auto OpenEXRImageFormatHandler::load (
 		return accepted ? std::unexpected(ImageError{ImageErrorCode::UnsupportedFormat, "Not an OpenEXR image"})
 			: std::unexpected(std::move(accepted.error()));
 	try {
-		return finishLoading(decodeEXR(bytes), options);
+		// Conventional linear Rec.709 is a fallback, never evidence against explicit EXR declarations.
+		return finishLoading(decodeEXR(bytes), options, SDL_COLORSPACE_SRGB_LINEAR);
 	} catch (const IEX_NAMESPACE::BaseExc &error) {
 		return detail::imageDecodeError(std::string("Decoding OpenEXR: ") + error.what());
 	}

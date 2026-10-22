@@ -58,7 +58,7 @@ namespace hdr_examples {
 #endif
 //! [exr_direct]
 
-/// \brief Load an image while assuming every missing RGB encoding component.
+/// \brief Ask the successful handler to infer every missing RGB encoding component.
 ///
 /// \param path The encoded image file.
 ///
@@ -72,7 +72,7 @@ namespace hdr_examples {
 ///
 /// \param path The encoded image file.
 ///
-/// \return The owned image with identified or assumed primaries, or a decoding error.
+/// \return The owned image with identified or inferred primaries, or a decoding error.
 [[nodiscard]] auto loadWithGuessedPrimaries (const std::filesystem::path &path)
 	-> std::expected<fcg::Image, fcg::ImageError> {
 	return fcg::ImageLoader::global().load(path, {.guessColorPrimaries=true});

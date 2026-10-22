@@ -294,11 +294,33 @@ auto main (int argc, char **argv) -> int
 			writeFixture(path, Fixture{.interop=id});
 			auto image = take(decoder.loadAndGuess(path));
 			const auto color = SDL_GetSurfaceColorspace(image.handle());
+			const auto info = image.pixelInfo();
+			require(info && info->loadAdjustments.colorPrimaries == fcg::ImageLoadAdjustment::None
+				&& info->loadAdjustments.transferCharacteristics == fcg::ImageLoadAdjustment::None
+				&& info->loadAdjustments.colorRange == fcg::ImageLoadAdjustment::None, "EXR declared encoding was annotated as guessed");
 			require(SDL_COLORSPACEPRIMARIES(color) == primaries && SDL_COLORSPACETRANSFER(color) == transfer,
 				"EXR color identifier precedence or partial recognition failed");
 			require(sample(image, 0, 0, 0) == -2.25f, "EXR metadata recognition changed samples");
 		}
 		const exr::Chromaticities rec2020({.708f, .292f}, {.170f, .797f}, {.131f, .046f}, {.3127f, .3290f});
+		// An absent or explicitly unknown identifier permits only the requested format-specific fallbacks.
+		for (const bool unknown : {false, true})
+			for (unsigned mask = 0; mask < 8; ++mask)
+			{
+				writeFixture(path, Fixture{.untagged=true, .interop=unknown ? "unknown" : ""});
+				auto image = take(decoder.load(path, {bool(mask & 1), bool(mask & 2), bool(mask & 4)}));
+				const auto color = SDL_GetSurfaceColorspace(image.handle());
+				require(SDL_COLORSPACEPRIMARIES(color) == (mask & 1 ? SDL_COLOR_PRIMARIES_BT709 : SDL_COLOR_PRIMARIES_UNSPECIFIED)
+					&& SDL_COLORSPACETRANSFER(color) == (!unknown || mask & 2
+						? SDL_TRANSFER_CHARACTERISTICS_LINEAR : SDL_TRANSFER_CHARACTERISTICS_UNSPECIFIED)
+					&& SDL_COLORSPACERANGE(color) == SDL_COLOR_RANGE_FULL, "EXR selective format fallbacks failed");
+				require(sample(image, 0, 0, 0) == -2.25f, "EXR guessing changed stored samples");
+				const auto info = image.pixelInfo();
+				using A = fcg::ImageLoadAdjustment;
+				require(info && info->loadAdjustments.colorPrimaries == (mask & 1 ? A::Guessed : A::None)
+					&& info->loadAdjustments.transferCharacteristics == (unknown && mask & 2 ? A::Guessed : A::None)
+					&& info->loadAdjustments.colorRange == A::None, "EXR selective loading annotations failed");
+			}
 		writeFixture(path, Fixture{.interop="unknown", .chromaticities=rec2020});
 		auto wide = take(decoder.load(path));
 		require(SDL_COLORSPACEPRIMARIES(SDL_GetSurfaceColorspace(wide.handle())) == SDL_COLOR_PRIMARIES_BT2020,

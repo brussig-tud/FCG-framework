@@ -38,7 +38,14 @@
 ///
 /// Missing RGB metadata can be filled with the inherited
 /// <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt>, or selected individually
-/// through <tt>\ref fcg::ImageLoaderOptions "ImageLoaderOptions"</tt>. Metadata supplied by SDL_image is retained.
+/// through <tt>\ref fcg::ImageLoaderOptions "ImageLoaderOptions"</tt>. Every component supplied by SDL_image is
+/// retained, including its default labels. For missing primaries, an identified PQ or HLG transfer suggests BT.2020;
+/// otherwise this handler chooses BT.709. Missing transfer uses a QOI header's linear/sRGB flag or the BT.709 curve
+/// for PGM/PPM; remaining formats use linear for floating output and sRGB for integer or palette output. Missing range
+/// is filled with full RGB range. Guessing retains the decoded samples.
+/// <tt>\ref fcg::ImagePixelInfo::loadAdjustments "ImagePixelInfo::loadAdjustments"</tt> marks components actually
+/// filled by this handler as <tt>\ref fcg::ImageLoadAdjustment::Guessed "Guessed"</tt>. Unreported defaults and
+/// transformations inside SDL_image are not classified.
 ///
 /// \section fcg_sdl_image_lifetime Ownership and lifetime
 /// The handler owns no initialization state, cache, or GPU resource, and no SDL video initialization is needed for
@@ -158,7 +165,7 @@ public:
 	/// 	The encoded file contents, valid only during the call; must not be empty.
 	/// \param hint
 	/// 	The file name extension of the input, or empty if unknown. A leading dot and ASCII letter case are ignored.
-	/// \param options Optional assumptions for missing RGB metadata; \c loadAndGuess enables every assumption.
+	/// \param options Requests to infer missing RGB metadata; \c loadAndGuess enables every request.
 	///
 	/// \return
 	/// 	The decoded image, or an error:

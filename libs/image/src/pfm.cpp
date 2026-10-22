@@ -161,7 +161,8 @@ auto PFMImageFormatHandler::load (
 			std::memcpy(output + std::size_t(x) * 3, pixel, sizeof(pixel));
 		}
 	}
-	return finishLoading(detail::adoptImageSurface(std::move(*surface)), options);
+	// PFM carries no color declarations; use the conventional linear RGB interpretation when requested.
+	return finishLoading(detail::adoptImageSurface(std::move(*surface)), options, SDL_COLORSPACE_SRGB_LINEAR);
 }
 
 

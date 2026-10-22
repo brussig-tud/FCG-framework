@@ -103,7 +103,8 @@ public:
 		trace.push_back(id + ":decode");
 		if (behavior == 2)
 			return std::unexpected(fcg::ImageError{fcg::ImageErrorCode::DecodeFailure, "decode failed"});
-		return finishLoading(fcg::Image::adopt(SDL_CreateSurface(9, 5, SDL_PIXELFORMAT_RGBA32)), options);
+		return finishLoading(fcg::Image::adopt(SDL_CreateSurface(9, 5, SDL_PIXELFORMAT_RGBA32)), options,
+			SDL_COLORSPACE_SRGB);
 	}
 
 private:

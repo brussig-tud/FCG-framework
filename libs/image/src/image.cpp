@@ -330,6 +330,10 @@ auto Image::operator= (Image &&other) noexcept -> Image&
 	result.height = m_handle->h;
 	result.pitch = m_handle->pitch;
 	result.colorspace = SDL_GetSurfaceColorspace(m_handle);
+	const auto adjustments = detail::readImageLoadAdjustments(*m_handle);
+	if (!adjustments)
+		return std::unexpected(adjustments.error());
+	result.loadAdjustments = *adjustments;
 	const auto *palette = SDL_GetSurfacePalette(m_handle);
 	result.hasPalette = palette != nullptr;
 	result.paletteSize = palette ? palette->ncolors : 0;
@@ -488,11 +492,19 @@ auto Image::operator= (Image &&other) noexcept -> Image&
 	const auto &from = analysis->source.pixelFormat;
 	const auto &to = analysis->destination;
 	if (from.directAccess && to.directAccess && from.representation == to.representation
-		&& from.channelBits[0] == to.channelBits[0] && !analysis->colorEncodingChange && !analysis->colorKeyBaking) {
-		auto *output = copyNativeConversion(*m_handle, targetFormat);
+		&& from.channelBits[0] == to.channelBits[0] && !analysis->colorEncodingChange && !analysis->colorKeyBaking)
+	{
+		std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> output(
+			copyNativeConversion(*m_handle, targetFormat), SDL_DestroySurface
+		);
 		if (!output)
 			return std::unexpected(ImageError{ImageErrorCode::SDLFailure, std::string("Copying native channels: ") + SDL_GetError()});
-		return Image::adopt(output);
+		if (auto recorded = detail::writeImageLoadAdjustments(*output, analysis->source.loadAdjustments); !recorded)
+			return std::unexpected(recorded.error());
+		auto result = Image::adopt(output.get());
+		if (result)
+			output.release();
+		return result;
 	}
 	auto prepared = prepareConversion(*m_handle);
 	if (!prepared)
@@ -523,6 +535,11 @@ auto Image::operator= (Image &&other) noexcept -> Image&
 	}
 	if (!SDL_SetSurfaceColorKey(output.get(), false, 0))
 		return std::unexpected(ImageError{ImageErrorCode::SDLFailure, SDL_GetError()});
+	// Explicit conversion removes annotations only for color components that actually changed.
+	const auto retained = detail::filterImageLoadAdjustments(analysis->source.loadAdjustments,
+		analysis->source.colorspace, SDL_GetSurfaceColorspace(output.get()));
+	if (auto recorded = detail::writeImageLoadAdjustments(*output, retained); !recorded)
+		return std::unexpected(recorded.error());
 	return Image::adopt(output.release());
 }
 

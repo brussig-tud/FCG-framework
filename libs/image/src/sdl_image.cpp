@@ -17,6 +17,7 @@
 // Local includes
 #include "FCG/Image/sdl_image.h"
 #include "image_internal.h"
+#include "sdl_image_internal.h"
 #include "sdl_image_capabilities.h"
 
 
@@ -228,10 +229,12 @@ auto SDLImageFormatHandler::load (
 	};
 	if (!surface)
 		return detail::imageSDLError(ImageErrorCode::DecodeFailure, "Decoding image with SDL_image");
+	const auto guesses = detail::guessedSDLImageEncoding(bytes, type ? type : "", surface->format,
+		SDL_GetSurfaceColorspace(surface.get()));
 	auto image = Image::adopt(surface.get());
 	if (image)
 		surface.release();
-	return finishLoading(std::move(image), options);
+	return finishLoading(std::move(image), options, guesses);
 }
 
 

@@ -160,25 +160,54 @@ PFM supports conventional bottom-to-top RGB/grayscale, LF/CRLF headers, both byt
 Radiance supports RGBE flat/scanline RLE in `-Y height +X width` order. EXR supports full-resolution HALF/FLOAT RGB/Y
 with optional alpha in single-part non-deep scanline/tiled files, using the data window. See the module guides for
 the supported subsets. EXR alpha association and HDR stored exposure are preserved. Unidentified source color encoding
-remains unspecified by default. `ImageLoaderOptions` selectively enables assumptions for missing primaries, transfer,
-and range; `ImageLoader::loadAndGuess` and inherited `ImageFormatHandler::loadAndGuess` enable all three. Identified
-custom metadata is retained. Float transfer guesses are linear; integer/palette guesses use sRGB, with BT.709 primaries
-and full RGB range. Metadata assumptions do not change decoded samples, and loading does not perform display tonemapping.
+remains unspecified by default. `ImageLoaderOptions` selectively requests inference of missing primaries, transfer,
+and range; `ImageLoader::loadAndGuess` and inherited `ImageFormatHandler::loadAndGuess` enable all three. The successful
+handler chooses candidates from available input context and format conventions. There is no format-independent
+encoding promise, and inference need not make the result convertible. Established source declarations take precedence.
+PFM and EXR use linear BT.709/full-range fallbacks. SDL_image retains all backend labels; for missing components its
+policy uses QOI's transfer flag, PGM/PPM's BT.709 curve, and BT.2020 primaries for identified PQ/HLG. Other missing SDL_image
+components use BT.709, float-linear or integer/palette-sRGB transfer, and full range.
+
+Radiance primary inference uses its conventional RGB/equal-energy-white gamut, then converts it to linear BT.709/D65.
+Explicit numerically defined gamuts unsupported by color-managed upload are converted on ordinary loads too. Supported
+gamuts remain unchanged. Declared gamma is linearized before gamut conversion; without known or permitted guessed
+primaries, gamma can be linearized independently while primaries stay unspecified. Conversion uses double-precision
+RGB/XYZ matrices and Bradford adaptation in decoder-owned storage before surface creation, without clipping, tone
+mapping, or additional exposure/color-correction adjustments. The surface describes the output encoding and retains
+source header records. Invalid/singular definitions and nonfinite or binary32-overflowing results fail decoding.
+Upload preservation therefore refers to returned image samples, not necessarily file samples.
+
+`ImagePixelInfo::loadAdjustments` exposes independent primaries/reference-white, transfer and range annotations.
+Each field stores `ImageLoadAdjustment`: `None=0`, `Guessed=1`, `Adapted=2`, or `GuessedAndAdapted=Guessed|Adapted`.
+Typed constexpr `|` and `&` operators combine and test the flags. Only actual filled components are marked guessed;
+defined or unchanged values are not annotated. Radiance records adaptation even on ordinary loads and records both
+actions when adapting inferred primaries. SDL_image's opaque defaults remain unclassified.
+
+Annotations and their associated output colorspace are stored in private numeric surface properties and travel with
+surface ownership and metadata copies. `pixelInfo` suppresses individual entries whose current component differs from
+the recorded value; this is a read-only comparison, so restoring that value through SDL can reveal the entry again.
+Every `Image::converted` output retains only the source's effective annotations for unchanged color components and
+permanently clears the others. Explicit conversion never adds loading adaptations. Pixel edits and uploads retain CPU
+annotations. An unannotated property does not prove that the source explicitly declared it.
 
 `ImageUploadOptions` selects normal color management, stored-sample preservation, or preservation only for unidentified
 encoding. Its optional fallback colorspace fills only missing components and permits color-managed fallback when an
 applicable preservation path is unavailable. Applicable preservation is attempted before filling metadata. An identified
-custom or unsupported encoding is distinct from missing metadata: guessing and conditional preservation retain its
-declaration; unconditional preservation uploads its numeric samples. Fallback encodings are validated even when not used.
+custom or unsupported encoding is distinct from missing metadata: guessing respects its declaration, and conditional
+upload preservation treats it as established; unconditional preservation uploads its numeric samples. Fallback encodings
+are validated even when not used.
 Stored integer samples are normalized without sRGB decoding; palettes expand to colors. Raw YUV planes are outside
 this path. Color-managed conversion and upload reject unsupported SDL transforms instead of accepting metadata that
 SDL cannot actually convert. All upload
 policies leave the image unchanged. The viewer uses `loadAndGuess` followed by strict color-managed upload.
 
-Custom handlers must extend their byte `load` override with `ImageLoaderOptions`, extract metadata first, then use the
-protected `finishLoading` helper (or forward options to another handler). Existing client calls retain their defaults;
-the virtual interface change requires recompiling handlers and shared-library clients. Handlers implement only the
-byte `load` overload; the inherited guessing aliases require no second decoding implementation or additional dependency.
+Custom handlers implement the byte `load` override with `ImageLoaderOptions`, extract metadata first, then choose
+format-informed candidates. The protected `finishLoading(image, options, guesses, adjustments={})` helper selectively
+merges those candidates without changing samples or identified components, and annotates actual guesses. Handlers that
+adapt colors report the output encoding and completed actions in the fourth argument, using `GuessedAndAdapted` when
+the adaptation relied on inferred source data. Matching forwarded annotations are preserved and combined.
+There is no helper overload with automatic global defaults. Custom helper callers must supply an explicit
+`SDL_Colorspace` candidate and recompile. The inherited guessing aliases still forward to the byte `load` overload.
 
 The existing installed-target contract still requires external dependencies to be supplied separately. Source-built
 EXR fallbacks are static; supplied shared packages remain externally managed. Bundled decoder license notices accompany

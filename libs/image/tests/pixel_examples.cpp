@@ -50,6 +50,22 @@ namespace pixel_examples {
 }
 //! [conversion]
 
+/// \brief Check whether loading guessed the source primaries, including guesses followed by adaptation.
+///
+/// \param image The image whose current loading annotations should be inspected.
+///
+/// \return Whether the primaries annotation includes a guess, or an error from \c fcg::Image::pixelInfo.
+//! [loading_adjustments]
+[[nodiscard]] auto loadingGuessedPrimaries (const fcg::Image &image) -> std::expected<bool, fcg::ImageError>
+{
+	const auto metadata = image.pixelInfo();
+	if (!metadata)
+		return std::unexpected(metadata.error());
+	const fcg::ImageLoadAdjustments actions = metadata->loadAdjustments;
+	return (actions.colorPrimaries & fcg::ImageLoadAdjustment::Guessed) != fcg::ImageLoadAdjustment::None;
+}
+//! [loading_adjustments]
+
 /// Edit an exact-format image during one scoped access session.
 //! [access]
 [[nodiscard]] auto invert (fcg::Image &image) -> std::expected<void, fcg::ImageError> {

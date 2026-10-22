@@ -34,6 +34,7 @@ set(HEADERS
 	# Internal
 	image_internal.h
 	image_upload_internal.h
+	sdl_image_internal.h
 	hdr_internal.h
 )
 
