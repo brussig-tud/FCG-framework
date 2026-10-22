@@ -6,6 +6,7 @@
 
 // C++ STL
 #include <cstddef>
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <utility>
@@ -18,6 +19,7 @@
 // Local includes
 #include "FCG/Image/image.h"
 #include "image_internal.h"
+#include "image_upload_internal.h"
 
 
 
@@ -381,26 +383,12 @@ auto Image::operator= (Image &&other) noexcept -> Image&
 		result.diagnostic = "Specify a known RGB destination colorspace";
 		return result;
 	}
-	const auto knownTransfer = [](SDL_Colorspace colorspace) {
-		const auto transfer = SDL_COLORSPACETRANSFER(colorspace);
-		return transfer == SDL_TRANSFER_CHARACTERISTICS_SRGB || transfer == SDL_TRANSFER_CHARACTERISTICS_LINEAR
-			|| transfer == SDL_TRANSFER_CHARACTERISTICS_PQ;
-	};
-	const auto knownPrimaries = [](SDL_Colorspace colorspace) {
-		const auto primaries = SDL_COLORSPACEPRIMARIES(colorspace);
-		return primaries == SDL_COLOR_PRIMARIES_BT709 || primaries == SDL_COLOR_PRIMARIES_BT2020
-			|| primaries == SDL_COLOR_PRIMARIES_BT601 || primaries == SDL_COLOR_PRIMARIES_SMPTE240
-			|| primaries == SDL_COLOR_PRIMARIES_SMPTE431 || primaries == SDL_COLOR_PRIMARIES_SMPTE432;
-	};
-	if (!knownTransfer(result.destinationColorspace) || !knownPrimaries(result.destinationColorspace)
-		|| SDL_COLORSPACERANGE(result.destinationColorspace) != SDL_COLOR_RANGE_FULL) {
-		result.diagnostic = "Use full-range RGB with known primaries and sRGB, linear or PQ transfer";
+	if (!detail::supportedImageEncoding(result.destinationColorspace)) {
+		result.diagnostic = "Use supported full-range RGB with sRGB, linear or PQ transfer";
 		return result;
 	}
-	if (from.storage != PixelStorage::YUV && (SDL_COLORSPACETYPE(source->colorspace) != SDL_COLOR_TYPE_RGB
-		|| !knownTransfer(source->colorspace) || !knownPrimaries(source->colorspace)
-		|| SDL_COLORSPACERANGE(source->colorspace) != SDL_COLOR_RANGE_FULL)) {
-		result.diagnostic = "Source RGB encoding is insufficiently described; set a known full-range RGB colorspace";
+	if (from.storage != PixelStorage::YUV && !detail::supportedImageEncoding(source->colorspace)) {
+		result.diagnostic = "Source RGB encoding is insufficiently described or unsupported; use loadAndGuess or assign supported encoding";
 		return result;
 	}
 	if (from.storage == PixelStorage::YUV && source->colorspace != SDL_COLORSPACE_JPEG
@@ -538,73 +526,132 @@ auto Image::operator= (Image &&other) noexcept -> Image&
 	return Image::adopt(output.release());
 }
 
-auto Image::upload (Device &device) const -> std::expected<Texture, ImageError>
+auto Image::upload (Device &device, ImageUploadOptions options) const -> std::expected<Texture, ImageError>
 {
 	if (!m_handle || m_accessActive)
 		return std::unexpected(ImageError{ImageErrorCode::InvalidState, "Upload requires an available image"});
+	if (options.samplePolicy != ImageUploadSamplePolicy::ConvertToLinearSRGB
+		&& options.samplePolicy != ImageUploadSamplePolicy::PreserveSamples
+		&& options.samplePolicy != ImageUploadSamplePolicy::PreserveSamplesIfUnknown)
+		return std::unexpected(ImageError{ImageErrorCode::InvalidArgument, "Invalid upload sample policy"});
+	if (options.unidentifiedSourceColorspace && !detail::supportedImageEncoding(*options.unidentifiedSourceColorspace))
+		return std::unexpected(ImageError{ImageErrorCode::InvalidArgument, "Upload fallback requires supported full-range RGB"});
+
+	// Select preservation against the original metadata, before considering an explicit fallback.
 	auto *surface = m_handle;
-	const auto colorspace = SDL_GetSurfaceColorspace(surface);
-	if (SDL_COLORSPACETYPE(colorspace) == SDL_COLOR_TYPE_RGB
-		&& (SDL_COLORSPACEPRIMARIES(colorspace) == SDL_COLOR_PRIMARIES_UNSPECIFIED
-			|| SDL_COLORSPACEPRIMARIES(colorspace) == SDL_COLOR_PRIMARIES_UNKNOWN
-			|| SDL_COLORSPACETRANSFER(colorspace) == SDL_TRANSFER_CHARACTERISTICS_UNSPECIFIED
-			|| SDL_COLORSPACETRANSFER(colorspace) == SDL_TRANSFER_CHARACTERISTICS_UNKNOWN))
-		return std::unexpected(ImageError{ImageErrorCode::UnsupportedFormat,
-			"Image upload requires a known RGB encoding; assign the source colorspace before uploading"});
+	const auto originalColorspace = SDL_GetSurfaceColorspace(surface);
+	auto colorspace = originalColorspace;
+	auto description = pixelFormatInfo(surface->format);
+	if (!description)
+		return std::unexpected(description.error());
+	const bool rgb = description->storage == PixelStorage::Packed || description->storage == PixelStorage::Interleaved
+		|| description->storage == PixelStorage::Indexed;
+	const bool preserve = options.samplePolicy == ImageUploadSamplePolicy::PreserveSamples
+		|| (options.samplePolicy == ImageUploadSamplePolicy::PreserveSamplesIfUnknown
+			&& detail::missingImageEncoding(originalColorspace));
+	const auto supports = [&device] (SDL_GPUTextureFormat format) {
+		return SDL_GPUTextureSupportsFormat(device.handle(), format, SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_SAMPLER);
+	};
 	const auto *details = SDL_GetPixelFormatDetails(surface->format);
-	const bool srgb8 = colorspace == SDL_COLORSPACE_SRGB && details
-		&& !SDL_ISPIXELFORMAT_FLOAT(surface->format) && !SDL_ISPIXELFORMAT_FOURCC(surface->format)
-		&& details->Rbits <= 8 && details->Gbits <= 8 && details->Bbits <= 8 && details->Abits <= 8;
-	if (SDL_SurfaceHasColorKey(surface) && (!details || details->bytes_per_pixel > 4))
-		return std::unexpected(ImageError{
-			ImageErrorCode::UnsupportedFormat, "Color keys require an indexed or at most 32-bit pixel representation"
-		});
+	const bool keyed = SDL_SurfaceHasColorKey(surface);
+	if (keyed && (!details || details->bytes_per_pixel > 4))
+		return std::unexpected(ImageError{ImageErrorCode::UnsupportedFormat,
+			"Color keys require an indexed or at most 32-bit pixel representation"});
 	SDL_GPUTextureFormat gpuFormat = SDL_GPU_TEXTUREFORMAT_INVALID;
-	SDL_PixelFormat cpuFormat = surface->format;
+	SDL_PixelFormat cpuFormat = SDL_PIXELFORMAT_UNKNOWN;
 	SDL_Colorspace outputColorspace = colorspace;
-	if (srgb8) {
-		cpuFormat = surface->format == SDL_PIXELFORMAT_BGRA32 ? SDL_PIXELFORMAT_BGRA32 : SDL_PIXELFORMAT_RGBA32;
-		gpuFormat = cpuFormat == SDL_PIXELFORMAT_BGRA32
-			? SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
-	}
-	else if (colorspace == SDL_COLORSPACE_SRGB_LINEAR)
-	{
-		if (cpuFormat == SDL_PIXELFORMAT_RGBA32) gpuFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-		else if (cpuFormat == SDL_PIXELFORMAT_BGRA32) gpuFormat = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
-		else if (cpuFormat == SDL_PIXELFORMAT_RGBA64) gpuFormat = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_UNORM;
-		else if (cpuFormat == SDL_PIXELFORMAT_RGBA64_FLOAT) gpuFormat = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT;
-		else if (cpuFormat == SDL_PIXELFORMAT_RGBA128_FLOAT) gpuFormat = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
-	}
-	if (gpuFormat == SDL_GPU_TEXTUREFORMAT_INVALID
-		|| !SDL_GPUTextureSupportsFormat(
-			device.handle(), gpuFormat, SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_SAMPLER
-		)) {
-		gpuFormat = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
-		cpuFormat = SDL_PIXELFORMAT_RGBA128_FLOAT;
-		outputColorspace = SDL_COLORSPACE_SRGB_LINEAR;
-	}
-	if (!SDL_GPUTextureSupportsFormat(device.handle(), gpuFormat, SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_SAMPLER))
-		return std::unexpected(ImageError{
-			ImageErrorCode::GPUFailure, "No precision-preserving sampled texture format is supported"
-		});
 	std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> converted(nullptr, SDL_DestroySurface);
-	if (cpuFormat != surface->format || outputColorspace != colorspace || SDL_SurfaceHasColorKey(surface))
+
+	// Stored integer channels use UNORM sampling; floating channels retain their numeric values and range.
+	if (preserve)
+		if (auto layout = detail::storedImageLayout(*description, supports)) {
+			cpuFormat = layout->cpu;
+			gpuFormat = layout->gpu;
+		}
+	if (preserve && gpuFormat == SDL_GPU_TEXTUREFORMAT_INVALID && !options.unidentifiedSourceColorspace)
+		return std::unexpected(ImageError{rgb ? ImageErrorCode::GPUFailure : ImageErrorCode::UnsupportedFormat,
+			"No supported sample-preserving RGB upload representation"});
+	const bool preserving = preserve && gpuFormat != SDL_GPU_TEXTUREFORMAT_INVALID;
+
+	// Color-managed upload uses only supported transforms and fills genuinely missing components independently.
+	if (!preserving)
 	{
-		// Conversion can temporarily change source blit state. Perform it on an independent duplicate and disable
-		// its tone mapping, so HDR headroom and any source tone-map preference cannot clip uploaded values.
+		if (rgb && options.unidentifiedSourceColorspace)
+			colorspace = detail::fillImageEncoding(colorspace, *options.unidentifiedSourceColorspace);
+		if (rgb && !detail::supportedImageEncoding(colorspace))
+			return std::unexpected(ImageError{ImageErrorCode::UnsupportedFormat,
+				"Image upload requires supported RGB encoding; use loadAndGuess, an upload fallback, or uploadStoredSamples"});
+		if (!rgb && (description->storage != PixelStorage::YUV
+			|| (colorspace != SDL_COLORSPACE_JPEG && colorspace != SDL_COLORSPACE_BT601_LIMITED
+				&& colorspace != SDL_COLORSPACE_BT601_FULL && colorspace != SDL_COLORSPACE_BT709_LIMITED
+				&& colorspace != SDL_COLORSPACE_BT709_FULL && colorspace != SDL_COLORSPACE_BT2020_LIMITED
+				&& colorspace != SDL_COLORSPACE_BT2020_FULL)))
+			return std::unexpected(ImageError{ImageErrorCode::UnsupportedFormat, "Upload requires supported CPU RGB or YUV storage"});
+		const bool srgb8 = colorspace == SDL_COLORSPACE_SRGB && details
+			&& !SDL_ISPIXELFORMAT_FLOAT(surface->format) && !SDL_ISPIXELFORMAT_FOURCC(surface->format)
+			&& details->Rbits <= 8 && details->Gbits <= 8 && details->Bbits <= 8 && details->Abits <= 8;
+		cpuFormat = surface->format;
+		outputColorspace = colorspace;
+		if (srgb8) {
+			cpuFormat = surface->format == SDL_PIXELFORMAT_BGRA32 ? SDL_PIXELFORMAT_BGRA32 : SDL_PIXELFORMAT_RGBA32;
+			gpuFormat = cpuFormat == SDL_PIXELFORMAT_BGRA32
+				? SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB;
+		}
+		else if (colorspace == SDL_COLORSPACE_SRGB_LINEAR)
+		{
+			if (cpuFormat == SDL_PIXELFORMAT_RGBA32) gpuFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+			else if (cpuFormat == SDL_PIXELFORMAT_BGRA32) gpuFormat = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
+			else if (cpuFormat == SDL_PIXELFORMAT_RGBA64) gpuFormat = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_UNORM;
+			else if (cpuFormat == SDL_PIXELFORMAT_RGBA64_FLOAT) gpuFormat = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT;
+			else if (cpuFormat == SDL_PIXELFORMAT_RGBA128_FLOAT) gpuFormat = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
+		}
+		if (gpuFormat == SDL_GPU_TEXTUREFORMAT_INVALID || !supports(gpuFormat)) {
+			gpuFormat = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
+			cpuFormat = SDL_PIXELFORMAT_RGBA128_FLOAT;
+			outputColorspace = SDL_COLORSPACE_SRGB_LINEAR;
+		}
+		if (!supports(gpuFormat))
+			return std::unexpected(ImageError{ImageErrorCode::GPUFailure, "No precision-preserving sampled texture format is supported"});
+	}
+
+	// Work on independent storage whenever layouts, encoding or separate transparency require preparation.
+	if (cpuFormat != surface->format || outputColorspace != originalColorspace || keyed)
+	{
 		auto prepared = prepareConversion(*surface);
 		if (!prepared)
 			return std::unexpected(prepared.error());
 		const std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> copy(*prepared, SDL_DestroySurface);
 		Uint32 key = 0;
-		const bool keyed = SDL_SurfaceHasColorKey(surface);
 		if (keyed && !SDL_GetSurfaceColorKey(surface, &key))
 			return std::unexpected(ImageError{ImageErrorCode::SDLFailure, SDL_GetError()});
-		converted.reset(SDL_ConvertSurfaceAndColorspace(copy.get(), cpuFormat, nullptr, outputColorspace, 0));
+		if (preserving)
+		{
+			const auto target = pixelFormatInfo(cpuFormat);
+			if (description->directAccess && target && target->directAccess
+				&& description->representation == target->representation
+				&& description->channelBits[0] == target->channelBits[0])
+				converted.reset(copyNativeConversion(*copy, cpuFormat));
+			else {
+				auto output = detail::copyStoredPixels(*copy, cpuFormat);
+				if (!output)
+					return std::unexpected(output.error());
+				converted.reset(*output);
+			}
+		}
+		else {
+			if (!SDL_SetSurfaceColorspace(copy.get(), colorspace))
+				return detail::imageSDLError(ImageErrorCode::SDLFailure, "Assigning effective upload colorspace");
+			std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> expanded(nullptr, SDL_DestroySurface);
+			if (description->storage == PixelStorage::Indexed) {
+				auto pixels = detail::expandIndexedPixels(*copy);
+				if (!pixels)
+					return std::unexpected(pixels.error());
+				expanded.reset(*pixels);
+			}
+			converted.reset(convertPreparedPixels(expanded ? *expanded : *copy, cpuFormat, outputColorspace));
+		}
 		if (!converted)
-			return std::unexpected(ImageError{
-				ImageErrorCode::SDLFailure, std::string("Converting image for upload: ") + SDL_GetError()
-			});
+			return detail::imageSDLError(ImageErrorCode::SDLFailure, "Preparing image upload");
 		if (keyed)
 			if (auto result = bakeColorKey(*copy, *converted, key); !result)
 				return std::unexpected(result.error());

@@ -14,8 +14,11 @@
 ///
 /// Use <tt>\ref fcg::RadianceHDRFormatHandler "RadianceHDRFormatHandler"</tt> directly or load through
 /// <tt>\ref fcg::ImageLoader::global "ImageLoader::global"</tt>.
-/// The RGB transfer is linear. Primaries are unspecified unless an explicit recognized <tt>PRIMARIES</tt>
-/// record identifies them.
+/// By default, RGBE transfer is linear unless a <tt>GAMMA</tt> record identifies a different curve. Primaries are
+/// unspecified unless an explicit <tt>PRIMARIES</tt> record identifies them; unmatched coordinates remain custom.
+/// Recognition compares both RGB primaries and the white point, including BT.709, BT.601, BT.2020, DCI-P3 and Display
+/// P3. A recognized gamma curve can still be unsupported for color conversion; use
+/// <tt>\ref fcg::Image::uploadStoredSamples "Image::uploadStoredSamples"</tt> to upload numeric samples instead.
 ///
 /// \section fcg_radiance_hdr_usage Getting started
 /// \snippet hdr_examples.cpp radiance_direct
@@ -25,7 +28,15 @@
 /// formats.
 /// Inspect floating samples with <tt>\ref fcg::Image::readColorFloat "Image::readColorFloat"</tt>.
 /// This handler is included in every Image build.
-/// A source whose encoding is unspecified needs a known interpretation before color conversion or GPU upload.
+/// <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt> is inherited by this
+/// handler and supplies missing color metadata. The registry offers
+/// <tt>\ref fcg::ImageLoader::loadAndGuess "ImageLoader::loadAndGuess"</tt> as well:
+/// \snippet hdr_examples.cpp guessing
+/// To retain source metadata, choose <tt>\ref fcg::Image::uploadWithFallback "uploadWithFallback"</tt> or upload
+/// stored values with <tt>\ref fcg::Image::uploadStoredSamples "uploadStoredSamples"</tt>. Conditional preservation
+/// is available through <tt>\ref fcg::Image::uploadStoredSamplesIfUnknown "uploadStoredSamplesIfUnknown"</tt>.
+/// \snippet hdr_examples.cpp upload_policies
+/// If the producer supplies the actual source encoding, label it before color conversion:
 /// \snippet hdr_examples.cpp hdr_encoding
 ///
 /// \section fcg_radiance_hdr_errors Handling errors
@@ -69,8 +80,9 @@ namespace fcg {
 
 /// \brief Decodes RGBE Radiance images into three-channel 32-bit floating-point pixels.
 ///
-/// The RGB transfer is linear. Primaries are unspecified unless an explicit recognized <tt>PRIMARIES</tt>
-/// record identifies them.
+/// RGBE transfer is linear unless a <tt>GAMMA</tt> record identifies a different curve. Without enabled loader
+/// assumptions, primaries are unspecified unless an explicit <tt>PRIMARIES</tt> record identifies them; unmatched
+/// coordinates remain custom. The inherited \c loadAndGuess fills missing metadata without replacing declarations.
 ///
 /// \note
 ///         The supported layouts are flat RGBE and scanline RLE in <tt>-Y height +X width</tt> order. XYZE,
@@ -112,6 +124,7 @@ public:
 	///
 	/// \param bytes Encoded input, borrowed for this call.
 	/// \param hint Optional extension; the signature determines whether this decoder can load the input.
+	/// \param options Optional assumptions for missing RGB metadata; \c loadAndGuess enables every assumption.
 	///
 	/// \return
 	/// 	The image, \c ImageErrorCode::InvalidArgument for invalid arguments,
@@ -119,8 +132,9 @@ public:
 	/// 	malformed or unsupported variants, or \c ImageErrorCode::SDLFailure for surface setup failures.
 	///
 	/// 	hrows std::bad_alloc If a C++ allocation fails.
-	[[nodiscard]] auto load (std::span<const std::byte> bytes, std::string_view hint={}) const
-		-> std::expected<Image, ImageError> override;
+	[[nodiscard]] auto load (
+		std::span<const std::byte> bytes, std::string_view hint={}, ImageLoaderOptions options={}
+	) const -> std::expected<Image, ImageError> override;
 };
 
 

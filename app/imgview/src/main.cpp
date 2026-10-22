@@ -221,8 +221,9 @@ protected:
 			throw std::runtime_error(updated.error().message);
 	}
 
-	/// \brief Loads the image file at \p filepath with the global \c fcg::ImageLoader and uploads it.
+	/// \brief Loads \p filepath through \c fcg::ImageLoader::loadAndGuess and performs color-managed upload.
 	///
+	/// Missing RGB metadata is labelled with the loader's default assumptions before uploading.
 	/// If loading fails, the error is logged and the previously loaded image, if any, stays on display.
 	///
 	/// \param device The device to create the texture on.
@@ -232,7 +233,7 @@ protected:
 	void loadImage (fcg::Device &device, const std::filesystem::path &filepath)
 	{
 		// Load from file
-		auto maybeImage = fcg::ImageLoader::global().load(filepath);
+		auto maybeImage = fcg::ImageLoader::global().loadAndGuess(filepath);
 		if (!maybeImage) {
 			SDL_LogError(
 				SDL_LOG_CATEGORY_APPLICATION, "ImageViewerApplet: failed to load image '%s'\n%s",

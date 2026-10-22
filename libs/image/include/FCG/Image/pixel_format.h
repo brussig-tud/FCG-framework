@@ -21,12 +21,17 @@
 /// \snippet pixel_examples.cpp conversion
 ///
 /// \section fcg_pixel_formats_workflows Common tasks
-/// Preserve source encoding by omitting the destination colorspace for RGB inputs. YUV inputs require an explicit
-/// RGB destination colorspace. Palette expansion and channel reordering are informational changes. Reduced sample
+/// Preserve supported source encoding by omitting the destination colorspace for RGB inputs. Missing or unsupported
+/// encoding still prevents conversion, including layout-only requests. YUV inputs require an explicit RGB destination
+/// colorspace. Palette expansion and channel reordering are informational changes. Reduced sample
 /// precision, narrower range, discarded transparency and encoding transformations require an explicit
 /// <tt>\ref fcg::PixelLossPolicy::Allow "PixelLossPolicy::Allow"</tt>.
 /// Floating output retains HDR values without tone mapping. Color keys become alpha by default; choose an
 /// alpha-capable destination. Sub-byte, planar and compressed descriptions leave ordinary byte size unavailable.
+/// Conversion requires supported color encoding. When loading files that omit it, use
+/// <tt>\ref fcg::ImageLoader::loadAndGuess "ImageLoader::loadAndGuess"</tt> or the inherited handler operation
+/// <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt>. To upload numeric samples
+/// without interpreting color, see <tt>\ref fcg::Image::uploadStoredSamples "Image::uploadStoredSamples"</tt>.
 
 
 

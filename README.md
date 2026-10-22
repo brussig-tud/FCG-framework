@@ -47,8 +47,6 @@ To use the framework in your own project, add it as a CMake dependency (e.g. via
 | `FCG_BUILD_DOCUMENTATION` | `ON` for top-level builds | Enable the `fcg-docs` documentation target (requires Doxygen). |
 
 The formats of a source-built *SDL_image* are configured through the upstream `SDLIMAGE_*` options; see `docs/DOCS.md` for details.
-Radiance HDR and Portable Float Map loading are always included. OpenEXR is optional. All three retain floating-point
-HDR values; source color encoding must be known before conversion or GPU upload.
 
 
 # Overview
@@ -58,7 +56,7 @@ Framework functionality is grouped by purpose into four libraries that applicati
 | Library | Description |
 | --- | --- |
 | [Core](https://brussig-tud.github.io/FCG-framework/fcg_core_overview.html) | The foundation: application lifecycle (applets driven by `fcg::run`), main window and GPU device, input events, GPU resources such as buffers, textures and fullscreen passes, render state shared between applets, ready-made camera controls, and an integrated Dear ImGui GUI. |
-| [Image](https://brussig-tud.github.io/FCG-framework/fcg_image_overview.html) | Decodes image files into CPU pixel data via SDL_image (BMP, GIF, JPG, PNG, TGA, WebP and more) for inspection, processing or upload to the GPU – no GPU device or applet required. |
+| [Image](https://brussig-tud.github.io/FCG-framework/fcg_image_overview.html) | Decodes common image formats through SDL_image, plus Radiance HDR, Portable Float Map and optional OpenEXR, into CPU pixels for inspection, processing or configurable GPU upload. Loading requires no GPU device or applet. |
 | [Render](https://brussig-tud.github.io/FCG-framework/fcg_render_overview.html) | Draws instanced primitives – currently just (optionally textured) quads and boxes – from user-definable attributes on the GPU; the quickest way to put many simple objects on the screen without writing your own pipelines and shaders. |
 | [Extras](https://brussig-tud.github.io/FCG-framework/fcg_extras_overview.html) | Optional desktop conveniences on top of Core that only some platforms or applications need, currently just native file/folder dialogs. |
 

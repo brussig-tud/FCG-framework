@@ -10,7 +10,7 @@
 
 /// \page fcg_image_overview Image library overview
 ///
-/// The Image library decodes image files into CPU pixel data that you can inspect, process, or hand to the GPU. It is
+/// The Image library decodes image files into CPU pixel data that you can inspect, process, or hand to the GPU. It
 /// supports Radiance HDR and Portable Float Map, optional OpenEXR, and the formats its SDL_image build provides
 /// (BMP, GIF, JPG, PNG, TGA, WebP, and more).
 ///
@@ -22,8 +22,10 @@
 /// \section fcg_image_start Where to start
 /// - Decode a file and display it: \ref fcg_images for the CPU side, then upload the pixels with
 ///   <tt>\ref fcg::Image::upload "Image::upload"</tt> into a \ref fcg_textures "texture".
-/// - Loading by file extension or by content: \ref fcg_image_loading.
-/// - Using SDL_image directly, or teaching the loader additional formats: \ref fcg_sdl_image.
+/// - Loading by file extension or by content: \ref fcg_image_loading. For files with missing color metadata, use
+///   <tt>\ref fcg::ImageLoader::loadAndGuess "ImageLoader::loadAndGuess"</tt>, also available on handlers through
+///   <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt>.
+/// - Using SDL_image directly: \ref fcg_sdl_image. To add a custom decoder, see \ref fcg_image_loading.
 /// - Loading floating-point HDR pixels: \ref fcg_radiance_hdr, \ref fcg_pfm, and \ref fcg_openexr.
 ///
 /// The library provides explicit format conversion and scoped CPU pixel processing. For these tasks, start with
@@ -74,8 +76,22 @@
 ///
 /// \subsection fcg_images_workflows_gpu Handing pixels to the GPU
 /// <tt>\ref fcg::Image::upload "Image::upload"</tt> creates a sampled 2D texture from the image: row order and
-/// decoded precision are preserved, shaders read linear color values, and the CPU image is left unchanged. See
-/// \ref fcg_textures for the texture that comes out.
+/// decoded precision are preserved, and the CPU image is left unchanged. Default color-managed upload supplies
+/// linear sRGB to shaders. <tt>\ref fcg::ImageUploadOptions "ImageUploadOptions"</tt> also supports uploading stored
+/// numeric samples and supplying missing source encoding. Integer stored samples are normalized by their channel
+/// maximum; an eight-bit value of 128 samples as approximately 0.502 without sRGB decoding. Palette colors are
+/// expanded, and color keys become alpha. Raw YUV planes require a different representation.
+/// \snippet hdr_examples.cpp upload_policies
+/// <tt>\ref fcg::Image::uploadStoredSamplesIfUnknown "uploadStoredSamplesIfUnknown"</tt> retains normal color
+/// management for identified images. <tt>\ref fcg::Image::uploadStoredSamples "uploadStoredSamples"</tt> preserves
+/// samples regardless of metadata. Preservation takes priority over an enabled fallback where its policy applies.
+/// An identified custom gamut or unsupported transfer is distinct from missing metadata: conditional preservation
+/// and metadata guesses retain that declaration. Use unconditional sample preservation when the shader should
+/// interpret those values itself. Sample preservation does not make encoded colors linear.
+/// To establish metadata on a newly loaded image instead, use
+/// <tt>\ref fcg::ImageLoader::loadAndGuess "ImageLoader::loadAndGuess"</tt> or the inherited handler alias
+/// <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt>.
+/// See \ref fcg_textures for the texture that comes out.
 ///
 /// \subsection fcg_images_workflows_delayed Images created later
 /// There is no default constructor and images cannot be copied, so use <tt>std::optional&lt;\ref fcg::Image
@@ -106,6 +122,7 @@
 // C++ STL
 #include <expected>
 #include <functional>
+#include <optional>
 #include <string>
 
 // SDL3 library
@@ -139,6 +156,42 @@ namespace fcg {
 
 /// \addtogroup fcg_images
 /// @{
+
+
+
+//////
+//
+// Structs and enums
+//
+
+/// Treatment of stored RGB samples during texture upload.
+enum class ImageUploadSamplePolicy
+{
+	/// Convert identified color to linear sRGB, using hardware sRGB decoding when suitable.
+	ConvertToLinearSRGB,
+
+	/// Upload source-encoded numeric samples without a transfer, gamut or luminance transform.
+	PreserveSamples,
+
+	/// Preserve samples only when a required source encoding component is unknown or unspecified.
+	PreserveSamplesIfUnknown
+};
+
+/// Policies for image texture uploads; the CPU image and its metadata are retained.
+struct ImageUploadOptions
+{
+	/// Color management is the default; preservation uses normalized integer or floating-point texture samples.
+	ImageUploadSamplePolicy samplePolicy = ImageUploadSamplePolicy::ConvertToLinearSRGB;
+
+	/// \brief Optional supported full-range RGB encoding supplying only unidentified source components.
+	///
+	/// Enables color-managed fallback after an applicable preservation path cannot be supported. Identified custom
+	/// components are retained and can still prevent conversion. With color-managed upload, omission rejects
+	/// unidentified encoding. Sample preservation can upload unidentified RGB without this fallback.
+	/// The fallback must use the supported RGB encodings documented by <tt>Image::upload</tt>; invalid values are
+	/// rejected even when the selected sample policy would not use the fallback.
+	std::optional<SDL_Colorspace> unidentifiedSourceColorspace;
+};
 
 
 
@@ -265,6 +318,9 @@ public:
 	///
 	/// Omitted colorspace preserves RGB encoding and white-point units. A changed colorspace uses its default
 	/// white-point units. Relative HDR headroom is retained, and tone mapping is disabled.
+	/// Source and destination RGB encoding must be supported even when only the pixel layout changes. Use
+	/// \c ImageLoader::loadAndGuess or \c ImageFormatHandler::loadAndGuess to supply missing metadata when loading,
+	/// or \c uploadStoredSamples when only a GPU texture of the stored numeric samples is needed.
 	///
 	/// \param targetFormat Non-indexed RGB destination identifier.
 	/// \param options Potential loss is rejected by default; omitted colorspace preserves source RGB encoding.
@@ -369,7 +425,7 @@ public:
 	///
 	/// \param x Zero-based horizontal coordinate.
 	/// \param y Zero-based vertical coordinate.
-	/// \param value Straight RGBA byte components.
+	/// \param value RGBA byte components using the image's straight or associated alpha convention.
 	/// \param lossPolicy Permission for conservative precision and channel loss; rejection is the default.
 	///
 	/// \return Nothing on success, or an access, bounds, unsupported storage, invalid policy or loss rejection error.
@@ -381,7 +437,7 @@ public:
 	///
 	/// \param x Zero-based horizontal coordinate.
 	/// \param y Zero-based vertical coordinate.
-	/// \param value Straight RGBA components; integer output rejects non-finite values.
+	/// \param value RGBA components using the image's alpha convention; integer output rejects non-finite values.
 	/// \param lossPolicy Permission for conservative precision, range and channel loss; rejection is the default.
 	///
 	/// \return Nothing on success, or an access, bounds, unsupported storage, invalid argument or loss rejection error.
@@ -502,33 +558,121 @@ public:
 	///
 	/// The texture has the size of the image, one mip level, one layer, a sample count of 1 and sampler usage. The top
 	/// row of the image becomes the first texture row, i.e. texture coordinate <tt>v = 0</tt>. Alpha association is
-	/// preserved, and a color key is turned into alpha: keyed pixels get alpha 0. Shaders always sample linear
-	/// color values:
+	/// preserved, and a color key is turned into alpha: keyed pixels get alpha 0. With default options, shaders sample
+	/// linear sRGB color values:
 	/// - Images with sRGB colors and at most 8 bits per channel become an 8-bit sRGB texture in RGBA or BGRA order,
 	///   which the sampler decodes to linear values.
 	/// - Images already stored as linear sRGB in one of the SDL pixel formats \c RGBA32, \c BGRA32, \c RGBA64,
 	///   \c RGBA64_FLOAT or \c RGBA128_FLOAT keep their precision in the corresponding UNORM or float texture format.
-	/// - All other images, and images whose preferred texture format the device cannot sample, are converted to
+	/// - Other supported color encodings, and images whose preferred texture format the device cannot sample, convert to
 	///   linear sRGB in \c SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT, without tone mapping.
 	///
 	/// Query the resulting format with <tt>Texture::info().format</tt>. The upload is submitted without waiting for the
 	/// GPU, and the image itself is left unchanged; it may be modified or destroyed as soon as this method returns.
-	/// RGB sources need established primaries and transfer characteristics before uploading; label a known source
-	/// encoding with \c SDL_SetSurfaceColorspace when the file does not identify it.
+	/// Color-managed RGB upload requires supported full-range encoding. Use \c ImageLoader::loadAndGuess or
+	/// \c ImageFormatHandler::loadAndGuess when loading files with missing metadata, or supply
+	/// \c ImageUploadOptions::unidentifiedSourceColorspace to fill missing components for this upload alone.
+	/// Identified components are retained; custom or unsupported encodings still prevent color conversion.
+	/// Supported RGB encodings combine BT.709, BT.601, SMPTE 240M, BT.2020, DCI-P3 or Display P3 primaries with linear,
+	/// sRGB or PQ transfer, full range, identity matrix and no chroma sampling. Recognizing a file's metadata does not
+	/// guarantee that its encoding is supported for color conversion. YUV input needs an established JPEG, BT.601,
+	/// BT.709 or BT.2020 source colorspace.
+	///
+	/// \c ImageUploadSamplePolicy::PreserveSamples bypasses color interpretation for integer, palette and floating
+	/// RGB storage. Integer channels are normalized by their original bit-depth maximum; palette indices expand to
+	/// palette colors. Alpha is retained or added as one, with color keys baked into alpha. Floating samples retain
+	/// their values without gamut, transfer, luminance or tone-map adjustment. Native channel copies retain their
+	/// bits; widening retains numeric values in the destination representation. YUV, compressed and external storage
+	/// cannot use this preservation path. See \c uploadStoredSamples for its convenience alias.
+	///
+	/// \c ImageUploadSamplePolicy::PreserveSamplesIfUnknown applies preservation only when an original required RGB
+	/// encoding component is unknown or unspecified; identified custom encoding is distinct from missing metadata.
+	/// If applicable preservation cannot be supported, an enabled fallback permits color-managed upload. Operational
+	/// failures are returned directly. See \c uploadStoredSamplesIfUnknown and the aliases with explicit fallback.
 	///
 	/// \param device
 	/// 	The device that creates the texture. It must outlive the returned texture.
+	/// \param options The sample and missing-encoding policies; default construction selects strict color management.
 	///
 	/// \return
 	/// 	The texture, or an error:
-	/// 	- \c ImageErrorCode::InvalidState if the image is empty or has an active pixel access session;
-	/// 	- \c ImageErrorCode::UnsupportedFormat if RGB encoding is insufficiently described, or the image has a
+	/// 	- \c ImageErrorCode::InvalidState if the image is empty, has an active pixel access session, or contains an
+	/// 	  invalid palette index;
+	/// 	- \c ImageErrorCode::InvalidArgument if the sample policy or fallback encoding is invalid;
+	/// 	- \c ImageErrorCode::UnsupportedFormat if encoding or sample preservation is unsupported, or the image has a
 	/// 	  color key and a pixel format with more than 32 bits per pixel;
 	/// 	- \c ImageErrorCode::SDLFailure if converting the image, applying its color key or locking a surface
 	/// 	  failed;
 	/// 	- \c ImageErrorCode::GPUFailure if the device cannot sample the required texture format, or if creating
 	/// 	  or uploading the texture failed.
-	[[nodiscard]] auto upload (Device &device) const -> std::expected<Texture, ImageError>;
+	[[nodiscard]] auto upload (Device &device, ImageUploadOptions options={}) const -> std::expected<Texture, ImageError>;
+
+	/// \brief Upload color as linear sRGB, supplying missing source metadata from \p colorspace.
+	///
+	/// Identified source components are retained. See \c upload for formats, ownership and errors.
+	///
+	/// \param device The device, which must outlive the returned texture.
+	/// \param colorspace Supported full-range RGB encoding supplying unidentified source components only.
+	///
+	/// \return The independently owned sampled texture, or an error from \c upload.
+	[[nodiscard]] auto uploadWithFallback (Device &device, SDL_Colorspace colorspace) const
+		-> std::expected<Texture, ImageError> {
+		return upload(device, {ImageUploadSamplePolicy::ConvertToLinearSRGB, colorspace});
+	}
+
+	/// \brief Upload stored numeric RGB samples without color conversion, regardless of source encoding.
+	///
+	/// Integer channels sample as normalized values and alpha association is retained. See \c upload for supported
+	/// storage, ownership and errors.
+	///
+	/// \param device The device, which must outlive the returned texture.
+	///
+	/// \return The independently owned sampled texture, or an error from \c upload.
+	[[nodiscard]] auto uploadStoredSamples (Device &device) const
+		-> std::expected<Texture, ImageError> {
+		return upload(device, {ImageUploadSamplePolicy::PreserveSamples, std::nullopt});
+	}
+
+	/// \brief Preserve stored RGB samples first, permitting color-managed upload when preservation is unavailable.
+	///
+	/// The fallback fills only missing source components if color conversion is needed; it leaves identified encoding
+	/// intact. Errors while preparing or transferring samples are returned directly. See \c upload for other contracts.
+	///
+	/// \param device The device, which must outlive the returned texture.
+	/// \param colorspace Supported full-range RGB encoding supplying unidentified source components only.
+	///
+	/// \return The independently owned sampled texture, or an error from \c upload.
+	[[nodiscard]] auto uploadStoredSamplesWithFallback (Device &device, SDL_Colorspace colorspace) const
+		-> std::expected<Texture, ImageError> {
+		return upload(device, {ImageUploadSamplePolicy::PreserveSamples, colorspace});
+	}
+
+	/// \brief Preserve samples for unidentified encoding; otherwise upload color as linear sRGB.
+	///
+	/// Unknown or unspecified encoding components trigger preservation; identified custom components do not. See
+	/// \c upload for formats, ownership and errors.
+	///
+	/// \param device The device, which must outlive the returned texture.
+	///
+	/// \return The independently owned sampled texture, or an error from \c upload.
+	[[nodiscard]] auto uploadStoredSamplesIfUnknown (Device &device) const
+		-> std::expected<Texture, ImageError> {
+		return upload(device, {ImageUploadSamplePolicy::PreserveSamplesIfUnknown, std::nullopt});
+	}
+
+	/// \brief Preserve unidentified samples first, permitting color-managed fallback when unavailable.
+	///
+	/// The preservation decision uses original metadata, before filling missing components from \p colorspace.
+	/// Identified encoding uses normal color management. Operational errors are returned directly; see \c upload.
+	///
+	/// \param device The device, which must outlive the returned texture.
+	/// \param colorspace Supported full-range RGB encoding supplying unidentified source components only.
+	///
+	/// \return The independently owned sampled texture, or an error from \c upload.
+	[[nodiscard]] auto uploadStoredSamplesIfUnknownWithFallback (Device &device, SDL_Colorspace colorspace) const
+		-> std::expected<Texture, ImageError> {
+		return upload(device, {ImageUploadSamplePolicy::PreserveSamplesIfUnknown, colorspace});
+	}
 
 
 private:

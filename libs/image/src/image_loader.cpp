@@ -15,6 +15,7 @@
 
 // SDL3 library
 #include <SDL3/SDL_error.h>
+#include <SDL3/SDL_surface.h>
 
 // Local includes
 #include "image_internal.h"
@@ -94,7 +95,8 @@ auto imageSDLError (ImageErrorCode code, const char *operation) -> std::unexpect
 ////
 // ImageFormatHandler
 
-auto ImageFormatHandler::load (const std::filesystem::path &path) const -> std::expected<Image, ImageError>
+auto ImageFormatHandler::load (const std::filesystem::path &path, ImageLoaderOptions options) const
+	-> std::expected<Image, ImageError>
 {
 	auto input = detail::readImageFile(path);
 	if (!input)
@@ -102,7 +104,42 @@ auto ImageFormatHandler::load (const std::filesystem::path &path) const -> std::
 	auto hint = detail::imageHint(input->bytes, input->hint);
 	if (!hint)
 		return std::unexpected(std::move(hint.error()));
-	return load(input->bytes, *hint);
+	return load(input->bytes, *hint, options);
+}
+
+auto ImageFormatHandler::loadAndGuess (std::span<const std::byte> bytes, std::string_view hint) const
+	-> std::expected<Image, ImageError> {
+	return load(bytes, hint, {true, true, true});
+}
+
+auto ImageFormatHandler::loadAndGuess (const std::filesystem::path &path) const -> std::expected<Image, ImageError> {
+	return load(path, {true, true, true});
+}
+
+auto ImageFormatHandler::finishLoading (std::expected<Image, ImageError> image, ImageLoaderOptions options)
+	-> std::expected<Image, ImageError>
+{
+	if (!image || !image->handle())
+		return image;
+	if (!options.guessColorPrimaries && !options.guessTransferCharacteristics && !options.guessColorRange)
+		return image;
+	const auto original = SDL_GetSurfaceColorspace(image->handle());
+	if (SDL_ISPIXELFORMAT_FOURCC(image->format()))
+		return image;
+	// Missing components are filled independently; custom components are explicit and remain untouched.
+	const auto assumed = detail::imageRGBColorspace(
+		options.guessColorPrimaries ? SDL_COLOR_PRIMARIES_BT709 : SDL_COLORSPACEPRIMARIES(original),
+		!options.guessTransferCharacteristics ? SDL_COLORSPACETRANSFER(original)
+			: SDL_ISPIXELFORMAT_FLOAT(image->format()) ? SDL_TRANSFER_CHARACTERISTICS_LINEAR
+			: SDL_TRANSFER_CHARACTERISTICS_SRGB);
+	const auto fallback = static_cast<SDL_Colorspace>(SDL_DEFINE_COLORSPACE(SDL_COLOR_TYPE_RGB,
+		options.guessColorRange ? SDL_COLOR_RANGE_FULL : SDL_COLORSPACERANGE(original),
+		SDL_COLORSPACEPRIMARIES(assumed), SDL_COLORSPACETRANSFER(assumed),
+		SDL_MATRIX_COEFFICIENTS_IDENTITY, SDL_CHROMA_LOCATION_NONE));
+	const auto encoding = detail::fillImageEncoding(original, fallback);
+	if (encoding != original && !SDL_SetSurfaceColorspace(image->handle(), encoding))
+		return detail::imageSDLError(ImageErrorCode::SDLFailure, "Assigning image metadata assumptions");
+	return image;
 }
 
 
@@ -152,15 +189,16 @@ auto ImageLoader::fileFormats () const -> std::vector<ImageFileFormat>
 	return formats;
 }
 
-auto ImageLoader::load (const std::filesystem::path &path) const -> std::expected<Image, ImageError> {
+auto ImageLoader::load (const std::filesystem::path &path, ImageLoaderOptions options) const -> std::expected<Image, ImageError> {
 	auto input = detail::readImageFile(path);
 	if (!input)
 		return std::unexpected(std::move(input.error()));
-	return load(input->bytes, input->hint);
+	return load(input->bytes, input->hint, options);
 }
 
-auto ImageLoader::load (std::span<const std::byte> bytes, std::string_view hint) const
-	-> std::expected<Image, ImageError>
+auto ImageLoader::load (
+	std::span<const std::byte> bytes, std::string_view hint, ImageLoaderOptions options
+) const -> std::expected<Image, ImageError>
 {
 	auto normalized = detail::imageHint(bytes, hint);
 	if (!normalized)
@@ -171,7 +209,7 @@ auto ImageLoader::load (std::span<const std::byte> bytes, std::string_view hint)
 		if (accepted && !*accepted)
 			continue;
 		if (accepted) {
-			auto image = entry.handler->load(bytes, *normalized);
+			auto image = entry.handler->load(bytes, *normalized, options);
 			if (image && image->handle())
 				return image;
 			if (!failures.empty())
@@ -187,6 +225,15 @@ auto ImageLoader::load (std::span<const std::byte> bytes, std::string_view hint)
 		return std::unexpected(
 			ImageError{ImageErrorCode::UnsupportedFormat, "No image format handler accepted the input"});
 	return std::unexpected(ImageError{ImageErrorCode::DecodeFailure, std::move(failures)});
+}
+
+auto ImageLoader::loadAndGuess (const std::filesystem::path &path) const -> std::expected<Image, ImageError> {
+	return load(path, {true, true, true});
+}
+
+auto ImageLoader::loadAndGuess (std::span<const std::byte> bytes, std::string_view hint) const
+	-> std::expected<Image, ImageError> {
+	return load(bytes, hint, {true, true, true});
 }
 
 

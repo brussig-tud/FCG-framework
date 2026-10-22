@@ -15,7 +15,8 @@
 /// Use <tt>\ref fcg::PFMImageFormatHandler "PFMImageFormatHandler"</tt> directly or load through
 /// <tt>\ref fcg::ImageLoader::global "ImageLoader::global"</tt>.
 /// Both endian orders and LF/CRLF text headers are supported, with comments and blank lines between records.
-/// The raster must consume the remaining input. Color primaries and transfer are unspecified.
+/// The raster must consume the remaining input. By default, color primaries and transfer are unspecified; loader
+/// options or the inherited <tt>\ref fcg::ImageFormatHandler::loadAndGuess "loadAndGuess"</tt> can supply assumptions.
 ///
 /// \section fcg_pfm_usage Getting started
 /// \snippet hdr_examples.cpp pfm_direct
@@ -25,7 +26,15 @@
 /// formats.
 /// Inspect floating samples with <tt>\ref fcg::Image::readColorFloat "Image::readColorFloat"</tt>.
 /// This handler is included in every Image build.
-/// A source whose encoding is unspecified needs a known interpretation before color conversion or GPU upload.
+/// <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt> is inherited by this
+/// handler and supplies missing color metadata. The registry offers
+/// <tt>\ref fcg::ImageLoader::loadAndGuess "ImageLoader::loadAndGuess"</tt> as well:
+/// \snippet hdr_examples.cpp guessing
+/// To retain source metadata, choose <tt>\ref fcg::Image::uploadWithFallback "uploadWithFallback"</tt> or upload
+/// stored values with <tt>\ref fcg::Image::uploadStoredSamples "uploadStoredSamples"</tt>. Conditional preservation
+/// is available through <tt>\ref fcg::Image::uploadStoredSamplesIfUnknown "uploadStoredSamplesIfUnknown"</tt>.
+/// \snippet hdr_examples.cpp upload_policies
+/// If the producer supplies the actual source encoding, label it before color conversion:
 /// \snippet hdr_examples.cpp hdr_encoding
 ///
 /// \section fcg_pfm_errors Handling errors
@@ -70,7 +79,8 @@ namespace fcg {
 /// \brief Decodes RGB and grayscale Portable Float Map files into three-channel 32-bit floating-point pixels.
 ///
 /// Both endian orders and LF/CRLF text headers are supported, with comments and blank lines between records.
-/// The raster must consume the remaining input. Color primaries and transfer are unspecified.
+/// The raster must consume the remaining input. Color primaries and transfer are unspecified by default; use
+/// \c ImageLoaderOptions or the inherited \c loadAndGuess to supply missing metadata.
 ///
 /// \note
 ///         Rows use the conventional bottom-to-top file order, including when a producer uses another
@@ -112,6 +122,7 @@ public:
 	///
 	/// \param bytes Encoded input, borrowed for this call.
 	/// \param hint Optional extension; the signature determines whether this decoder can load the input.
+	/// \param options Optional assumptions for missing RGB metadata; \c loadAndGuess enables every assumption.
 	///
 	/// \return
 	/// 	The image, \c ImageErrorCode::InvalidArgument for invalid arguments,
@@ -119,8 +130,9 @@ public:
 	/// 	malformed or unsupported variants, or \c ImageErrorCode::SDLFailure for surface setup failures.
 	///
 	/// 	hrows std::bad_alloc If a C++ allocation fails.
-	[[nodiscard]] auto load (std::span<const std::byte> bytes, std::string_view hint={}) const
-		-> std::expected<Image, ImageError> override;
+	[[nodiscard]] auto load (
+		std::span<const std::byte> bytes, std::string_view hint={}, ImageLoaderOptions options={}
+	) const -> std::expected<Image, ImageError> override;
 };
 
 

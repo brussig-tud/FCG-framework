@@ -160,15 +160,36 @@ PFM supports conventional bottom-to-top RGB/grayscale, LF/CRLF headers, both byt
 Radiance supports RGBE flat/scanline RLE in `-Y height +X width` order. EXR supports full-resolution HALF/FLOAT RGB/Y
 with optional alpha in single-part non-deep scanline/tiled files, using the data window. See the module guides for
 the supported subsets. EXR alpha association and HDR stored exposure are preserved. Unidentified source color encoding
-remains unspecified; conversion/upload requires a known interpretation. Loading does not perform display tonemapping.
+remains unspecified by default. `ImageLoaderOptions` selectively enables assumptions for missing primaries, transfer,
+and range; `ImageLoader::loadAndGuess` and inherited `ImageFormatHandler::loadAndGuess` enable all three. Identified
+custom metadata is retained. Float transfer guesses are linear; integer/palette guesses use sRGB, with BT.709 primaries
+and full RGB range. Metadata assumptions do not change decoded samples, and loading does not perform display tonemapping.
+
+`ImageUploadOptions` selects normal color management, stored-sample preservation, or preservation only for unidentified
+encoding. Its optional fallback colorspace fills only missing components and permits color-managed fallback when an
+applicable preservation path is unavailable. Applicable preservation is attempted before filling metadata. An identified
+custom or unsupported encoding is distinct from missing metadata: guessing and conditional preservation retain its
+declaration; unconditional preservation uploads its numeric samples. Fallback encodings are validated even when not used.
+Stored integer samples are normalized without sRGB decoding; palettes expand to colors. Raw YUV planes are outside
+this path. Color-managed conversion and upload reject unsupported SDL transforms instead of accepting metadata that
+SDL cannot actually convert. All upload
+policies leave the image unchanged. The viewer uses `loadAndGuess` followed by strict color-managed upload.
+
+Custom handlers must extend their byte `load` override with `ImageLoaderOptions`, extract metadata first, then use the
+protected `finishLoading` helper (or forward options to another handler). Existing client calls retain their defaults;
+the virtual interface change requires recompiling handlers and shared-library clients. Handlers implement only the
+byte `load` overload; the inherited guessing aliases require no second decoding implementation or additional dependency.
 
 The existing installed-target contract still requires external dependencies to be supplied separately. Source-built
 EXR fallbacks are static; supplied shared packages remain externally managed. Bundled decoder license notices accompany
 the framework installation. Installed public headers never require stb/OpenEXR headers.
 
-Run `ctest --preset release-custom -R 'image-|dependencies|install|documentation'` and the corresponding shared
-configuration after building. Enable EXR in one configuration to include `image-exr-smoke`. The optional second argument
-to that executable points to teaching assets for checking EXR/PFM sample equality; normal CTest runs use small fixtures.
+Run `ctest --preset release -R 'image-|texture-smoke|install|documentation'` and the corresponding `release-shared`
+configuration after building. Check both EXR settings; enabling EXR includes `image-exr-smoke` and `image-exr-assets`.
+`image-exr-smoke` uses generated fixtures. The separately registered `image-exr-assets` test checks EXR/PFM sample
+equality and RGBE tolerance when all three local Memorial assets exist, and skips an absent or incomplete set.
+`texture-smoke` also validates whichever local Memorial assets its enabled handlers support, comparing uploaded samples
+across guessing, upload fallback, and preservation policies. These tests never download the teaching assets.
 
 ### SDL_image formats and codecs
 

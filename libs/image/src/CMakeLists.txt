@@ -2,6 +2,7 @@
 # Collect sources
 set(SOURCES
 	image.cpp
+	image_color.cpp
 	pixel_format.cpp
 	pixel_access.cpp
 	image_loader.cpp
@@ -32,6 +33,7 @@ set(HEADERS
 
 	# Internal
 	image_internal.h
+	image_upload_internal.h
 	hdr_internal.h
 )
 

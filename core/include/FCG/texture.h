@@ -25,6 +25,15 @@
 /// \c SDL_GPU_TEXTUREUSAGE_SAMPLER, and sRGB formats decode to linear values when sampled.
 ///
 /// \section fcg_textures_workflows Common tasks
+/// \subsection fcg_textures_workflows_images Uploading a decoded image
+/// The Image library creates textures from decoded files through <tt>\ref fcg::Image::upload "Image::upload"</tt>.
+/// Choose normal color management for display, <tt>\ref fcg::Image::uploadWithFallback "uploadWithFallback"</tt> to
+/// supply missing encoding, or <tt>\ref fcg::Image::uploadStoredSamples "uploadStoredSamples"</tt> for numeric data
+/// textures. To establish missing metadata while loading, use
+/// <tt>\ref fcg::ImageLoader::loadAndGuess "ImageLoader::loadAndGuess"</tt> or the inherited handler alias
+/// <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt>. See \ref fcg_images and
+/// \ref fcg_image_loading for these workflows and the conditional sample-preservation policy.
+///
 /// \subsection fcg_textures_workflows_transfers Transfer paths
 /// Besides the one-call upload shown above, transfers can be recorded manually into a copy pass with
 /// <tt>\ref fcg::Texture::uploadFrom "uploadFrom"</tt> and <tt>\ref fcg::Texture::downloadTo "downloadTo"</tt> for

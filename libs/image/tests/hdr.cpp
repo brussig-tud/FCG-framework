@@ -6,6 +6,7 @@
 
 // C++ STL
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstring>
@@ -149,6 +150,21 @@ void pfmTests ()
 		require(std::isnan(value) ? std::isnan(sample(image, 0, 0, 0)) : sample(image, 0, 0, 0) == value,
 			"PFM special or HDR sample was clipped");
 	}
+	// Guesses label the independently decoded image while retaining all native samples.
+	for (unsigned mask = 0; mask < 8; ++mask)
+	{
+		const fcg::ImageLoaderOptions options{bool(mask & 1), bool(mask & 2), bool(mask & 4)};
+		auto guessed = take(decoder.load(pfm(true, true), {}, options));
+		const auto color = SDL_GetSurfaceColorspace(guessed.handle());
+		require(SDL_COLORSPACEPRIMARIES(color) == (options.guessColorPrimaries
+			? SDL_COLOR_PRIMARIES_BT709 : SDL_COLOR_PRIMARIES_UNSPECIFIED), "PFM primary guessing toggle ignored");
+		require(SDL_COLORSPACETRANSFER(color) == (options.guessTransferCharacteristics
+			? SDL_TRANSFER_CHARACTERISTICS_LINEAR : SDL_TRANSFER_CHARACTERISTICS_UNSPECIFIED), "PFM transfer guessing toggle ignored");
+		require(sample(guessed, 0, 0, 0) == 7.f, "Guessing changed PFM samples");
+	}
+	const fcg::ImageFormatHandler &base = decoder;
+	auto guessed = take(base.loadAndGuess(pfm(true, false)));
+	require(SDL_GetSurfaceColorspace(guessed.handle()) == SDL_COLORSPACE_SRGB_LINEAR, "Inherited guessing alias failed");
 	const auto unaligned = pfm(false, false);
 	auto storage = encoded("x");
 	storage.insert(storage.end(), unaligned.begin(), unaligned.end());
@@ -184,6 +200,57 @@ void hdrTests ()
 		byte(explicitColor, value);
 	auto image = take(decoder.load(explicitColor));
 	require(SDL_GetSurfaceColorspace(image.handle()) == SDL_COLORSPACE_SRGB_LINEAR, "HDR explicit Rec.709 primaries lost");
+	// Shared recognition includes each SDL RGB primary set, its white point, and a custom-gamut result.
+	const std::array<std::pair<std::string_view, SDL_ColorPrimaries>, 13> primaries{{
+		{".64 .33 .30 .60 .15 .06 .3127 .3290", SDL_COLOR_PRIMARIES_BT709},
+		{".67 .33 .21 .71 .14 .08 .310 .316", SDL_COLOR_PRIMARIES_BT470M},
+		{".64 .33 .29 .60 .15 .06 .3127 .3290", SDL_COLOR_PRIMARIES_BT470BG},
+		{".63 .34 .31 .595 .155 .07 .3127 .3290", SDL_COLOR_PRIMARIES_BT601},
+		{".681 .319 .243 .692 .145 .049 .310 .316", SDL_COLOR_PRIMARIES_GENERIC_FILM},
+		{".708 .292 .170 .797 .131 .046 .3127 .3290", SDL_COLOR_PRIMARIES_BT2020},
+		{"1 0 0 1 0 0 .333333 .333333", SDL_COLOR_PRIMARIES_XYZ},
+		{".68 .32 .265 .69 .15 .06 .314 .351", SDL_COLOR_PRIMARIES_SMPTE431},
+		{".68 .32 .265 .69 .15 .06 .3127 .3290", SDL_COLOR_PRIMARIES_SMPTE432},
+		{".63 .34 .295 .605 .155 .077 .3127 .3290", SDL_COLOR_PRIMARIES_EBU3213},
+		{".64 .33 .30 .60 .15 .06 .333 .333", SDL_COLOR_PRIMARIES_CUSTOM},
+		{"+.64009 +.33 +.30 +.60 +.15 +.06 +.3127 +.3290", SDL_COLOR_PRIMARIES_BT709},
+		{".64011 .33 .30 .60 .15 .06 .3127 .3290", SDL_COLOR_PRIMARIES_CUSTOM}
+	}};
+	for (const auto &[coordinates, expected] : primaries)
+	{
+		auto tagged = encoded(std::string("#?RGBE\nPRIMARIES=") + std::string(coordinates)
+			+ "\nFORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 1\n");
+		for (const auto value : {128u, 64u, 32u, 130u})
+			byte(tagged, value);
+		auto decoded = take(decoder.loadAndGuess(tagged));
+		require(SDL_COLORSPACEPRIMARIES(SDL_GetSurfaceColorspace(decoded.handle())) == expected,
+			"HDR metadata was missed or overwritten by guessing");
+	}
+	for (const auto &[gamma, transfer] : std::array<std::pair<std::string_view, SDL_TransferCharacteristics>, 4>{{
+		{"1", SDL_TRANSFER_CHARACTERISTICS_LINEAR}, {"2.2", SDL_TRANSFER_CHARACTERISTICS_GAMMA22},
+		{"2.8", SDL_TRANSFER_CHARACTERISTICS_GAMMA28}, {"2.4", SDL_TRANSFER_CHARACTERISTICS_CUSTOM}}})
+	{
+		auto tagged = encoded(std::string("#?RGBE\nGAMMA=") + std::string(gamma)
+			+ "\nEXPOSURE=+2\nCOLORCORR=+1 +2 +3\nFORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 1\n");
+		for (const auto value : {128u, 64u, 32u, 130u})
+			byte(tagged, value);
+		auto decoded = take(decoder.loadAndGuess(tagged));
+		require(SDL_COLORSPACETRANSFER(SDL_GetSurfaceColorspace(decoded.handle())) == transfer,
+			"HDR gamma was ignored or guessed over");
+		require(sample(decoded, 0, 0, 0) == 2.f, "HDR exposure or gamma changed stored samples");
+		require(SDL_HasProperty(SDL_GetSurfaceProperties(decoded.handle()), "fcg.image.source.color_metadata"),
+			"HDR declared metadata was not retained");
+	}
+
+	for (const auto records : {"GAMMA=nan\n", "GAMMA=0\n", "PRIMARIES=.64 .33 .30 .60 .15 .06 .3127 nan\n",
+		"GAMMA=1\nGAMMA=2.2\n", "PRIMARIES=.64 .33 .30 .60 .15 .06 .3127 .3290\nPRIMARIES=.1 .2 .3 .4 .5 .6 .3 .3\n"})
+	{
+		auto tagged = encoded(std::string("#?RGBE\n") + records + "FORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 1\n");
+		for (const auto value : {128u, 64u, 32u, 130u})
+			byte(tagged, value);
+		require(!decoder.loadAndGuess(tagged), "Malformed or contradictory HDR color metadata was accepted");
+	}
+
 }
 
 /// Load a fixture without introducing a runtime image-codec dependency in the test helper.
@@ -223,6 +290,9 @@ void dispatchTests (const std::filesystem::path &fixtures, const std::filesystem
 		std::ofstream file(path, std::ios::binary);
 		file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 	}
+	require(SDL_GetSurfaceColorspace(take(portable.loadAndGuess(path)).handle()) == SDL_COLORSPACE_SRGB_LINEAR
+		&& SDL_GetSurfaceColorspace(take(fcg::ImageLoader::global().loadAndGuess(path)).handle()) == SDL_COLORSPACE_SRGB_LINEAR,
+		"File guessing aliases failed");
 	require(bool(portable.load(path)) && bool(fcg::ImageLoader::global().load(path)), "File overload or signature precedence failed");
 	require(!portable.load(std::span<const std::byte>{}) && !radiance.load(hdr(false), std::string_view("a\0b", 3)),
 		"Invalid argument accepted");

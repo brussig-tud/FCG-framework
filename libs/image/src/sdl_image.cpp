@@ -206,8 +206,9 @@ auto SDLImageFormatHandler::accepts (std::span<const std::byte> bytes, std::stri
 	return *type != nullptr || recognizedHint(*normalized);
 }
 
-auto SDLImageFormatHandler::load (std::span<const std::byte> bytes, std::string_view hint) const
-	-> std::expected<Image, ImageError>
+auto SDLImageFormatHandler::load (
+	std::span<const std::byte> bytes, std::string_view hint, ImageLoaderOptions options
+) const -> std::expected<Image, ImageError>
 {
 	auto normalized = detail::imageHint(bytes, hint);
 	if (!normalized)
@@ -230,7 +231,7 @@ auto SDLImageFormatHandler::load (std::span<const std::byte> bytes, std::string_
 	auto image = Image::adopt(surface.get());
 	if (image)
 		surface.release();
-	return image;
+	return finishLoading(std::move(image), options);
 }
 
 

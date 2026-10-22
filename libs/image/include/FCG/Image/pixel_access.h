@@ -14,7 +14,8 @@
 ///
 /// Inspect and explicitly convert with \ref fcg_pixel_formats before selecting an exact
 /// <tt>\ref fcg::PixelFormatTraits "PixelFormatTraits"</tt> format. Logical values use RGB or RGBA order,
-/// regardless of the physical channel order. Floating samples retain their color encoding and HDR range.
+/// regardless of the physical channel order. Floating samples retain their color encoding and HDR range. Access
+/// retains the image's alpha association; use the same straight or associated convention when writing components.
 ///
 /// \section fcg_pixel_access_usage Getting started
 /// \snippet pixel_examples.cpp access
@@ -100,7 +101,7 @@ struct NativeRGB
 	Component b{};
 };
 
-/// Logical RGBA components in the native representation, with straight alpha.
+/// Logical RGBA components in the native representation, retaining the image's alpha association.
 ///
 /// \tparam Component Native unsigned integer or floating component type.
 template<class Component>

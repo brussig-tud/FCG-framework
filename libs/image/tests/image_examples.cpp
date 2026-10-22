@@ -115,15 +115,18 @@ public:
 	////
 	// Methods
 
+	/// Expose filesystem loading alongside the byte decoder overload.
+	using ImageFormatHandler::load;
+
 	auto accepts (std::span<const std::byte> bytes, std::string_view hint) const
 		-> std::expected<bool, fcg::ImageError> override
 	{
 		return builtinHandler.accepts(bytes, hint);
 	}
-	auto load (std::span<const std::byte> bytes, std::string_view hint) const
+	auto load (std::span<const std::byte> bytes, std::string_view hint, fcg::ImageLoaderOptions options) const
 		-> std::expected<fcg::Image, fcg::ImageError> override
 	{
-		return builtinHandler.load(bytes, hint);
+		return builtinHandler.load(bytes, hint, options);
 	}
 
 

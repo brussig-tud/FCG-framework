@@ -6,10 +6,13 @@
 
 // C++ STL
 #include <array>
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <sstream>
+#include <iomanip>
 #include <utility>
 
 // OpenEXR library
@@ -20,6 +23,7 @@
 #include <ImfIO.h>
 #include <ImfInputFile.h>
 #include <ImfStandardAttributes.h>
+#include <ImfIntAttribute.h>
 #include <ImfVersion.h>
 
 // Local includes
@@ -98,24 +102,61 @@ private:
 	return bytes.size() >= 4 && exr::isImfMagic(reinterpret_cast<const char*>(bytes.data()));
 }
 
-/// Preserve established color metadata, recognizing linear Rec.709 and otherwise retaining unknown primaries.
+/// Recognize standardized interop components without guessing from an arbitrary user-defined identifier.
+[[nodiscard]] auto interopEncoding (std::string_view id) -> SDL_Colorspace
+{
+	using namespace fcg::detail;
+	if (id.empty() || id == "unknown")
+		return unidentifiedImageColorspace(false);
+	// Only published IDs establish components; similarly named studio IDs are not metadata evidence.
+	static constexpr std::array identifiers{
+		"lin_ap1_scene", "lin_ap0_scene", "lin_rec709_scene", "lin_p3d65_scene", "lin_rec2020_scene",
+		"lin_adobergb_scene", "lin_ciexyzd65_scene", "srgb_rec709_scene", "g24_rec709_scene",
+		"g22_rec709_scene", "g18_rec709_scene", "srgb_ap1_scene", "g22_ap1_scene", "srgb_p3d65_scene",
+		"g22_adobergb_scene", "srgb_rec709_display", "g24_rec709_display", "srgb_p3d65_display",
+		"srgbe_p3d65_display", "pq_p3d65_display", "pq_rec2020_display", "hlg_rec2020_display",
+		"g22_rec709_display", "g22_adobergb_display", "g26_p3d65_display", "g26_xyzd65_display",
+		"pq_xyzd65_display", "lin_rec709_display", "lin_p3d65_display", "lin_rec2020_display"
+	};
+	if (std::ranges::find(identifiers, id) == identifiers.end())
+		return imageRGBColorspace(SDL_COLOR_PRIMARIES_CUSTOM, SDL_TRANSFER_CHARACTERISTICS_CUSTOM);
+	id.remove_suffix(id.ends_with("_scene") ? 6 : 8);
+	const auto split = id.find('_');
+	const auto curve = id.substr(0, split);
+	const auto gamut = split == id.npos ? std::string_view{} : id.substr(split + 1);
+	const auto primaries = gamut == "rec709" ? SDL_COLOR_PRIMARIES_BT709
+		: gamut == "rec2020" ? SDL_COLOR_PRIMARIES_BT2020
+		: gamut == "p3d65" ? SDL_COLOR_PRIMARIES_SMPTE432 : SDL_COLOR_PRIMARIES_CUSTOM;
+	const bool knownGamut = primaries != SDL_COLOR_PRIMARIES_CUSTOM || gamut == "ap0" || gamut == "ap1"
+		|| gamut == "adobergb" || gamut == "ciexyzd65" || gamut == "xyzd65";
+	const auto transfer = !knownGamut ? SDL_TRANSFER_CHARACTERISTICS_CUSTOM
+		: curve == "lin" ? SDL_TRANSFER_CHARACTERISTICS_LINEAR
+		: curve == "srgb" || curve == "srgbe" ? SDL_TRANSFER_CHARACTERISTICS_SRGB
+		: curve == "g22" ? SDL_TRANSFER_CHARACTERISTICS_GAMMA22
+		: curve == "g28" ? SDL_TRANSFER_CHARACTERISTICS_GAMMA28
+		: curve == "pq" ? SDL_TRANSFER_CHARACTERISTICS_PQ
+		: curve == "hlg" ? SDL_TRANSFER_CHARACTERISTICS_HLG : SDL_TRANSFER_CHARACTERISTICS_CUSTOM;
+	return imageRGBColorspace(primaries, transfer);
+}
+
+/// Prefer authoritative identification, otherwise recognize the complete declared RGB/white chromaticities.
 [[nodiscard]] auto colorEncoding (const exr::Header &header) -> SDL_Colorspace
 {
-	if (exr::hasColorInteropID(header))
-		return exr::colorInteropID(header) == "lin_rec709_scene" ? SDL_COLORSPACE_SRGB_LINEAR
-			: fcg::detail::unidentifiedImageColorspace(false);
+	using namespace fcg::detail;
+	const auto *aces = header.findTypedAttribute<exr::IntAttribute>("acesImageContainerFlag");
+	if (aces && aces->value() == 1)
+		return imageRGBColorspace(SDL_COLOR_PRIMARIES_CUSTOM, SDL_TRANSFER_CHARACTERISTICS_LINEAR);
+	if (exr::hasColorInteropID(header) && !exr::colorInteropID(header).empty()
+		&& exr::colorInteropID(header) != "unknown")
+		return interopEncoding(exr::colorInteropID(header));
 	if (exr::hasChromaticities(header))
 	{
 		const auto &actual = exr::chromaticities(header);
-		const exr::Chromaticities expected;
-		const auto near = [] (const auto &a, const auto &b) {
-			return std::abs(a.x - b.x) <= .0001f && std::abs(a.y - b.y) <= .0001f;
-		};
-		if (near(actual.red, expected.red) && near(actual.green, expected.green)
-			&& near(actual.blue, expected.blue) && near(actual.white, expected.white))
-			return SDL_COLORSPACE_SRGB_LINEAR;
+		return imageRGBColorspace(imageColorPrimaries({actual.red.x, actual.red.y, actual.green.x,
+			actual.green.y, actual.blue.x, actual.blue.y, actual.white.x, actual.white.y}),
+			SDL_TRANSFER_CHARACTERISTICS_LINEAR);
 	}
-	return fcg::detail::unidentifiedImageColorspace(true);
+	return unidentifiedImageColorspace(!exr::hasColorInteropID(header));
 }
 
 /// Read selected full-resolution floating channels directly into independently owned surface storage.
@@ -160,6 +201,22 @@ private:
 	// Rebase absolute EXR coordinates through checked Slice::Make addressing and actual SDL pitch.
 	if (!surface)
 		return std::unexpected(std::move(surface.error()));
+	// Keep declared attributes owned by the surface even when their gamut cannot be represented by SDL.
+	std::ostringstream metadata;
+	metadata << std::setprecision(std::numeric_limits<float>::max_digits10);
+	if (exr::hasColorInteropID(header))
+		metadata << "colorInteropID=" << exr::colorInteropID(header) << '\n';
+	if (exr::hasChromaticities(header)) {
+		const auto &c = exr::chromaticities(header);
+		metadata << "chromaticities=" << c.red << ' ' << c.green << ' ' << c.blue << ' ' << c.white << '\n';
+	}
+	if (exr::hasWhiteLuminance(header))
+		metadata << "whiteLuminance=" << exr::whiteLuminance(header) << '\n';
+	if (header.findTypedAttribute<exr::IntAttribute>("acesImageContainerFlag"))
+		metadata << "acesImageContainerFlag=" << header.typedAttribute<exr::IntAttribute>("acesImageContainerFlag").value() << '\n';
+	if (!metadata.str().empty() && !SDL_SetStringProperty(SDL_GetSurfaceProperties(surface->get()),
+		"fcg.image.source.color_metadata", metadata.str().c_str()))
+		return imageSDLError(fcg::ImageErrorCode::SDLFailure, "Retaining OpenEXR color metadata");
 	const auto components = alpha ? 4u : 3u;
 	exr::FrameBuffer frame;
 	for (unsigned c = 0; c < components; ++c)
@@ -237,14 +294,15 @@ auto OpenEXRImageFormatHandler::accepts (std::span<const std::byte> bytes, std::
 	return isEXR(bytes);
 }
 
-auto OpenEXRImageFormatHandler::load (std::span<const std::byte> bytes, std::string_view hint) const
-	-> std::expected<Image, ImageError>
+auto OpenEXRImageFormatHandler::load (
+	std::span<const std::byte> bytes, std::string_view hint, ImageLoaderOptions options
+) const -> std::expected<Image, ImageError>
 {
 	if (auto accepted = accepts(bytes, hint); !accepted || !*accepted)
 		return accepted ? std::unexpected(ImageError{ImageErrorCode::UnsupportedFormat, "Not an OpenEXR image"})
 			: std::unexpected(std::move(accepted.error()));
 	try {
-		return decodeEXR(bytes);
+		return finishLoading(decodeEXR(bytes), options);
 	} catch (const IEX_NAMESPACE::BaseExc &error) {
 		return detail::imageDecodeError(std::string("Decoding OpenEXR: ") + error.what());
 	}

@@ -100,8 +100,9 @@ auto PFMImageFormatHandler::accepts (std::span<const std::byte> bytes, std::stri
 	return isPFM(bytes);
 }
 
-auto PFMImageFormatHandler::load (std::span<const std::byte> bytes, std::string_view hint) const
-	-> std::expected<Image, ImageError>
+auto PFMImageFormatHandler::load (
+	std::span<const std::byte> bytes, std::string_view hint, ImageLoaderOptions options
+) const -> std::expected<Image, ImageError>
 {
 	static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
 	static_assert(std::endian::native == std::endian::little || std::endian::native == std::endian::big);
@@ -160,7 +161,7 @@ auto PFMImageFormatHandler::load (std::span<const std::byte> bytes, std::string_
 			std::memcpy(output + std::size_t(x) * 3, pixel, sizeof(pixel));
 		}
 	}
-	return detail::adoptImageSurface(std::move(*surface));
+	return finishLoading(detail::adoptImageSurface(std::move(*surface)), options);
 }
 
 

@@ -184,13 +184,23 @@ namespace fcg {
 
 [[nodiscard]] auto detail::expandIndexedPixels (SDL_Surface &source) -> std::expected<SDL_Surface*, ImageError>
 {
+	return copyStoredPixels(source, SDL_PIXELFORMAT_RGBA128_FLOAT);
+}
+
+[[nodiscard]] auto detail::copyStoredPixels (SDL_Surface &source, SDL_PixelFormat destination)
+	-> std::expected<SDL_Surface*, ImageError>
+{
 	std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> output(
-		SDL_CreateSurface(source.w, source.h, SDL_PIXELFORMAT_RGBA128_FLOAT), SDL_DestroySurface
+		SDL_CreateSurface(source.w, source.h, destination), SDL_DestroySurface
 	);
 	if (!output || !SDL_SetSurfaceColorspace(output.get(), SDL_GetSurfaceColorspace(&source))
 		|| !SDL_CopyProperties(SDL_GetSurfaceProperties(&source), SDL_GetSurfaceProperties(output.get()))
 		|| !SDL_SetStringProperty(SDL_GetSurfaceProperties(output.get()), SDL_PROP_SURFACE_TONEMAP_OPERATOR_STRING, "none"))
-		return std::unexpected(ImageError{ImageErrorCode::SDLFailure, std::string("Expanding palette: ") + SDL_GetError()});
+		return std::unexpected(ImageError{ImageErrorCode::SDLFailure, std::string("Copying stored samples: ") + SDL_GetError()});
+	const bool lock = SDL_MUSTLOCK(&source);
+	if (lock && !SDL_LockSurface(&source))
+		return imageSDLError(ImageErrorCode::SDLFailure, "Locking stored samples");
+	const std::unique_ptr<SDL_Surface, decltype(&SDL_UnlockSurface)> unlock(lock ? &source : nullptr, SDL_UnlockSurface);
 	for (int y = 0; y < source.h; ++y)
 		for (int x = 0; x < source.w; ++x) {
 			auto color = readLocked(source, x, y);

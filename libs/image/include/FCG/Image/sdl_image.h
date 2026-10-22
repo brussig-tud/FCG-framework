@@ -10,14 +10,14 @@
 
 /// \defgroup fcg_sdl_image SDL_image backend
 /// \ingroup fcg_modules
-/// \brief The framework's concrete image format handler, backed by SDL3_image.
+/// \brief Decodes the still-image formats enabled in SDL3_image.
 ///
 /// <tt>\ref fcg::SDLImageFormatHandler "SDLImageFormatHandler"</tt> implements
 /// <tt>\ref fcg::ImageFormatHandler "ImageFormatHandler"</tt> for every still-image format that the linked SDL_image
 /// build provides — typically PNG, JPEG, BMP, GIF, TGA and QOI; <tt>\ref fcg::ImageFormatHandler::fileFormats
-/// "fileFormats"</tt> lists them. This is the handler that <tt>\ref fcg::ImageLoader::global
-/// "ImageLoader::global()"</tt> ships with, and the usual way to load images; use it directly when the backend choice
-/// should be explicit. Floating-point formats use the handlers described in \ref fcg_radiance_hdr,
+/// "fileFormats"</tt> lists them. It is registered on <tt>\ref fcg::ImageLoader::global
+/// "ImageLoader::global"</tt>; use the handler directly when the backend choice should be explicit.
+/// Radiance HDR, PFM and OpenEXR use the handlers described in \ref fcg_radiance_hdr,
 /// \ref fcg_pfm and \ref fcg_openexr.
 ///
 /// \section fcg_sdl_image_usage Getting started
@@ -35,6 +35,10 @@
 /// The global loader comes with an instance of this handler registered under the ID <tt>"sdl_image"</tt> with
 /// priority -100. Independent <tt>\ref fcg::ImageLoader "ImageLoader"</tt>s start empty; register your own instance
 /// of the handler on them as with any other handler.
+///
+/// Missing RGB metadata can be filled with the inherited
+/// <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt>, or selected individually
+/// through <tt>\ref fcg::ImageLoaderOptions "ImageLoaderOptions"</tt>. Metadata supplied by SDL_image is retained.
 ///
 /// \section fcg_sdl_image_lifetime Ownership and lifetime
 /// The handler owns no initialization state, cache, or GPU resource, and no SDL video initialization is needed for
@@ -154,6 +158,7 @@ public:
 	/// 	The encoded file contents, valid only during the call; must not be empty.
 	/// \param hint
 	/// 	The file name extension of the input, or empty if unknown. A leading dot and ASCII letter case are ignored.
+	/// \param options Optional assumptions for missing RGB metadata; \c loadAndGuess enables every assumption.
 	///
 	/// \return
 	/// 	The decoded image, or an error:
@@ -161,8 +166,9 @@ public:
 	/// 	- \c ImageErrorCode::SDLFailure if reading the data through an SDL memory stream failed;
 	/// 	- \c ImageErrorCode::DecodeFailure if SDL_image could not decode the data, including when the format is
 	/// 	  not recognized or not supported by the build. The message contains SDL's error description.
-	[[nodiscard]] auto load (std::span<const std::byte> bytes, std::string_view hint={}) const
-		-> std::expected<Image, ImageError> override;
+	[[nodiscard]] auto load (
+		std::span<const std::byte> bytes, std::string_view hint={}, ImageLoaderOptions options={}
+	) const -> std::expected<Image, ImageError> override;
 };
 
 

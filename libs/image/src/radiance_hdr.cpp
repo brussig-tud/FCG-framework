@@ -43,8 +43,11 @@ struct HDRHeader
 	/// Positive output height.
 	int height;
 
-	/// Source encoding, with unspecified primaries unless explicitly recognized.
+	/// Source encoding; missing components remain unspecified and unmatched declarations are custom.
 	SDL_Colorspace colorspace;
+
+	/// Original declared color interpretation and radiometric adjustments, retained without changing samples.
+	std::string colorRecords;
 };
 
 /// Recognize only the identifiers stb's HDR decoder supports.
@@ -61,6 +64,24 @@ struct HDRHeader
 	(void) imageHeaderLine(input);
 	bool format = false;
 	SDL_Colorspace colorspace = unidentifiedImageColorspace(true);
+	std::string colorRecords;
+	std::optional<std::array<float, 8>> declaredPrimaries;
+	std::optional<float> declaredGamma;
+	const auto parseValues = [] (std::string_view text, auto &values)
+	{
+		for (auto &value : values)
+		{
+			auto token = imageHeaderToken(text);
+			if (token.starts_with('+'))
+				token.remove_prefix(1);
+			if (token.empty())
+				return false;
+			const auto result = std::from_chars(token.data(), token.data() + token.size(), value);
+			if (result.ec != std::errc{} || result.ptr != token.data() + token.size() || !std::isfinite(value))
+				return false;
+		}
+		return trimImageHeader(text).empty();
+	};
 	// Parse only bounded records that stb will interpret identically.
 	for (;;)
 	{
@@ -76,24 +97,31 @@ struct HDRHeader
 		}
 		if (line->starts_with("PRIMARIES="))
 		{
-			auto values = line->substr(10);
-			constexpr std::array<float, 8> srgb{.64f, .33f, .30f, .60f, .15f, .06f, .3127f, .3290f};
-			bool matched = true;
-			for (const auto expected : srgb)
-			{
-				const auto token = imageHeaderToken(values);
-				if (token.empty())
-					return imageDecodeError("Incomplete Radiance HDR primaries");
-				float value = 0;
-				const auto parsed = std::from_chars(token.data(), token.data() + token.size(), value);
-				if (parsed.ec != std::errc{} || parsed.ptr != token.data() + token.size() || !std::isfinite(value))
-					return imageDecodeError("Invalid Radiance HDR primaries");
-				matched &= std::abs(value - expected) <= .0001f;
-			}
-			if (!trimImageHeader(values).empty())
+			std::array<float, 8> values{};
+			if (!parseValues(line->substr(10), values))
 				return imageDecodeError("Invalid Radiance HDR primaries");
-			colorspace = matched ? SDL_COLORSPACE_SRGB_LINEAR : unidentifiedImageColorspace(true);
+			if (declaredPrimaries && *declaredPrimaries != values)
+				return imageDecodeError("Conflicting Radiance HDR primaries");
+			declaredPrimaries = values;
+			colorspace = imageRGBColorspace(imageColorPrimaries(values), SDL_COLORSPACETRANSFER(colorspace));
+			colorRecords += std::string(*line) + '\n';
 		}
+		if (line->starts_with("GAMMA="))
+		{
+			std::array<float, 1> gamma{};
+			if (!parseValues(line->substr(6), gamma) || gamma[0] <= 0)
+				return imageDecodeError("Invalid Radiance HDR gamma");
+			if (declaredGamma && *declaredGamma != gamma[0])
+				return imageDecodeError("Conflicting Radiance HDR gamma");
+			declaredGamma = gamma[0];
+			const auto transfer = gamma[0] == 1.f ? SDL_TRANSFER_CHARACTERISTICS_LINEAR
+				: gamma[0] == 2.2f ? SDL_TRANSFER_CHARACTERISTICS_GAMMA22
+				: gamma[0] == 2.8f ? SDL_TRANSFER_CHARACTERISTICS_GAMMA28 : SDL_TRANSFER_CHARACTERISTICS_CUSTOM;
+			colorspace = imageRGBColorspace(SDL_COLORSPACEPRIMARIES(colorspace), transfer);
+			colorRecords += std::string(*line) + '\n';
+		}
+		if (line->starts_with("EXPOSURE=") || line->starts_with("COLORCORR="))
+			colorRecords += std::string(*line) + '\n';
 	}
 	const auto resolution = imageHeaderLine(input);
 	// Restrict layout and allocation arithmetic before inspecting scanline packets.
@@ -145,7 +173,7 @@ struct HDRHeader
 	}
 	if (!input.empty())
 		return imageDecodeError("Unexpected trailing Radiance HDR raster data");
-	return HDRHeader{*width, *height, colorspace};
+	return HDRHeader{*width, *height, colorspace, std::move(colorRecords)};
 }
 
 /// Keep the HDR handler in ordinary static archive links.
@@ -202,8 +230,9 @@ auto RadianceHDRFormatHandler::accepts (std::span<const std::byte> bytes, std::s
 	return isRadiance(bytes);
 }
 
-auto RadianceHDRFormatHandler::load (std::span<const std::byte> bytes, std::string_view hint) const
-	-> std::expected<Image, ImageError>
+auto RadianceHDRFormatHandler::load (
+	std::span<const std::byte> bytes, std::string_view hint, ImageLoaderOptions options
+) const -> std::expected<Image, ImageError>
 {
 	if (auto accepted = accepts(bytes, hint); !accepted || !*accepted)
 		return accepted ? std::unexpected(ImageError{ImageErrorCode::UnsupportedFormat, "Not a Radiance HDR image"})
@@ -227,10 +256,13 @@ auto RadianceHDRFormatHandler::load (std::span<const std::byte> bytes, std::stri
 	auto surface = detail::floatImageSurface(width, height, false, header->colorspace);
 	if (!surface)
 		return std::unexpected(std::move(surface.error()));
+	if (!header->colorRecords.empty() && !SDL_SetStringProperty(SDL_GetSurfaceProperties(surface->get()),
+		"fcg.image.source.color_metadata", header->colorRecords.c_str()))
+		return detail::imageSDLError(ImageErrorCode::SDLFailure, "Retaining Radiance color metadata");
 	for (int y = 0; y < height; ++y)
 		std::memcpy(static_cast<std::byte*>((*surface)->pixels) + std::size_t(y) * (*surface)->pitch,
 			pixels.get() + std::size_t(y) * width * 3, std::size_t(width) * 3 * sizeof(float));
-	return detail::adoptImageSurface(std::move(*surface));
+	return finishLoading(detail::adoptImageSurface(std::move(*surface)), options);
 }
 
 

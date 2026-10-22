@@ -16,9 +16,13 @@
 // FCG Framework
 #include <FCG/Image/sdl_image.h>
 
+// SDL3 library
+#include <SDL3/SDL.h>
+
 // Local includes
 #include "sdl_image_capabilities.h"
 #include "../../extras/include/FCG/Extras/file_filters.h"
+#include "../src/image_upload_internal.h"
 
 
 
@@ -36,7 +40,7 @@ void require (bool value, const char *message) {
 		throw std::runtime_error(message);
 }
 
-/// A pre-metadata implementation remains source-compatible and advertises nothing.
+/// A minimal decoder advertises no file formats by default.
 class LegacyHandler : public fcg::ImageFormatHandler
 {
 public:
@@ -51,7 +55,7 @@ public:
 	}
 
 	/// Never decode; metadata must be independent of load operations.
-	[[nodiscard]] auto load (std::span<const std::byte>, std::string_view) const
+	[[nodiscard]] auto load (std::span<const std::byte>, std::string_view, fcg::ImageLoaderOptions options) const
 		-> std::expected<fcg::Image, fcg::ImageError> override {
 		throw std::runtime_error("Metadata queried the decoder");
 	}
@@ -177,6 +181,76 @@ void backendTests ()
 	require(fcg::ImageLoader::global().fileFormats().size() >= formats.size(), "Singleton lost shipped metadata");
 }
 
+/// Exercise native-format rejection and widening without depending on a particular GPU's limitations.
+void uploadCapabilityTests ()
+{
+	for (const auto format : {SDL_PIXELFORMAT_RGB24, SDL_PIXELFORMAT_RGB48, SDL_PIXELFORMAT_RGB48_FLOAT,
+		SDL_PIXELFORMAT_RGB96_FLOAT, SDL_PIXELFORMAT_ARGB2101010, SDL_PIXELFORMAT_INDEX4MSB})
+	{
+		const auto source = *fcg::pixelFormatInfo(format);
+		const auto wide = fcg::detail::storedImageLayout(source, [] (SDL_GPUTextureFormat candidate) {
+			return candidate == SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
+		});
+		require(wide && wide->cpu == SDL_PIXELFORMAT_RGBA128_FLOAT, "Preservation did not widen to float when native sampling was unavailable");
+		const auto unavailable = fcg::detail::storedImageLayout(source, [] (SDL_GPUTextureFormat) { return false; });
+		require(!unavailable, "Preservation selected an unsupported texture representation");
+	}
+	const auto yuv = *fcg::pixelFormatInfo(SDL_PIXELFORMAT_NV12);
+	require(!fcg::detail::storedImageLayout(yuv, [] (SDL_GPUTextureFormat) { return true; }), "Preservation selected RGB for YUV storage");
+}
+
+/// Check selective metadata assumptions through a client decoder and registry dispatch.
+void loadingOptionsTests ()
+{
+	class Decoder final : public fcg::ImageFormatHandler
+	{
+	public:
+		Decoder(SDL_PixelFormat format, SDL_Colorspace encoding) : format(format), encoding(encoding) {}
+
+		auto accepts (std::span<const std::byte>, std::string_view) const -> std::expected<bool, fcg::ImageError> override {
+			return true;
+		}
+
+		auto load (std::span<const std::byte>, std::string_view, fcg::ImageLoaderOptions options) const
+			-> std::expected<fcg::Image, fcg::ImageError> override
+		{
+			auto image = fcg::Image::adopt(SDL_CreateSurface(1, 1, format));
+			if (!image)
+				return image;
+			if (!SDL_SetSurfaceColorspace(image->handle(), encoding))
+				return std::unexpected(fcg::ImageError{fcg::ImageErrorCode::SDLFailure, SDL_GetError()});
+			return finishLoading(std::move(image), options);
+		}
+
+		SDL_PixelFormat format;
+		SDL_Colorspace encoding;
+	};
+	const std::array<std::byte, 1> bytes{std::byte{1}};
+	for (const auto format : {SDL_PIXELFORMAT_RGBA32, SDL_PIXELFORMAT_RGB96_FLOAT, SDL_PIXELFORMAT_INDEX8})
+		for (unsigned mask = 0; mask < 8; ++mask)
+		{
+			fcg::ImageLoader registry;
+			require(bool(registry.registerHandler("options", std::make_unique<Decoder>(format, SDL_COLORSPACE_UNKNOWN))),
+				"Options decoder registration failed");
+			auto image = registry.load(bytes, {}, {bool(mask & 1), bool(mask & 2), bool(mask & 4)});
+			require(bool(image), "Registry failed to forward loader options");
+			const auto color = SDL_GetSurfaceColorspace(image->handle());
+			require((SDL_COLORSPACEPRIMARIES(color) == SDL_COLOR_PRIMARIES_BT709) == bool(mask & 1),
+				"Selective primary guessing failed");
+			const auto transfer = SDL_COLORSPACETRANSFER(color);
+			require(bool(mask & 2) ? transfer == (SDL_ISPIXELFORMAT_FLOAT(format)
+				? SDL_TRANSFER_CHARACTERISTICS_LINEAR : SDL_TRANSFER_CHARACTERISTICS_SRGB)
+				: transfer == SDL_TRANSFER_CHARACTERISTICS_UNKNOWN,
+				"Selective transfer guessing failed");
+			require((SDL_COLORSPACERANGE(color) == SDL_COLOR_RANGE_FULL) == bool(mask & 4), "Selective range guessing failed");
+		}
+	const auto declared = static_cast<SDL_Colorspace>(SDL_DEFINE_COLORSPACE(SDL_COLOR_TYPE_RGB, SDL_COLOR_RANGE_LIMITED,
+		SDL_COLOR_PRIMARIES_CUSTOM, SDL_TRANSFER_CHARACTERISTICS_HLG, SDL_MATRIX_COEFFICIENTS_IDENTITY, SDL_CHROMA_LOCATION_NONE));
+	Decoder decoder(SDL_PIXELFORMAT_RGBA32, declared);
+	auto image = decoder.loadAndGuess(bytes);
+	require(image && SDL_GetSurfaceColorspace(image->handle()) == declared, "Guessing replaced identified custom metadata");
+}
+
 // Anonymous namespace end
 }
 
@@ -194,6 +268,8 @@ auto main () -> int
 		registryTests();
 		filterTests();
 		backendTests();
+		loadingOptionsTests();
+		uploadCapabilityTests();
 		std::cout << "Format snapshots, registry order, codec capabilities, and viewer filters passed\n";
 		return 0;
 	} catch (const std::exception &error) {

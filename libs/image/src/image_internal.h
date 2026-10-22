@@ -10,6 +10,7 @@
 
 // C++ STL
 #include <cstddef>
+#include <array>
 #include <expected>
 #include <filesystem>
 #include <span>
@@ -60,12 +61,32 @@ struct EncodedImage
 // Functions
 //
 
+/// Build a full-range RGB encoding with independently identified primaries and transfer.
+[[nodiscard]] auto imageRGBColorspace (SDL_ColorPrimaries primaries, SDL_TransferCharacteristics transfer)
+	-> SDL_Colorspace;
+
+/// Whether any required RGB interpretation component is unidentified, rather than explicitly custom.
+[[nodiscard]] auto missingImageEncoding (SDL_Colorspace colorspace) -> bool;
+
+/// Fill unidentified RGB components from a fallback without replacing identified components.
+[[nodiscard]] auto fillImageEncoding (SDL_Colorspace source, SDL_Colorspace fallback) -> SDL_Colorspace;
+
+/// Whether SDL can convert this full-range RGB encoding to linear BT.709 without silently skipping a transform.
+[[nodiscard]] auto supportedImageEncoding (SDL_Colorspace colorspace) -> bool;
+
+/// Match complete RGB/white chromaticities to SDL standards with absolute tolerance 0.0001; otherwise custom.
+[[nodiscard]] auto imageColorPrimaries (const std::array<float, 8> &chromaticities) -> SDL_ColorPrimaries;
+
 /// Expand locked indexed pixels into encoding-preserving floating RGBA, validating every palette index.
 ///
 /// \param source Locked indexed source with a valid attached palette.
 ///
 /// \return Independently owned surface, or a palette, storage or allocation error.
 [[nodiscard]] auto expandIndexedPixels (SDL_Surface &source) -> std::expected<SDL_Surface*, ImageError>;
+
+/// Copy logical stored samples into RGB storage without color transforms, validating palette indices.
+[[nodiscard]] auto copyStoredPixels (SDL_Surface &source, SDL_PixelFormat destination)
+	-> std::expected<SDL_Surface*, ImageError>;
 
 /// \brief
 /// 	Reads a file completely into memory.

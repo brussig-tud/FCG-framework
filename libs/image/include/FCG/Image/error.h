@@ -34,13 +34,13 @@ namespace fcg {
 /// Categories of image loading, pixel access, conversion, upload and registry failures, reported in \c ImageError::code.
 enum class ImageErrorCode
 {
-	/// An argument is invalid, including coordinates, loss policies, input paths, encoded data or adopted storage.
+	/// An argument is invalid, including coordinates, policies, fallback encoding, paths, encoded data or adopted storage.
 	InvalidArgument,
 
 	/// An image file could not be opened, sized or read.
 	IOFailure,
 
-	/// The operation requires a supported pixel representation or an accepting image decoder.
+	/// The operation requires supported pixel storage, color encoding or sample preservation, or an accepting decoder.
 	UnsupportedFormat,
 
 	/// \brief
@@ -54,7 +54,7 @@ enum class ImageErrorCode
 	/// \c ImageLoader::registerHandler was given an ID that is already registered.
 	DuplicateHandler,
 
-	/// The image is empty or has a conflicting active pixel access session.
+	/// The image is empty, has conflicting active pixel access, or has invalid storage or palette state.
 	InvalidState,
 
 	/// The device cannot sample a suitable texture format, or creating or uploading the texture failed.

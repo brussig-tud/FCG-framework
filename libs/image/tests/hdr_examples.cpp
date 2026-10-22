@@ -58,6 +58,76 @@ namespace hdr_examples {
 #endif
 //! [exr_direct]
 
+/// \brief Load an image while assuming every missing RGB encoding component.
+///
+/// \param path The encoded image file.
+///
+/// \return The owned image with best-effort metadata, or a decoding error.
+//! [guessing]
+[[nodiscard]] auto loadForTexture (const std::filesystem::path &path) -> std::expected<fcg::Image, fcg::ImageError> {
+	return fcg::ImageLoader::global().loadAndGuess(path);
+}
+
+/// \brief Guess only primaries when the file already establishes its transfer function.
+///
+/// \param path The encoded image file.
+///
+/// \return The owned image with identified or assumed primaries, or a decoding error.
+[[nodiscard]] auto loadWithGuessedPrimaries (const std::filesystem::path &path)
+	-> std::expected<fcg::Image, fcg::ImageError> {
+	return fcg::ImageLoader::global().load(path, {.guessColorPrimaries=true});
+}
+
+/// \brief Use the inherited guessing alias on a concrete handler.
+///
+/// \param bytes Encoded PFM data borrowed during the call.
+///
+/// \return The owned decoded image, or a decoding error.
+[[nodiscard]] auto loadPFMForTexture (std::span<const std::byte> bytes) -> std::expected<fcg::Image, fcg::ImageError> {
+	fcg::PFMImageFormatHandler decoder;
+	return decoder.loadAndGuess(bytes);
+}
+//! [guessing]
+
+/// \brief Supply missing metadata only during upload, leaving the CPU image untouched.
+///
+/// \param image The decoded image.
+/// \param device The device, which must outlive the returned texture.
+///
+/// \return The owning texture, or an upload error.
+//! [upload_policies]
+[[nodiscard]] auto uploadWithAssumedEncoding (const fcg::Image &image, fcg::Device &device)
+	-> std::expected<fcg::Texture, fcg::ImageError> {
+	return image.uploadWithFallback(device, SDL_COLORSPACE_SRGB_LINEAR);
+}
+
+/// \brief Upload numeric samples without gamma or gamut conversion, including integer data textures.
+///
+/// \param image The decoded image.
+/// \param device The device, which must outlive the returned texture.
+///
+/// \return The owning texture containing normalized integer or floating samples, or an upload error.
+[[nodiscard]] auto uploadData (const fcg::Image &image, fcg::Device &device)
+	-> std::expected<fcg::Texture, fcg::ImageError> {
+	return image.uploadStoredSamples(device);
+}
+
+/// \brief Preserve unidentified samples first, permitting color conversion with an explicit fallback when unavailable.
+///
+/// \param image The decoded image.
+/// \param device The device, which must outlive the returned texture.
+///
+/// \return The owning texture, or an upload error.
+[[nodiscard]] auto uploadWithPolicies (const fcg::Image &image, fcg::Device &device)
+	-> std::expected<fcg::Texture, fcg::ImageError>
+{
+	return image.upload(device, {
+		.samplePolicy=fcg::ImageUploadSamplePolicy::PreserveSamplesIfUnknown,
+		.unidentifiedSourceColorspace=SDL_COLORSPACE_SRGB_LINEAR
+	});
+}
+//! [upload_policies]
+
 /// Assign externally known source encoding; this labels samples without transforming them.
 //! [hdr_encoding]
 [[nodiscard]] auto identifyEncoding (fcg::Image &image, SDL_Colorspace knownSourceEncoding)

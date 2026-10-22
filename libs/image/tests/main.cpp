@@ -1,3 +1,4 @@
+
 //////
 //
 // Includes
@@ -96,13 +97,13 @@ public:
 			return std::unexpected(fcg::ImageError{fcg::ImageErrorCode::SDLFailure, "probe failed"});
 		return behavior != 0;
 	}
-	auto load (std::span<const std::byte>, std::string_view) const
+	auto load (std::span<const std::byte>, std::string_view, fcg::ImageLoaderOptions options) const
 		-> std::expected<fcg::Image, fcg::ImageError> override
 	{
 		trace.push_back(id + ":decode");
 		if (behavior == 2)
 			return std::unexpected(fcg::ImageError{fcg::ImageErrorCode::DecodeFailure, "decode failed"});
-		return fcg::Image::adopt(SDL_CreateSurface(9, 5, SDL_PIXELFORMAT_RGBA32));
+		return finishLoading(fcg::Image::adopt(SDL_CreateSurface(9, 5, SDL_PIXELFORMAT_RGBA32)), options);
 	}
 
 private:

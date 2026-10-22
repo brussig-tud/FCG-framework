@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <tuple>
 #include <stdexcept>
 
 // OpenEXR library
@@ -19,6 +20,7 @@
 #include <ImfFrameBuffer.h>
 #include <ImfHeader.h>
 #include <ImfOutputFile.h>
+#include <ImfIntAttribute.h>
 #include <ImfStandardAttributes.h>
 #include <ImfTiledOutputFile.h>
 #include <half.h>
@@ -74,6 +76,15 @@ struct Fixture
 
 	/// Omit explicit primaries to check unknown color interpretation.
 	bool untagged = false;
+
+	/// Explicit color identifier, overriding chromaticities when identified.
+	std::string interop;
+
+	/// Override the generated primary coordinates.
+	std::optional<exr::Chromaticities> chromaticities;
+
+	/// Declare an ACES image container to exercise authoritative gamut metadata.
+	bool aces = false;
 };
 
 /// Keep assertions active in release configurations.
@@ -108,7 +119,11 @@ void writeFixture (const std::filesystem::path &path, Fixture options)
 		header.lineOrder() = exr::DECREASING_Y;
 	header.compression() = options.half ? exr::PIZ_COMPRESSION : exr::ZIP_COMPRESSION;
 	if (!options.untagged)
-		exr::addChromaticities(header, exr::Chromaticities());
+		exr::addChromaticities(header, options.chromaticities.value_or(exr::Chromaticities()));
+	if (!options.interop.empty())
+		exr::addColorInteropID(header, options.interop);
+	if (options.aces)
+		header.insert("acesImageContainerFlag", exr::IntAttribute(1));
 	if (options.tiled)
 		header.setTileDescription(exr::TileDescription(2, 2, exr::ONE_LEVEL));
 	exr::FrameBuffer frame;
@@ -263,6 +278,35 @@ auto main (int argc, char **argv) -> int
 			writeFixture(path, options);
 			require(!decoder.load(path), "Unsupported EXR channel mapping accepted");
 		}
+		// Recognize interop components independently, retaining supported and explicitly custom metadata.
+		for (const auto &[id, primaries, transfer] : std::array{
+			std::tuple{"lin_rec709_scene", SDL_COLOR_PRIMARIES_BT709, SDL_TRANSFER_CHARACTERISTICS_LINEAR},
+			std::tuple{"lin_rec2020_scene", SDL_COLOR_PRIMARIES_BT2020, SDL_TRANSFER_CHARACTERISTICS_LINEAR},
+			std::tuple{"lin_p3d65_display", SDL_COLOR_PRIMARIES_SMPTE432, SDL_TRANSFER_CHARACTERISTICS_LINEAR},
+			std::tuple{"srgb_p3d65_scene", SDL_COLOR_PRIMARIES_SMPTE432, SDL_TRANSFER_CHARACTERISTICS_SRGB},
+			std::tuple{"pq_rec2020_display", SDL_COLOR_PRIMARIES_BT2020, SDL_TRANSFER_CHARACTERISTICS_PQ},
+			std::tuple{"hlg_rec2020_display", SDL_COLOR_PRIMARIES_BT2020, SDL_TRANSFER_CHARACTERISTICS_HLG},
+			std::tuple{"g22_rec709_scene", SDL_COLOR_PRIMARIES_BT709, SDL_TRANSFER_CHARACTERISTICS_GAMMA22},
+			std::tuple{"lin_ap1_scene", SDL_COLOR_PRIMARIES_CUSTOM, SDL_TRANSFER_CHARACTERISTICS_LINEAR},
+			std::tuple{"data", SDL_COLOR_PRIMARIES_CUSTOM, SDL_TRANSFER_CHARACTERISTICS_CUSTOM},
+			std::tuple{"studio:custom", SDL_COLOR_PRIMARIES_CUSTOM, SDL_TRANSFER_CHARACTERISTICS_CUSTOM}})
+		{
+			writeFixture(path, Fixture{.interop=id});
+			auto image = take(decoder.loadAndGuess(path));
+			const auto color = SDL_GetSurfaceColorspace(image.handle());
+			require(SDL_COLORSPACEPRIMARIES(color) == primaries && SDL_COLORSPACETRANSFER(color) == transfer,
+				"EXR color identifier precedence or partial recognition failed");
+			require(sample(image, 0, 0, 0) == -2.25f, "EXR metadata recognition changed samples");
+		}
+		const exr::Chromaticities rec2020({.708f, .292f}, {.170f, .797f}, {.131f, .046f}, {.3127f, .3290f});
+		writeFixture(path, Fixture{.interop="unknown", .chromaticities=rec2020});
+		auto wide = take(decoder.load(path));
+		require(SDL_COLORSPACEPRIMARIES(SDL_GetSurfaceColorspace(wide.handle())) == SDL_COLOR_PRIMARIES_BT2020,
+			"EXR unknown identifier blocked explicit chromaticities");
+		writeFixture(path, Fixture{.interop="lin_rec709_scene", .aces=true});
+		auto aces = take(decoder.loadAndGuess(path));
+		require(SDL_COLORSPACEPRIMARIES(SDL_GetSurfaceColorspace(aces.handle())) == SDL_COLOR_PRIMARIES_CUSTOM,
+			"EXR ACES container was ignored or guessed over");
 		std::cout << "EXR float/half, PIZ/ZIP, tiled/scanline, windows, alpha, channels and failures passed\n";
 		return 0;
 	} catch (const std::exception &error) {

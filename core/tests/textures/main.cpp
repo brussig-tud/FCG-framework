@@ -11,6 +11,7 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <filesystem>
 #include <span>
 #include <stdexcept>
 #include <type_traits>
@@ -29,6 +30,8 @@
 #include <FCG/render_state.h>
 #include <FCG/window.h>
 #include <FCG/Image/image.h>
+#include <FCG/Image/image_loader.h>
+#include <FCG/Image/features.h>
 #include <FCG/Render/quad_renderer.h>
 #include <texture-test-resources.h>
 
@@ -375,6 +378,11 @@ void images (fcg::Device &device)
 			throw std::runtime_error(std::string(SDL_GetPixelFormatName(format)) + ": " + uploaded.error().message);
 		auto packedTexture = std::move(*uploaded);
 		const auto pixels = sample(device, packedTexture, {width, height});
+		const auto stored = sample(device, take(packedImage.uploadStoredSamples(device)), {width, height});
+		for (unsigned i = 0; i < stored.size(); ++i) {
+			near(stored[i].r, 128.f / 255.f);
+			near(stored[i].a, pixels[i].a);
+		}
 		for (unsigned y = 0; y < height; ++y)
 			for (unsigned x = 0; x < width; ++x)
 				near(pixels[y * width + x].a, (x + y) % 3 == 0 || x == width - 1 ? 0.f : 1.f);
@@ -448,6 +456,152 @@ void images (fcg::Device &device)
 		"HDR source metadata changed");
 	auto moved = std::move(hdr);
 	require(!hdr.upload(device) && hdr.upload(device).error().code == fcg::ImageErrorCode::InvalidState, "Empty image upload accepted");
+}
+
+/// Verify policy precedence, integer normalization, metadata retention and unsupported-encoding rejection.
+void imageUploadPolicies (fcg::Device &device)
+{
+	for (const bool unidentified : {false, true})
+	{
+		auto image = take(fcg::Image::adopt(SDL_CreateSurface(1, 1, SDL_PIXELFORMAT_RGBA32)));
+		require(SDL_WriteSurfacePixel(image.handle(), 0, 0, 128, 64, 255, 77), SDL_GetError());
+		if (unidentified)
+			require(SDL_SetSurfaceColorspace(image.handle(), SDL_COLORSPACE_UNKNOWN), SDL_GetError());
+		const auto original = SDL_GetSurfaceColorspace(image.handle());
+		const std::array<Uint8, 4> saved{128, 64, 255, 77};
+		for (unsigned combination = 0; combination < 6; ++combination)
+		{
+			const auto upload = [&] () -> std::expected<fcg::Texture, fcg::ImageError> {
+				switch (combination) {
+				case 0: return image.upload(device);
+				case 1: return image.uploadWithFallback(device, SDL_COLORSPACE_SRGB);
+				case 2: return image.uploadStoredSamples(device);
+				case 3: return image.uploadStoredSamplesWithFallback(device, SDL_COLORSPACE_SRGB);
+				case 4: return image.uploadStoredSamplesIfUnknown(device);
+				default: return image.uploadStoredSamplesIfUnknownWithFallback(device, SDL_COLORSPACE_SRGB);
+				}
+			};
+			auto uploaded = upload();
+			if (unidentified && combination == 0) {
+				require(!uploaded && uploaded.error().code == fcg::ImageErrorCode::UnsupportedFormat, "Default upload guessed encoding");
+				continue;
+			}
+			auto texture = take(std::move(uploaded));
+			const bool raw = combination == 2 || combination == 3 || (unidentified && combination >= 4);
+			const auto pixel = sample(device, texture, {1, 1})[0];
+			near(pixel.r, raw ? 128.f / 255.f : .2158605f, raw ? 1e-6f : srgbTol);
+			near(pixel.a, 77.f / 255.f);
+			require(SDL_GetSurfaceColorspace(image.handle()) == original
+				&& std::memcmp(image.handle()->pixels, saved.data(), 4) == 0, "Upload policy changed source state");
+		}
+		const auto invalidPolicy = image.upload(device, {static_cast<fcg::ImageUploadSamplePolicy>(255), std::nullopt});
+		require(!invalidPolicy && invalidPolicy.error().code == fcg::ImageErrorCode::InvalidArgument, "Invalid sample policy accepted");
+		const auto invalid = image.uploadWithFallback(device, SDL_COLORSPACE_UNKNOWN);
+		require(!invalid && invalid.error().code == fcg::ImageErrorCode::InvalidArgument, "Invalid fallback accepted");
+	}
+
+	// Fallback primaries must not overwrite known transfer, and fallback transfer must not overwrite known primaries.
+	auto partial = take(fcg::Image::adopt(SDL_CreateSurface(1, 1, SDL_PIXELFORMAT_RGB96_FLOAT)));
+	const std::array<float, 3> half{.5f, 0.f, 0.f};
+	std::memcpy(partial.handle()->pixels, half.data(), sizeof(half));
+	const auto encoding = [] (SDL_ColorPrimaries primaries, SDL_TransferCharacteristics transfer) {
+		return static_cast<SDL_Colorspace>(SDL_DEFINE_COLORSPACE(SDL_COLOR_TYPE_RGB, SDL_COLOR_RANGE_FULL,
+			primaries, transfer, SDL_MATRIX_COEFFICIENTS_IDENTITY, SDL_CHROMA_LOCATION_NONE));
+	};
+	require(SDL_SetSurfaceColorspace(partial.handle(), encoding(SDL_COLOR_PRIMARIES_UNSPECIFIED,
+		SDL_TRANSFER_CHARACTERISTICS_SRGB)), SDL_GetError());
+	near(sample(device, take(partial.uploadWithFallback(device, SDL_COLORSPACE_SRGB_LINEAR)), {1, 1})[0].r, .21404114f);
+	require(SDL_SetSurfaceColorspace(partial.handle(), encoding(SDL_COLOR_PRIMARIES_BT2020,
+		SDL_TRANSFER_CHARACTERISTICS_UNSPECIFIED)), SDL_GetError());
+	near(sample(device, take(partial.uploadWithFallback(device, SDL_COLORSPACE_SRGB_LINEAR)), {1, 1})[0].r, .830248f);
+	require(SDL_SetSurfaceColorspace(partial.handle(), encoding(SDL_COLOR_PRIMARIES_BT709,
+		SDL_TRANSFER_CHARACTERISTICS_GAMMA22)), SDL_GetError());
+	require(!partial.upload(device) && !partial.uploadStoredSamplesIfUnknown(device)
+		&& !partial.uploadWithFallback(device, SDL_COLORSPACE_SRGB_LINEAR), "Unsupported declared transfer was silently ignored");
+	near(sample(device, take(partial.uploadStoredSamples(device)), {1, 1})[0].r, .5f);
+
+	// Exercise each non-indexed SDL RGB layout with encoded values that expose accidental transfer conversion.
+	for (const auto format : {SDL_PIXELFORMAT_RGB332, SDL_PIXELFORMAT_XRGB4444, SDL_PIXELFORMAT_XBGR4444,
+		SDL_PIXELFORMAT_XRGB1555, SDL_PIXELFORMAT_XBGR1555, SDL_PIXELFORMAT_ARGB4444,
+		SDL_PIXELFORMAT_RGBA4444, SDL_PIXELFORMAT_ABGR4444, SDL_PIXELFORMAT_BGRA4444,
+		SDL_PIXELFORMAT_ARGB1555, SDL_PIXELFORMAT_RGBA5551, SDL_PIXELFORMAT_ABGR1555,
+		SDL_PIXELFORMAT_BGRA5551, SDL_PIXELFORMAT_RGB565, SDL_PIXELFORMAT_BGR565,
+		SDL_PIXELFORMAT_RGB24, SDL_PIXELFORMAT_BGR24, SDL_PIXELFORMAT_XRGB8888,
+		SDL_PIXELFORMAT_RGBX8888, SDL_PIXELFORMAT_XBGR8888, SDL_PIXELFORMAT_BGRX8888,
+		SDL_PIXELFORMAT_ARGB8888, SDL_PIXELFORMAT_RGBA8888, SDL_PIXELFORMAT_ABGR8888,
+		SDL_PIXELFORMAT_BGRA8888, SDL_PIXELFORMAT_XRGB2101010, SDL_PIXELFORMAT_XBGR2101010,
+		SDL_PIXELFORMAT_ARGB2101010, SDL_PIXELFORMAT_ABGR2101010, SDL_PIXELFORMAT_RGB48,
+		SDL_PIXELFORMAT_BGR48, SDL_PIXELFORMAT_RGBA64, SDL_PIXELFORMAT_ARGB64,
+		SDL_PIXELFORMAT_BGRA64, SDL_PIXELFORMAT_ABGR64, SDL_PIXELFORMAT_RGB48_FLOAT,
+		SDL_PIXELFORMAT_BGR48_FLOAT, SDL_PIXELFORMAT_RGBA64_FLOAT, SDL_PIXELFORMAT_ARGB64_FLOAT,
+		SDL_PIXELFORMAT_BGRA64_FLOAT, SDL_PIXELFORMAT_ABGR64_FLOAT, SDL_PIXELFORMAT_RGB96_FLOAT,
+		SDL_PIXELFORMAT_BGR96_FLOAT, SDL_PIXELFORMAT_RGBA128_FLOAT, SDL_PIXELFORMAT_ARGB128_FLOAT,
+		SDL_PIXELFORMAT_BGRA128_FLOAT, SDL_PIXELFORMAT_ABGR128_FLOAT})
+	{
+		auto image = take(fcg::Image::adopt(SDL_CreateSurface(1, 1, format)));
+		check(image.writeColorFloat(0, 0, {.37f, .62f, .81f, .43f}, fcg::PixelLossPolicy::Allow));
+		const auto expected = take(image.readColorFloat(0, 0));
+		require(SDL_SetSurfaceColorspace(image.handle(), SDL_COLORSPACE_UNKNOWN), SDL_GetError());
+		const auto pixels = sample(device, take(image.uploadStoredSamples(device)), {1, 1});
+		near(pixels[0].r, expected.r);
+		near(pixels[0].g, expected.g);
+		near(pixels[0].b, expected.b);
+		near(pixels[0].a, expected.a);
+	}
+
+	// Native float copying retains sample bits and ignores radiometric or tone-map metadata.
+	auto special = take(fcg::Image::adopt(SDL_CreateSurface(1, 1, SDL_PIXELFORMAT_RGB96_FLOAT)));
+	const std::array<Uint32, 3> bits{0xc0000000u, 0x40800000u, 0x7fc12345u};
+	std::memcpy(special.handle()->pixels, bits.data(), sizeof(bits));
+	const auto properties = SDL_GetSurfaceProperties(special.handle());
+	require(SDL_SetFloatProperty(properties, SDL_PROP_SURFACE_SDR_WHITE_POINT_FLOAT, 2.f)
+		&& SDL_SetFloatProperty(properties, SDL_PROP_SURFACE_HDR_HEADROOM_FLOAT, 8.f)
+		&& SDL_SetStringProperty(properties, SDL_PROP_SURFACE_TONEMAP_OPERATOR_STRING, "chrome"), SDL_GetError());
+	const auto copied = read<std::array<Uint32, 4>>(take(special.uploadStoredSamples(device)))[0];
+	require(copied[0] == bits[0] && copied[1] == bits[1] && copied[2] == bits[2] && copied[3] == 0x3f800000u,
+		"Preservation changed float samples or failed to add opaque alpha");
+	require(SDL_GetFloatProperty(properties, SDL_PROP_SURFACE_SDR_WHITE_POINT_FLOAT, 0) == 2.f
+		&& std::string_view(SDL_GetStringProperty(properties, SDL_PROP_SURFACE_TONEMAP_OPERATOR_STRING, "")) == "chrome",
+		"Preservation changed source color properties");
+
+	// Preservation cannot reinterpret YUV planes; an explicit fallback permits the supported normal conversion.
+	auto yuv = take(fcg::Image::adopt(SDL_CreateSurface(2, 2, SDL_PIXELFORMAT_NV12)));
+	std::memset(yuv.handle()->pixels, 128, std::size_t(yuv.pitch()) * 3);
+	require(!yuv.uploadStoredSamples(device), "Stored-sample upload accepted YUV planes");
+	(void)take(yuv.uploadStoredSamplesWithFallback(device, SDL_COLORSPACE_SRGB));
+}
+
+/// Compare optional local HDR uploads with native stored samples, without committing third-party assets.
+void imageAssetUploads (fcg::Device &device, const std::filesystem::path &directory)
+{
+	for (const auto *name : {"memorial.hdr", "memorial.pfm", "memorial.exr"})
+	{
+		if ((!FCG_IMAGE_HAS_OPENEXR && std::string_view(name).ends_with("exr"))
+			|| !std::filesystem::is_regular_file(directory / name))
+			continue;
+		auto image = take(fcg::ImageLoader::global().load(directory / name));
+		require(!image.upload(device), "Default asset upload guessed missing metadata");
+		for (unsigned route = 0; route < 4; ++route)
+		{
+			auto uploaded = route == 0 ? image.uploadWithFallback(device, SDL_COLORSPACE_SRGB_LINEAR)
+				: route == 1 ? image.uploadStoredSamples(device) : route == 2 ? image.uploadStoredSamplesIfUnknown(device)
+				: take(fcg::ImageLoader::global().loadAndGuess(directory / name)).upload(device);
+			const auto pixels = read<glm::vec4>(take(std::move(uploaded)));
+			float peak = 0;
+			for (unsigned y = 0; y < unsigned(image.height()); ++y)
+				for (unsigned x = 0; x < unsigned(image.width()); ++x)
+				{
+					std::array<float, 3> original;
+					std::memcpy(original.data(), static_cast<const std::byte*>(image.handle()->pixels)
+						+ std::size_t(y) * image.pitch() + std::size_t(x) * 12, 12);
+					const auto pixel = pixels[std::size_t(y) * image.width() + x];
+					for (unsigned c = 0; c < 3; ++c)
+						near(pixel[c], original[c]);
+					peak = std::max(peak, std::max({pixel.r, pixel.g, pixel.b}));
+				}
+			require(peak > 1.f, "HDR asset upload lost values above one");
+		}
+	}
 }
 
 /// Verify all fullscreen binding classes and compose dependent custom passes in one command buffer.
@@ -906,7 +1060,7 @@ void sceneAndPresentation (fcg::Device &device)
 //
 
 /// GPU smoke tests use the selected real backend and fail on validation diagnostics.
-auto main () -> int
+auto main (int argc, char **argv) -> int
 {
 	try {
 		require(SDL_Init(SDL_INIT_VIDEO), SDL_GetError());
@@ -917,6 +1071,9 @@ auto main () -> int
 			require(otherDevice.has_value(), SDL_GetError());
 			transfers(*device, *otherDevice);
 			images(*device);
+			imageUploadPolicies(*device);
+			if (argc > 1)
+				imageAssetUploads(*device, argv[1]);
 			fullscreen(*device);
 			gammaCorrection(*device);
 			sceneAndPresentation(*device);
