@@ -225,14 +225,14 @@ Avoid long, monolithic code sequences. Structure them into smaller logical block
 
 If a local scope is needed for a block, always open it with a single-line block comment `/* Descriptive local scope comment */ {`. The contents of this block comment can be descriptive for the entire scope if it is short (instead of the explanatory `//` comment), otherwise fall back to the usual separate `//`-style comment explaining the purpose of the block, with a generic scope-opening comment on the next line:
 ```C++
-/// Do an independent prope of the file before forwarding the path to the loader. This way, we prevent it accepting the
+/// Do an independent probe of the file before forwarding the path to the loader. This way, we prevent it accepting the
 /// older v1 format which we want to reject for security reasons.
 /* open local scope */ {
 	std::ifstream file("data.bin", std::ios::binary);
-    int ver;
-    file >> ver;
-    if (ver < 2)
-        return false;
+	int ver;
+	file >> ver;
+	if (ver < 2)
+		return false;
 }
 ```
 The opening brace of such an explicitly opened local scope *always* goes on the same line as the comment, separated by a single space; it never goes on the next line.
@@ -245,22 +245,22 @@ std::vector<std::string> problems;
 std::vector<uint8_t> serialized;
 bool okay = true;
 /* - check size and stride */ {
-    auto view = data.acquireExclusiveView();
-    unsigned size = view.computeSize();
-    unsigned stride = view.computeStride();
-    if (size < stride) {
-        okay = false;
-        problems.emplace_back("data does not contain a full record");
-    }
-    if (size % stride != 0)
-        // not typically an issue, we will tolerate but log the problem
-        problems.emplace_back("data contains excess bytes");
+	auto view = data.acquireExclusiveView();
+	unsigned size = view.computeSize();
+	unsigned stride = view.computeStride();
+	if (size < stride) {
+		okay = false;
+		problems.emplace_back("data does not contain a full record");
+	}
+	if (size % stride != 0)
+		// not typically an issue, we will tolerate but log the problem
+		problems.emplace_back("data contains excess bytes");
 }  
 /// - serialize to bytes
 if (okay)
-    serialized = data.serializeToBytes(data);
+	serialized = data.serializeToBytes(data);
 else
-    throw MalformedDataException(problems);
+	throw MalformedDataException(problems);
 ```
 
 
