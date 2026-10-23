@@ -167,6 +167,11 @@ public:
 	/// Exercise visible widgets and validate the dimensions used for text rasterization.
 	void gui (fcg::Device&, fcg::Player &player) override
 	{
+		// Mouse-hover tooltips must not wait for hover timers that the blocking loop cannot advance.
+		constexpr ImGuiHoveredFlags tooltipDelayFlags = ImGuiHoveredFlags_Stationary
+			| ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_DelayNormal;
+		if (ImGui::GetStyle().HoverFlagsForTooltipMouse & tooltipDelayFlags)
+			throw std::runtime_error("Mouse tooltip hover delay was not disabled");
 		const auto &io = ImGui::GetIO();
 		const auto size = player.mainWindow()->viewportSize();
 		if (io.DisplaySize.x > 0.f && io.DisplaySize.y > 0.f)

@@ -40,6 +40,10 @@
 /// other style settings can be edited directly at any scale. Use <tt>ImGui::GetStyle().FontScaleMain</tt> for user font
 /// enlargement; <tt>ImGui::GetStyle().FontScaleDpi</tt> is managed by the framework.
 ///
+/// Mouse-hover item tooltips appear immediately by default; set
+/// <tt>ImGui::GetStyle().HoverFlagsForTooltipMouse</tt> in <tt>\ref fcg::Applet::init "Applet::init"</tt> to restore a
+/// delay.
+///
 /// For fixed sizes and positions authored at 100% display scale, use
 /// <tt>\ref fcg::Player::toGuiUnits "Player::toGuiUnits"</tt> in your GUI callback. For example, a width of 400
 /// becomes 800 ImGui units on a Windows display at 200% scaling and stays 400 on a 2x Retina display:
@@ -156,8 +160,9 @@ public:
 	/// \brief
 	/// 	Creates the GUI for the given main window. Called by \c fcg::run; applications normally don't call this.
 	///
-	/// The GUI is set up for the dark ImGui style with keyboard navigation enabled. Its style scale and default font
-	/// follow the window's display scale and are updated automatically when it changes.
+	/// The GUI is set up for the dark ImGui style with keyboard navigation enabled. Mouse-hover item tooltips appear
+	/// immediately instead of after ImGui's default hover delay. The style scale and default font follow the window's
+	/// display scale and are updated automatically when it changes.
 	/// Successful creation leaves the new context current. On failure, the previously current context is restored.
 	///
 	/// \pre

@@ -71,6 +71,12 @@ auto Gui::create (Device &device, Window &mainWindow) -> std::unique_ptr<Gui>
 	}
 	io.FontDefault = bitmapFont;
 
+	// Style tweaks that we need for our blocking main loop
+	// - show mouse-hover tooltips immediately, since no frames are produced while waiting for input and ImGui's
+	//   hover-delay timers would never elapse
+	ImGuiStyle &style = ImGui::GetStyle();
+	style.HoverFlagsForTooltipMouse = ImGuiHoveredFlags_DelayNone | ImGuiHoveredFlags_AllowWhenDisabled;
+
 	// Initialize the SDL3 platform backend
 	if (!ImGui_ImplSDL3_InitForSDLGPU(mainWindow.handle())) {
 		SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Initializing the ImGui SDL3 platform backend failed");
