@@ -5,11 +5,13 @@
 //
 
 // C++ STL
+#include <algorithm>
 #include <array>
 #include <format>
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 // Dear ImGui library
 #include <imgui.h>
@@ -232,32 +234,86 @@ void row (const char *label, const std::string &value)
 	ImGui::TextWrapped("%s", value.c_str());
 }
 
-/// Append a color property and explain any recorded loading action on hover.
-void annotatedRow (const char *label, const std::string &value, fcg::ImageLoadAdjustment adjustment)
+/// Describe provenance in the annotation and its tooltip without assigning confidence scores.
+[[nodiscard]] auto originText (fcg::ImageMetadataOrigin origin) -> const char*
 {
-	using Action = fcg::ImageLoadAdjustment;
-	const char *suffix = "";
-	const char *tooltip = nullptr;
-	switch (adjustment)
+	switch (origin)
 	{
-		case Action::None: break;
-		case Action::Guessed:
-			suffix = " (guessed)";
-			tooltip = "The loader inferred this missing source property from the input and format conventions.";
-			break;
-		case Action::Adapted:
-			suffix = " (adapted)";
-			tooltip = "The loader adapted samples to the displayed value of this color property while decoding.";
-			break;
-		case Action::GuessedAndAdapted:
-			suffix = " (guessed+adapted)";
-			tooltip = "The loader inferred the missing source property, then adapted samples using that "
-				"interpretation.";
-			break;
+		case fcg::ImageMetadataOrigin::Unknown: return "unclassified";
+		case fcg::ImageMetadataOrigin::Declared: return "declared";
+		case fcg::ImageMetadataOrigin::FormatDefined: return "format-defined";
+		case fcg::ImageMetadataOrigin::DecoderReported: return "decoder-reported";
+		case fcg::ImageMetadataOrigin::Assumed: return "assumed";
+		case fcg::ImageMetadataOrigin::Derived: return "derived";
+		case fcg::ImageMetadataOrigin::Assigned: return "assigned";
 	}
-	row(label, value + suffix);
-	if (tooltip)
-		ImGui::SetItemTooltip("%s", tooltip);
+	return "unclassified";
+}
+
+/// Append current evidence with a subdued dotted underline hinting at the explanatory tooltip.
+void annotatedRow (const char *label, const std::string &value, const fcg::ImagePropertyProvenance &provenance)
+{
+	if (provenance.origin == fcg::ImageMetadataOrigin::Unknown && provenance.explanation.empty()
+		&& !provenance.adapted && !provenance.dependsOnAssumptions) {
+		row(label, value);
+		return;
+	}
+
+	// Keep the value and every wrapped annotation line in one tooltip hover target.
+	std::string annotation = std::string("(") + originText(provenance.origin);
+	if (provenance.adapted)
+		annotation += "; adapted";
+	if (provenance.dependsOnAssumptions && provenance.origin != fcg::ImageMetadataOrigin::Assumed)
+		annotation += "; assumed inputs";
+	annotation += ')';
+	const auto tooltip = std::format("Origin: {}.{}{}\n{}", originText(provenance.origin),
+		provenance.adapted ? " Samples were adapted to this interpretation." : "",
+		provenance.dependsOnAssumptions ? " A known assumption contributes to this value or its processing." : "",
+		provenance.explanation);
+	ImGui::TableNextRow();
+	ImGui::TableNextColumn();
+	ImGui::TextWrapped("%s", label);
+	ImGui::TableNextColumn();
+	ImGui::BeginGroup();
+	const float available = ImGui::GetContentRegionAvail().x;
+	ImGui::TextWrapped("%s", value.c_str());
+	if (ImGui::CalcTextSize(value.c_str()).x + ImGui::GetStyle().ItemInnerSpacing.x
+		+ ImGui::CalcTextSize(annotation.c_str()).x <= available)
+		ImGui::SameLine(0.f, ImGui::GetStyle().ItemInnerSpacing.x);
+
+	// Wrap with public ImGui font metrics and underline each actual line independently.
+	std::vector<std::pair<ImVec2, ImVec2>> lines;
+	const char *begin = annotation.data();
+	const char *end = begin + annotation.size();
+	while (begin < end)
+	{
+		const auto *lineEnd = ImGui::GetFont()->CalcWordWrapPosition(ImGui::GetFontSize(), begin, end,
+			std::max(1.f, ImGui::GetContentRegionAvail().x));
+		if (lineEnd <= begin)
+			lineEnd = begin + 1;
+		ImGui::TextUnformatted(begin, lineEnd);
+		lines.emplace_back(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+		begin = lineEnd;
+		while (begin < end && *begin == ' ')
+			++begin;
+	}
+	ImGui::EndGroup();
+	const bool hovered = ImGui::IsItemHovered();
+	if (ImGui::BeginItemTooltip()) {
+		ImGui::PushTextWrapPos(ImGui::GetFontSize() * 38.f);
+		ImGui::TextUnformatted(tooltip.c_str());
+		ImGui::PopTextWrapPos();
+		ImGui::EndTooltip();
+	}
+
+	// Scale the cue with the font; table clipping also applies to these draw-list primitives.
+	const float scale = ImGui::GetFontSize() / 16.f;
+	const float step = std::max(2.f, 3.f * scale);
+	const auto color = ImGui::GetColorU32(ImGuiCol_TextDisabled, hovered ? 1.f : .65f);
+	for (const auto &[minimum, maximum] : lines)
+		for (float x = minimum.x; x < maximum.x; x += step)
+			ImGui::GetWindowDrawList()->AddLine(ImVec2(x, maximum.y - scale),
+				ImVec2(std::min(x + scale, maximum.x), maximum.y - scale), color, std::max(1.f, scale));
 }
 
 // Anonymous namespace end
@@ -344,18 +400,18 @@ void displayImageMetadata (const Image &image)
 	{
 		row("Colorspace", colorspaceDetails);
 		row("Color type", colorType);
-		annotatedRow("Color range", enumText(SDL_COLORSPACERANGE(colorspace)), info.loadAdjustments.colorRange);
+		annotatedRow("Color range", enumText(SDL_COLORSPACERANGE(colorspace)), info.provenance.colorRange);
 		annotatedRow("Color primaries", enumText(SDL_COLORSPACEPRIMARIES(colorspace)),
-			info.loadAdjustments.colorPrimaries);
+			info.provenance.colorPrimaries);
 		annotatedRow("Transfer characteristics", enumText(SDL_COLORSPACETRANSFER(colorspace)),
-			info.loadAdjustments.transferCharacteristics);
+			info.provenance.transferCharacteristics);
 		// Zero means identity/no chroma for a known colorspace, but conveys no such information for UNKNOWN.
 		row("Matrix coefficients", colorspace == SDL_COLORSPACE_UNKNOWN
 			? "Unknown" : enumText(SDL_COLORSPACEMATRIX(colorspace)));
 		row("Chroma location", colorspace == SDL_COLORSPACE_UNKNOWN
 			? "Unknown" : enumText(SDL_COLORSPACECHROMA(colorspace)));
-		row("SDR white point (colorspace units)", optionalText(info.sdrWhitePoint, "Not specified"));
-		row("HDR headroom (relative to SDR white)", optionalText(info.hdrHeadroom, "Not specified"));
+		annotatedRow("SDR white level (colorspace units)", optionalText(info.sdrWhitePoint, "Not specified"), info.provenance.sdrWhitePoint);
+		annotatedRow("HDR headroom (relative to SDR white)", optionalText(info.hdrHeadroom, "Not specified"), info.provenance.hdrHeadroom);
 		ImGui::EndTable();
 	}
 

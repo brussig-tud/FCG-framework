@@ -24,6 +24,7 @@
 #include <ImfInputFile.h>
 #include <ImfStandardAttributes.h>
 #include <ImfIntAttribute.h>
+#include <ImfFloatAttribute.h>
 #include <ImfVersion.h>
 
 // Local includes
@@ -154,9 +155,9 @@ private:
 		const auto &actual = exr::chromaticities(header);
 		return imageRGBColorspace(imageColorPrimaries({actual.red.x, actual.red.y, actual.green.x,
 			actual.green.y, actual.blue.x, actual.blue.y, actual.white.x, actual.white.y}),
-			SDL_TRANSFER_CHARACTERISTICS_LINEAR);
+			SDL_TRANSFER_CHARACTERISTICS_UNSPECIFIED);
 	}
-	return unidentifiedImageColorspace(!exr::hasColorInteropID(header));
+	return unidentifiedImageColorspace(false);
 }
 
 /// Read selected full-resolution floating channels directly into independently owned surface storage.
@@ -210,6 +211,8 @@ private:
 		const auto &c = exr::chromaticities(header);
 		metadata << "chromaticities=" << c.red << ' ' << c.green << ' ' << c.blue << ' ' << c.white << '\n';
 	}
+	if (const auto *scale = header.findTypedAttribute<exr::FloatAttribute>("sampToNits"))
+		metadata << "sampToNits=" << scale->value() << '\n';
 	if (exr::hasWhiteLuminance(header))
 		metadata << "whiteLuminance=" << exr::whiteLuminance(header) << '\n';
 	if (header.findTypedAttribute<exr::IntAttribute>("acesImageContainerFlag"))
@@ -237,6 +240,18 @@ private:
 			for (int x = 0; x < (*surface)->w; ++x)
 				row[std::size_t(x) * components + 1] = row[std::size_t(x) * components + 2] = row[std::size_t(x) * components];
 		}
+	// Retain evidence separately from fallback interpretations and from physical radiometric calibration.
+	fcg::ImageMetadataProvenance provenance;
+	const auto encoding = colorEncoding(header);
+	const auto declared = fcg::ImagePropertyProvenance{fcg::ImageMetadataOrigin::Declared, false, false,
+		"OpenEXR colorInteropID, chromaticities, or ACES image-container declaration"};
+	if (SDL_COLORSPACEPRIMARIES(encoding) != SDL_COLOR_PRIMARIES_UNSPECIFIED)
+		provenance.colorPrimaries = declared;
+	if (SDL_COLORSPACETRANSFER(encoding) != SDL_TRANSFER_CHARACTERISTICS_UNSPECIFIED)
+		provenance.transferCharacteristics = declared;
+	provenance.colorRange = {fcg::ImageMetadataOrigin::FormatDefined, false, false, "OpenEXR stores full-range samples"};
+	if (auto recorded = writeImageProvenance(**surface, provenance); !recorded)
+		return std::unexpected(recorded.error());
 	return adoptImageSurface(std::move(*surface));
 }
 
@@ -294,7 +309,7 @@ auto OpenEXRImageFormatHandler::accepts (std::span<const std::byte> bytes, std::
 	return isEXR(bytes);
 }
 
-auto OpenEXRImageFormatHandler::load (
+auto OpenEXRImageFormatHandler::decode (
 	std::span<const std::byte> bytes, std::string_view hint, ImageLoaderOptions options
 ) const -> std::expected<Image, ImageError>
 {
@@ -303,7 +318,9 @@ auto OpenEXRImageFormatHandler::load (
 			: std::unexpected(std::move(accepted.error()));
 	try {
 		// Conventional linear Rec.709 is a fallback, never evidence against explicit EXR declarations.
-		return finishLoading(decodeEXR(bytes), options, SDL_COLORSPACE_SRGB_LINEAR);
+		const auto assumed = ImagePropertyProvenance{ImageMetadataOrigin::Assumed, false, true,
+			"Missing OpenEXR color interpretation completed using conventional linear BT.709"};
+		return resolveMetadata(decodeEXR(bytes), options, {SDL_COLORSPACE_SRGB_LINEAR, {assumed, assumed}});
 	} catch (const IEX_NAMESPACE::BaseExc &error) {
 		return detail::imageDecodeError(std::string("Decoding OpenEXR: ") + error.what());
 	}

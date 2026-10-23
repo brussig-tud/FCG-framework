@@ -192,9 +192,9 @@ void writeFixture (const std::filesystem::path &path, Fixture options)
 		}
 
 	// Once all assets are present, decoding and comparison errors remain test failures.
-	auto exrImage = take(fcg::ImageLoader::global().load(directory / "memorial.exr"));
-	auto pfmImage = take(fcg::ImageLoader::global().load(directory / "memorial.pfm"));
-	auto hdrImage = take(fcg::ImageLoader::global().load(directory / "memorial.hdr"));
+	auto exrImage = take(fcg::ImageLoader::global().load(directory / "memorial.exr", fcg::ImageLoaderOptions::conservative()));
+	auto pfmImage = take(fcg::ImageLoader::global().load(directory / "memorial.pfm", fcg::ImageLoaderOptions::conservative()));
+	auto hdrImage = take(fcg::ImageLoader::global().load(directory / "memorial.hdr", fcg::ImageLoaderOptions::conservative()));
 	require(exrImage.width() == 512 && exrImage.height() == 768 && pfmImage.width() == 512
 		&& pfmImage.height() == 768 && hdrImage.width() == 512 && hdrImage.height() == 768, "Teaching asset dimensions incorrect");
 	float peak = 0;
@@ -212,6 +212,18 @@ void writeFixture (const std::filesystem::path &path, Fixture options)
 			}
 	require(peak == 275.f, "Teaching EXR/PFM HDR peak was lost");
 	require(hdrPeak > 1.f, "Teaching RGBE HDR peak was lost");
+	// Default completion measures the final samples after any format-specific adaptation.
+	for (const auto &[name, expected] : std::array<std::pair<const char*, float>, 3>{{
+		{"memorial.exr", 275.f}, {"memorial.pfm", 275.f}, {"memorial.hdr", 283.972f}}})
+	{
+		const auto completed = take(fcg::ImageLoader::global().load(directory / name));
+		const auto info = take(completed.pixelInfo());
+		require(info.sdrWhitePoint == 1.f && info.hdrHeadroom && std::abs(*info.hdrHeadroom - expected) < .01f,
+			"Memorial default brightness completion incorrect");
+		require(info.provenance.sdrWhitePoint.origin == fcg::ImageMetadataOrigin::Assumed
+			&& info.provenance.hdrHeadroom.origin == fcg::ImageMetadataOrigin::Derived
+			&& info.provenance.hdrHeadroom.dependsOnAssumptions, "Memorial provenance incorrect");
+	}
 	std::cout << "Teaching HDR assets: EXR/PFM equality, RGBE tolerance and peaks " << peak << '/' << hdrPeak << " verified\n";
 	return true;
 }
@@ -260,8 +272,7 @@ auto main (int argc, char **argv) -> int
 							"EXR samples, origin, channel mapping or float precision incorrect");
 					}
 			const auto colorspace = SDL_GetSurfaceColorspace(image.handle());
-			require(options.untagged ? SDL_COLORSPACEPRIMARIES(colorspace) == SDL_COLOR_PRIMARIES_UNSPECIFIED
-				: colorspace == SDL_COLORSPACE_SRGB_LINEAR, "EXR color metadata incorrect");
+			require(colorspace == SDL_COLORSPACE_SRGB_LINEAR, "EXR color metadata incorrect");
 			for (const auto hint : {"", "tga", ".EXR"})
 				require(bool(fcg::ImageLoader::global().load(bytes, hint)), "Global EXR dispatch failed");
 			for (std::size_t count = 1; count < bytes.size(); ++count)
@@ -292,15 +303,13 @@ auto main (int argc, char **argv) -> int
 			std::tuple{"studio:custom", SDL_COLOR_PRIMARIES_CUSTOM, SDL_TRANSFER_CHARACTERISTICS_CUSTOM}})
 		{
 			writeFixture(path, Fixture{.interop=id});
-			auto image = take(decoder.loadAndGuess(path));
+			auto image = take(decoder.load(path));
 			const auto color = SDL_GetSurfaceColorspace(image.handle());
 			const auto info = image.pixelInfo();
-			require(info && info->loadAdjustments.colorPrimaries == fcg::ImageLoadAdjustment::None
-				&& info->loadAdjustments.transferCharacteristics == fcg::ImageLoadAdjustment::None
-				&& info->loadAdjustments.colorRange == fcg::ImageLoadAdjustment::None, "EXR declared encoding was annotated as guessed");
-			require(SDL_COLORSPACEPRIMARIES(color) == primaries && SDL_COLORSPACETRANSFER(color) == transfer,
-				"EXR color identifier precedence or partial recognition failed");
-			require(sample(image, 0, 0, 0) == -2.25f, "EXR metadata recognition changed samples");
+			require(info && info->provenance.colorPrimaries.origin == fcg::ImageMetadataOrigin::Declared
+				&& info->provenance.transferCharacteristics.origin == fcg::ImageMetadataOrigin::Declared
+				&& info->provenance.colorRange.origin == fcg::ImageMetadataOrigin::FormatDefined,
+				"EXR explicit encoding lost its evidence");
 		}
 		const exr::Chromaticities rec2020({.708f, .292f}, {.170f, .797f}, {.131f, .046f}, {.3127f, .3290f});
 		// An absent or explicitly unknown identifier permits only the requested format-specific fallbacks.
@@ -311,22 +320,22 @@ auto main (int argc, char **argv) -> int
 				auto image = take(decoder.load(path, {bool(mask & 1), bool(mask & 2), bool(mask & 4)}));
 				const auto color = SDL_GetSurfaceColorspace(image.handle());
 				require(SDL_COLORSPACEPRIMARIES(color) == (mask & 1 ? SDL_COLOR_PRIMARIES_BT709 : SDL_COLOR_PRIMARIES_UNSPECIFIED)
-					&& SDL_COLORSPACETRANSFER(color) == (!unknown || mask & 2
+					&& SDL_COLORSPACETRANSFER(color) == (mask & 2
 						? SDL_TRANSFER_CHARACTERISTICS_LINEAR : SDL_TRANSFER_CHARACTERISTICS_UNSPECIFIED)
 					&& SDL_COLORSPACERANGE(color) == SDL_COLOR_RANGE_FULL, "EXR selective format fallbacks failed");
 				require(sample(image, 0, 0, 0) == -2.25f, "EXR guessing changed stored samples");
 				const auto info = image.pixelInfo();
-				using A = fcg::ImageLoadAdjustment;
-				require(info && info->loadAdjustments.colorPrimaries == (mask & 1 ? A::Guessed : A::None)
-					&& info->loadAdjustments.transferCharacteristics == (unknown && mask & 2 ? A::Guessed : A::None)
-					&& info->loadAdjustments.colorRange == A::None, "EXR selective loading annotations failed");
+				using Origin = fcg::ImageMetadataOrigin;
+				require(info && info->provenance.colorPrimaries.origin == (mask & 1 ? Origin::Assumed : Origin::Unknown)
+					&& info->provenance.transferCharacteristics.origin == (mask & 2 ? Origin::Assumed : Origin::Unknown)
+					&& info->provenance.colorRange.origin == Origin::FormatDefined, "EXR selective provenance failed");
 			}
 		writeFixture(path, Fixture{.interop="unknown", .chromaticities=rec2020});
 		auto wide = take(decoder.load(path));
 		require(SDL_COLORSPACEPRIMARIES(SDL_GetSurfaceColorspace(wide.handle())) == SDL_COLOR_PRIMARIES_BT2020,
 			"EXR unknown identifier blocked explicit chromaticities");
 		writeFixture(path, Fixture{.interop="lin_rec709_scene", .aces=true});
-		auto aces = take(decoder.loadAndGuess(path));
+		auto aces = take(decoder.load(path));
 		require(SDL_COLORSPACEPRIMARIES(SDL_GetSurfaceColorspace(aces.handle())) == SDL_COLOR_PRIMARIES_CUSTOM,
 			"EXR ACES container was ignored or guessed over");
 		std::cout << "EXR float/half, PIZ/ZIP, tiled/scanline, windows, alpha, channels and failures passed\n";

@@ -28,21 +28,24 @@
 /// <tt>\ref fcg::PixelLossPolicy::Allow "PixelLossPolicy::Allow"</tt>.
 /// Floating output retains HDR values without tone mapping. Color keys become alpha by default; choose an
 /// alpha-capable destination. Sub-byte, planar and compressed descriptions leave ordinary byte size unavailable.
-/// Conversion requires supported color encoding. When loading files that omit it, use
-/// <tt>\ref fcg::ImageLoader::loadAndGuess "ImageLoader::loadAndGuess"</tt> or the inherited handler operation
-/// <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt>. To upload numeric samples
-/// without interpreting color, see <tt>\ref fcg::Image::uploadStoredSamples "Image::uploadStoredSamples"</tt>.
+/// Conversion requires supported color encoding. Ordinary loading provides best-effort missing metadata through
+/// <tt>\ref fcg::ImageLoader::load "ImageLoader::load"</tt>. To upload numeric samples without interpreting color,
+/// see <tt>\ref fcg::Image::uploadStoredSamples "Image::uploadStoredSamples"</tt>.
 ///
-/// \subsection fcg_pixel_formats_workflows_loading Inspecting loading actions
-/// <tt>\ref fcg::ImagePixelInfo::loadAdjustments "ImagePixelInfo::loadAdjustments"</tt> reports whether loading guessed
-/// or adapted each color property. Test the flags of <tt>\ref fcg::ImageLoadAdjustment "ImageLoadAdjustment"</tt> with
-/// the bitwise operators; a property can be both guessed and adapted:
+/// \subsection fcg_pixel_formats_workflows_loading Inspecting metadata evidence
+/// <tt>\ref fcg::ImagePixelInfo::provenance "ImagePixelInfo::provenance"</tt> describes the origin of primaries,
+/// transfer, range, SDR white level and headroom. Each <tt>\ref fcg::ImagePropertyProvenance
+/// "ImagePropertyProvenance"</tt> distinguishes source declarations, format definitions, opaque decoder results,
+/// assumptions, calculated values and assigned output definitions. Independent fields record sample adaptation and
+/// dependence on known assumptions. A calculated headroom can therefore remain dependent on assumed diffuse white:
 /// \snippet pixel_examples.cpp loading_adjustments
-/// <tt>\ref fcg::ImageLoadAdjustment::None "None"</tt> means no loading action was recorded. It does not prove that a
-/// source declaration exists. Explicit <tt>\ref fcg::Image::converted "Image::converted"</tt> clears annotations only
-/// for color components it changes and retains annotations for unchanged components. An annotation is hidden if a raw
-/// SDL colorspace edit changes that component; restoring the recorded value can reveal it again. Pixel writes and
-/// texture uploads retain the CPU image's annotations.
+/// Moving or independently copying an image retains its evidence. Pixel edits invalidate content headroom; encoding
+/// changes also invalidate dependent evidence. Explicit conversion records its destination interpretation. Ordinary
+/// <tt>\ref fcg::Image::converted "Image::converted"</tt> clears headroom when the RGB peak may change. Call
+/// <tt>\ref fcg::Image::refreshMetadata "Image::refreshMetadata"</tt> afterwards or use
+/// <tt>\ref fcg::Image::convertedWithMetadata "Image::convertedWithMetadata"</tt> to complete SDR white level,
+/// remeasure headroom and update those two properties' provenance. Primaries, transfer and range retain the
+/// interpretation established by loading or conversion. Metadata inspection itself does not scan pixels.
 
 
 
@@ -194,37 +197,113 @@ struct PixelFormatInfo
 	bool directAccess = false;
 };
 
-/// Flags describing a loader's actions on one color property.
-enum class ImageLoadAdjustment : unsigned
+/// The evidence or operation establishing a current metadata value.
+enum class ImageMetadataOrigin
 {
-	/// No loader action is recorded; this does not establish that the source explicitly declared the property.
-	None = 0x0,
+	/// No evidence is recorded; this includes externally supplied surface metadata.
+	Unknown,
 
-	/// The loader inferred a missing source property from the input and format conventions.
-	Guessed = 0x1,
+	/// The handler inspected an explicit source declaration.
+	Declared,
 
-	/// The loader adapted samples to a different value of this color property while decoding.
-	Adapted = 0x2,
+	/// The file format defines the value independently of optional declarations.
+	FormatDefined,
 
-	/// The loader inferred the source property and then adapted samples using that inferred interpretation.
-	GuessedAndAdapted = Guessed | Adapted
+	/// A decoder supplied the value without exposing its evidence or processing.
+	DecoderReported,
+
+	/// A fallback interpretation was selected for missing source information.
+	Assumed,
+
+	/// The value was calculated from pixels or other metadata.
+	Derived,
+
+	/// A caller or operation selected an output definition.
+	Assigned
 };
 
-/// \brief Recorded loader actions for the image's current color properties.
+/// \brief Evidence and processing associated with one current metadata property.
 ///
-/// Each field defaults to \c ImageLoadAdjustment::None. These annotations describe loading actions, including
-/// adaptations performed during decoding; explicit \c Image::converted operations do not add loading actions.
-/// They do not classify unreported defaults or transformations inside a third-party decoder.
-struct ImageLoadAdjustments
+/// These records describe the current interpretation, rather than an operation history. An absent recorded
+/// assumption is not a guarantee of color accuracy, particularly for opaque decoder results.
+struct ImagePropertyProvenance
 {
-	/// Loader actions on color primaries and their reference white point.
-	ImageLoadAdjustment colorPrimaries = ImageLoadAdjustment::None;
+	/// How the current value was established.
+	ImageMetadataOrigin origin = ImageMetadataOrigin::Unknown;
 
-	/// Loader actions on the transfer characteristics.
-	ImageLoadAdjustment transferCharacteristics = ImageLoadAdjustment::None;
+	/// Whether samples were adapted to this interpretation; layout changes alone do not qualify.
+	bool adapted = false;
 
-	/// Loader actions on the color range.
-	ImageLoadAdjustment colorRange = ImageLoadAdjustment::None;
+	/// Whether a known assumption contributed to this interpretation or its sample processing.
+	bool dependsOnAssumptions = false;
+
+	/// Owned evidence, fallback policy, or calculation suitable for display to users.
+	std::string explanation;
+};
+
+/// Provenance of the current color interpretation and content brightness metadata.
+struct ImageMetadataProvenance
+{
+	/// Evidence for the primaries and chromatic reference white.
+	ImagePropertyProvenance colorPrimaries;
+
+	/// Evidence for the transfer characteristics.
+	ImagePropertyProvenance transferCharacteristics;
+
+	/// Evidence for the encoded color range.
+	ImagePropertyProvenance colorRange;
+
+	/// Evidence for the SDR diffuse-white brightness level.
+	ImagePropertyProvenance sdrWhitePoint;
+
+	/// Evidence for the content headroom relative to SDR white.
+	ImagePropertyProvenance hdrHeadroom;
+};
+
+/// Candidate RGB encoding and evidence used to complete missing components during decoding.
+struct ImageMetadataCandidates
+{
+	/// Candidate encoding; unknown components supply no candidate.
+	SDL_Colorspace colorspace = SDL_COLORSPACE_UNKNOWN;
+
+	/// Evidence for each candidate; assumptions require the corresponding loading option.
+	ImageMetadataProvenance provenance;
+};
+
+/// Controls brightness metadata completion for supported linear floating-point RGB images.
+struct ImageHDRMetadataOptions
+{
+	/// Fill a missing SDR white level with 1.0 when the image uses linear floating-point RGB.
+	bool assumeSDRWhitePoint = true;
+
+	/// Measure the stored RGB peak and derive headroom relative to SDR white.
+	bool deriveHDRHeadroom = true;
+};
+
+/// Outcome of metadata completion; unavailable analysis is reported without failing the image operation.
+struct ImageMetadataRefreshResult
+{
+	/// Whether this call filled a missing white level with an assumption.
+	bool whitePointAssumed = false;
+
+	/// Whether this call published newly measured headroom.
+	bool headroomDerived = false;
+
+	/// Why requested analysis was unavailable; empty when it completed or was disabled.
+	std::string diagnostic;
+};
+
+/// Parts of an image that an external surface edit may change.
+enum class ImageSurfaceChanges : unsigned
+{
+	/// Pixel or palette values may change, invalidating content headroom.
+	Pixels = 1,
+
+	/// Color interpretation may change, invalidating provenance and dependent headroom.
+	ColorMetadata = 2,
+
+	/// Both pixel data and color interpretation may change.
+	All = 3
 };
 
 /// An owning snapshot of image storage and color metadata.
@@ -245,12 +324,8 @@ struct ImagePixelInfo
 	/// Color encoding retained by native and convenience pixel access.
 	SDL_Colorspace colorspace = SDL_COLORSPACE_UNKNOWN;
 
-	/// \brief Loader actions recorded for matching current color components.
-	///
-	/// An annotation is suppressed when its component differs from the value recorded by the loader. Restoring that
-	/// value through raw SDL access can make the annotation visible again. \c Image::converted permanently clears
-	/// annotations on the output's changed color components and preserves those on unchanged components.
-	ImageLoadAdjustments loadAdjustments{};
+	/// Evidence and processing associated with the current metadata values.
+	ImageMetadataProvenance provenance;
 
 	/// Whether a palette is attached.
 	bool hasPalette = false;
@@ -261,7 +336,7 @@ struct ImagePixelInfo
 	/// Separate transparent sample or index, if present.
 	std::optional<Uint32> colorKey;
 
-	/// Explicit SDR white-point property, if present, in the colorspace units.
+	/// Explicit SDR diffuse-white brightness level, if present, in the colorspace units.
 	std::optional<float> sdrWhitePoint;
 
 	/// Explicit headroom property, if present, relative to SDR white.
@@ -349,26 +424,15 @@ struct PixelConversionInfo
 // Functions
 //
 
-/// \brief Combine loader-action flags.
+/// \brief Combine categories of external changes.
 ///
-/// \param left First set of actions.
-/// \param right Second set of actions.
+/// \param left First category.
+/// \param right Second category.
 ///
-/// \return The union of both sets; guessing combined with adaptation is \c ImageLoadAdjustment::GuessedAndAdapted.
-[[nodiscard]] constexpr auto operator | (ImageLoadAdjustment left, ImageLoadAdjustment right) noexcept
-	-> ImageLoadAdjustment {
-	return static_cast<ImageLoadAdjustment>(static_cast<unsigned>(left) | static_cast<unsigned>(right));
-}
-
-/// \brief Select the loader-action flags present in both operands.
-///
-/// \param left First set of actions.
-/// \param right Second set of actions.
-///
-/// \return The shared actions, or \c ImageLoadAdjustment::None if there are none.
-[[nodiscard]] constexpr auto operator & (ImageLoadAdjustment left, ImageLoadAdjustment right) noexcept
-	-> ImageLoadAdjustment {
-	return static_cast<ImageLoadAdjustment>(static_cast<unsigned>(left) & static_cast<unsigned>(right));
+/// \return The combined categories.
+[[nodiscard]] constexpr auto operator | (ImageSurfaceChanges left, ImageSurfaceChanges right) noexcept
+	-> ImageSurfaceChanges {
+	return static_cast<ImageSurfaceChanges>(static_cast<unsigned>(left) | static_cast<unsigned>(right));
 }
 
 /// \brief Describe a native storage format independently of any image.

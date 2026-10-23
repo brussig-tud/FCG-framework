@@ -580,18 +580,21 @@ void imageRadianceUpload (fcg::Device &device)
 	std::vector<std::byte> bytes(prefix.begin(), prefix.end());
 	for (const unsigned value : {0u, 128u, 0u, 130u})
 		bytes.push_back(static_cast<std::byte>(value));
-	auto image = take(fcg::ImageLoader::global().loadAndGuess(bytes, "png"));
+	auto image = take(fcg::ImageLoader::global().load(bytes, "png"));
 	require(SDL_GetSurfaceColorspace(image.handle()) == SDL_COLORSPACE_SRGB_LINEAR,
 		"Radiance inferred output was not linear BT.709");
-	const auto before = take(image.pixelInfo()).loadAdjustments;
-	require(before.colorPrimaries == fcg::ImageLoadAdjustment::GuessedAndAdapted,
+	const auto before = take(image.pixelInfo()).provenance;
+	require(before.colorPrimaries.adapted && before.colorPrimaries.dependsOnAssumptions,
 		"Radiance inference/adaptation was not annotated");
 	const auto uploaded = read<glm::vec4>(take(image.upload(device)))[0];
 	(void)take(image.uploadWithFallback(device, SDL_COLORSPACE_SRGB_LINEAR));
 	(void)take(image.uploadStoredSamples(device));
-	const auto after = take(image.pixelInfo()).loadAdjustments;
-	require(before.colorPrimaries == after.colorPrimaries && before.transferCharacteristics == after.transferCharacteristics
-		&& before.colorRange == after.colorRange, "Upload changed CPU loading annotations");
+	const auto after = take(image.pixelInfo()).provenance;
+	require(before.colorPrimaries.origin == after.colorPrimaries.origin
+		&& before.colorPrimaries.adapted == after.colorPrimaries.adapted
+		&& before.colorPrimaries.dependsOnAssumptions == after.colorPrimaries.dependsOnAssumptions
+		&& before.transferCharacteristics.origin == after.transferCharacteristics.origin
+		&& before.colorRange.origin == after.colorRange.origin, "Upload changed CPU loading annotations");
 	std::array<float, 3> expected;
 	std::memcpy(expected.data(), image.handle()->pixels, sizeof(expected));
 	for (unsigned c = 0; c < 3; ++c)
@@ -608,9 +611,9 @@ void imageAssetUploads (fcg::Device &device, const std::filesystem::path &direct
 		if ((!FCG_IMAGE_HAS_OPENEXR && std::string_view(name).ends_with("exr"))
 			|| !std::filesystem::is_regular_file(directory / name))
 			continue;
-		auto image = take(fcg::ImageLoader::global().load(directory / name));
-		auto guessed = take(fcg::ImageLoader::global().loadAndGuess(directory / name));
-		require(!image.upload(device), "Default asset upload guessed missing metadata");
+		auto image = take(fcg::ImageLoader::global().load(directory / name, fcg::ImageLoaderOptions::conservative()));
+		auto guessed = take(fcg::ImageLoader::global().load(directory / name));
+		require(!image.upload(device), "Conservative asset upload accepted missing metadata");
 		for (unsigned route = 0; route < 4; ++route)
 		{
 			const auto &source = route == 3 ? guessed : image;

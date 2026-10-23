@@ -207,7 +207,7 @@ auto SDLImageFormatHandler::accepts (std::span<const std::byte> bytes, std::stri
 	return *type != nullptr || recognizedHint(*normalized);
 }
 
-auto SDLImageFormatHandler::load (
+auto SDLImageFormatHandler::decode (
 	std::span<const std::byte> bytes, std::string_view hint, ImageLoaderOptions options
 ) const -> std::expected<Image, ImageError>
 {
@@ -232,9 +232,39 @@ auto SDLImageFormatHandler::load (
 	const auto guesses = detail::guessedSDLImageEncoding(bytes, type ? type : "", surface->format,
 		SDL_GetSurfaceColorspace(surface.get()));
 	auto image = Image::adopt(surface.get());
-	if (image)
-		surface.release();
-	return finishLoading(std::move(image), options, guesses);
+	if (!image)
+		return image;
+	surface.release();
+	ImageMetadataProvenance provenance;
+	const auto reported = ImagePropertyProvenance{ImageMetadataOrigin::DecoderReported, false, false,
+		"SDL_image supplied this value; its source evidence and internal processing are opaque"};
+	const auto color = SDL_GetSurfaceColorspace(image->handle());
+	if (SDL_COLORSPACEPRIMARIES(color) != SDL_COLOR_PRIMARIES_UNKNOWN
+		&& SDL_COLORSPACEPRIMARIES(color) != SDL_COLOR_PRIMARIES_UNSPECIFIED)
+		provenance.colorPrimaries = reported;
+	if (SDL_COLORSPACETRANSFER(color) != SDL_TRANSFER_CHARACTERISTICS_UNKNOWN
+		&& SDL_COLORSPACETRANSFER(color) != SDL_TRANSFER_CHARACTERISTICS_UNSPECIFIED)
+		provenance.transferCharacteristics = reported;
+	if (SDL_COLORSPACERANGE(color) != SDL_COLOR_RANGE_UNKNOWN)
+		provenance.colorRange = reported;
+	const auto properties = SDL_GetSurfaceProperties(image->handle());
+	if (SDL_HasProperty(properties, SDL_PROP_SURFACE_SDR_WHITE_POINT_FLOAT))
+		provenance.sdrWhitePoint = reported;
+	if (SDL_HasProperty(properties, SDL_PROP_SURFACE_HDR_HEADROOM_FLOAT))
+		provenance.hdrHeadroom = reported;
+	const auto assumed = ImagePropertyProvenance{ImageMetadataOrigin::Assumed, false, true,
+		"Missing SDL_image interpretation completed using storage and format conventions"};
+	ImageMetadataCandidates candidates{guesses, {assumed, assumed, assumed}};
+	const std::string_view source(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+	if (type && std::string_view(type) == "QOI" && bytes.size() >= 14 && source.starts_with("qoif")
+		&& std::to_integer<unsigned>(bytes[13]) <= 1)
+		candidates.provenance.transferCharacteristics = {ImageMetadataOrigin::Declared, false, false,
+			"QOI header colorspace flag"};
+	if (type && std::string_view(type) == "PNM" && source.size() >= 2 && source[0] == 'P'
+		&& std::string_view("2356").contains(source[1]))
+		candidates.provenance.transferCharacteristics = {ImageMetadataOrigin::FormatDefined, false, false,
+			"PGM/PPM transfer convention"};
+	return resolveMetadata(std::move(image), options, std::move(candidates), std::move(provenance));
 }
 
 

@@ -160,35 +160,47 @@ PFM supports conventional bottom-to-top RGB/grayscale, LF/CRLF headers, both byt
 Radiance supports RGBE flat/scanline RLE in `-Y height +X width` order. EXR supports full-resolution HALF/FLOAT RGB/Y
 with optional alpha in single-part non-deep scanline/tiled files, using the data window. See the module guides for
 the supported subsets. EXR alpha association and HDR stored exposure are preserved. Unidentified source color encoding
-remains unspecified by default. `ImageLoaderOptions` selectively requests inference of missing primaries, transfer,
-and range; `ImageLoader::loadAndGuess` and inherited `ImageFormatHandler::loadAndGuess` enable all three. The successful
-handler chooses candidates from available input context and format conventions. There is no format-independent
-encoding promise, and inference need not make the result convertible. Established source declarations take precedence.
-PFM and EXR use linear BT.709/full-range fallbacks. SDL_image retains all backend labels; for missing components its
-policy uses QOI's transfer flag, PGM/PPM's BT.709 curve, and BT.2020 primaries for identified PQ/HLG. Other missing SDL_image
-components use BT.709, float-linear or integer/palette-sRGB transfer, and full range.
+is completed by default. `ImageLoaderOptions` independently controls assumptions for missing primaries,
+transfer and range, plus `ImageHDRMetadataOptions` for missing SDR white and headroom. All requests default to enabled;
+`ImageLoaderOptions::conservative()` disables optional assumptions and scans. Extracted declarations, format-defined
+facts and backend-supplied labels remain available. Identified custom encodings take precedence over fallbacks.
+PFM and missing EXR components use conventional linear BT.709 assumptions. EXR chromaticities establish primaries,
+not an explicit transfer declaration. SDL_image's existing labels remain decoder-reported, including opaque defaults.
+Missing QOI transfer comes from the header; PGM/PPM transfer is format-defined. Other missing SDL_image components use
+BT.709 (BT.2020 for identified PQ/HLG), float-linear or integer/palette-sRGB transfer, and full range as assumptions.
 
-Radiance primary inference uses its conventional RGB/equal-energy-white gamut, then converts it to linear BT.709/D65.
-Explicit numerically defined gamuts unsupported by color-managed upload are converted on ordinary loads too. Supported
-gamuts remain unchanged. Declared gamma is linearized before gamut conversion; without known or permitted guessed
-primaries, gamma can be linearized independently while primaries stay unspecified. Conversion uses double-precision
-RGB/XYZ matrices and Bradford adaptation in decoder-owned storage before surface creation, without clipping, tone
-mapping, or additional exposure/color-correction adjustments. The surface describes the output encoding and retains
-source header records. Invalid/singular definitions and nonfinite or binary32-overflowing results fail decoding.
-Upload preservation therefore refers to returned image samples, not necessarily file samples.
+Radiance missing primary inference uses its conventional RGB/equal-energy-white gamut, then converts to BT.709/D65.
+Declared numeric gamuts unsupported by color-managed upload are converted even in conservative mode. Gamma is decoded
+before gamut conversion; range and decoded linear transfer are format-defined. Conversion uses double-precision
+RGB/XYZ matrices and Bradford adaptation without clipping or extra exposure/color-correction adjustments. Original
+source records are retained, including EXR `whiteLuminance` and `sampToNits` calibration, independently of current
+metadata. Neither calibration value is assigned directly to SDR white.
 
-`ImagePixelInfo::loadAdjustments` exposes independent primaries/reference-white, transfer and range annotations.
-Each field stores `ImageLoadAdjustment`: `None=0`, `Guessed=1`, `Adapted=2`, or `GuessedAndAdapted=Guessed|Adapted`.
-Typed constexpr `|` and `&` operators combine and test the flags. Only actual filled components are marked guessed;
-defined or unchanged values are not annotated. Radiance records adaptation even on ordinary loads and records both
-actions when adapting inferred primaries. SDL_image's opaque defaults remain unclassified.
+`ImagePixelInfo::provenance` has independent records for primaries/chromatic white, transfer, range, SDR white level
+and headroom. Each record contains `ImageMetadataOrigin`, `adapted`, `dependsOnAssumptions`, and an owned explanation.
+Origins distinguish Unknown, Declared, FormatDefined, DecoderReported, Assumed, Derived and Assigned. Assigned describes
+an explicit output definition; adaptation and dependence on assumed inputs remain independent. Derived headroom can
+therefore depend on assumed white. Absence of a recorded assumption is not an accuracy guarantee.
 
-Annotations and their associated output colorspace are stored in private numeric surface properties and travel with
-surface ownership and metadata copies. `pixelInfo` suppresses individual entries whose current component differs from
-the recorded value; this is a read-only comparison, so restoring that value through SDL can reveal the entry again.
-Every `Image::converted` output retains only the source's effective annotations for unchanged color components and
-permanently clears the others. Explicit conversion never adds loading adaptations. Pixel edits and uploads retain CPU
-annotations. An unannotated property does not prove that the source explicitly declared it.
+Records use private copyable numeric/string SDL properties bound to their associated current value. Surface moves,
+adoption and independent copies retain records. Raw mismatches suppress stale evidence defensively; supported changes
+permanently invalidate records. Unnotified external changes cannot be tracked. Writable pixel borrowing clears content
+headroom before exposing storage. The preferred `editSurface(changes)` guard reuses the invalidation implementation
+of `notifySurfaceChanged(changes)` and owns framework exclusivity, not an SDL lock. Pixel changes clear headroom;
+color-metadata changes additionally clear affected provenance. Raw SDL users must notify before another framework
+operation relies on changed state. Apply replacement headroom after notification.
+
+`refreshMetadata` refreshes exactly SDR diffuse-white level, HDR headroom and their provenance. Eligible full-range
+linear binary16/binary32 RGB receives a missing assumed white of 1. Peak measurement uses visible stored RGB, including
+RGB at zero alpha, ignores alpha itself, and computes max(1, peak / white) in double precision. Negative samples do
+not increase the peak. Nonfinite RGB, missing/invalid white or an unrepresentable ratio prevents a finite result and
+is reported in `ImageMetadataRefreshResult::diagnostic`. Metadata completion retains pixels and never tone-maps.
+Loader finalization fills missing properties, retaining supplied headroom including zero; explicit refresh replaces
+headroom on successful measurement. Unavailable explicit measurement clears an old derived value and retains supplied
+metadata. Ordinary `converted` retains headroom only on paths known to preserve RGB and white interpretation; other
+paths clear it without an extra scan. Users must refresh manually when a current peak is needed, or select
+`convertedWithMetadata`. Its refresh has the same precisely documented brightness-only scope. Metadata queries never
+scan pixels.
 
 `ImageUploadOptions` selects normal color management, stored-sample preservation, or preservation only for unidentified
 encoding. Its optional fallback colorspace fills only missing components and permits color-managed fallback when an
@@ -199,15 +211,14 @@ are validated even when not used.
 Stored integer samples are normalized without sRGB decoding; palettes expand to colors. Raw YUV planes are outside
 this path. Color-managed conversion and upload reject unsupported SDL transforms instead of accepting metadata that
 SDL cannot actually convert. All upload
-policies leave the image unchanged. The viewer uses `loadAndGuess` followed by strict color-managed upload.
+policies leave the image unchanged. The viewer uses `load` followed by strict color-managed upload.
 
-Custom handlers implement the byte `load` override with `ImageLoaderOptions`, extract metadata first, then choose
-format-informed candidates. The protected `finishLoading(image, options, guesses, adjustments={})` helper selectively
-merges those candidates without changing samples or identified components, and annotates actual guesses. Handlers that
-adapt colors report the output encoding and completed actions in the fourth argument, using `GuessedAndAdapted` when
-the adaptation relied on inferred source data. Matching forwarded annotations are preserved and combined.
-There is no helper overload with automatic global defaults. Custom helper callers must supply an explicit
-`SDL_Colorspace` candidate and recompile. The inherited guessing aliases still forward to the byte `load` overload.
+Custom handlers override the protected `decode(bytes, normalizedHint, options)` hook and return an owned nonempty
+image. Final public `load` wrappers normalize arguments and run shared brightness completion after decoding, for both
+direct calls and registry dispatch. The protected `resolveMetadata(image, options, candidates, provenance)` helper
+merges evidence-bearing candidates into genuinely missing RGB components without replacing custom encodings. Known
+candidate declarations/facts do not require assumption permission. Completed source/adaptation provenance takes
+precedence over matching forwarded records. Format-specific sample adaptations happen before final peak measurement.
 
 The existing installed-target contract still requires external dependencies to be supplied separately. Source-built
 EXR fallbacks are static; supplied shared packages remain externally managed. Bundled decoder license notices accompany

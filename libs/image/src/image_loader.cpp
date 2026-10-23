@@ -107,56 +107,73 @@ auto ImageFormatHandler::load (const std::filesystem::path &path, ImageLoaderOpt
 	return load(input->bytes, *hint, options);
 }
 
-auto ImageFormatHandler::loadAndGuess (std::span<const std::byte> bytes, std::string_view hint) const
-	-> std::expected<Image, ImageError> {
-	return load(bytes, hint, {true, true, true});
+auto ImageFormatHandler::load (
+	std::span<const std::byte> bytes, std::string_view hint, ImageLoaderOptions options
+) const -> std::expected<Image, ImageError>
+{
+	const auto normalized = detail::imageHint(bytes, hint);
+	if (!normalized)
+		return std::unexpected(normalized.error());
+	auto image = decode(bytes, *normalized, options);
+	if (!image)
+		return image;
+	if (!image->handle())
+		return std::unexpected(ImageError{ImageErrorCode::DecodeFailure, "Handler returned an empty image"});
+	if (auto completed = detail::refreshImageMetadata(*image, options.hdr, false); !completed)
+		return std::unexpected(completed.error());
+	return image;
 }
 
-auto ImageFormatHandler::loadAndGuess (const std::filesystem::path &path) const -> std::expected<Image, ImageError> {
-	return load(path, {true, true, true});
-}
-
-auto ImageFormatHandler::finishLoading (
-	std::expected<Image, ImageError> image, ImageLoaderOptions options, SDL_Colorspace guesses,
-	ImageLoadAdjustments adjustments
+auto ImageFormatHandler::resolveMetadata (
+	std::expected<Image, ImageError> image, ImageLoaderOptions options, ImageMetadataCandidates candidates,
+	ImageMetadataProvenance provenance
 ) -> std::expected<Image, ImageError>
 {
 	if (!image || !image->handle())
 		return image;
-	const bool infer = options.guessColorPrimaries || options.guessTransferCharacteristics || options.guessColorRange;
-	const auto original = SDL_GetSurfaceColorspace(image->handle());
-	if (SDL_ISPIXELFORMAT_FOURCC(image->format()))
-		return image;
-	// Missing components are filled independently; custom components are explicit and remain untouched.
-	const auto fallback = static_cast<SDL_Colorspace>(SDL_DEFINE_COLORSPACE(SDL_COLOR_TYPE_RGB,
-		options.guessColorRange ? SDL_COLORSPACERANGE(guesses) : SDL_COLORSPACERANGE(original),
-		options.guessColorPrimaries ? SDL_COLORSPACEPRIMARIES(guesses) : SDL_COLORSPACEPRIMARIES(original),
-		options.guessTransferCharacteristics ? SDL_COLORSPACETRANSFER(guesses) : SDL_COLORSPACETRANSFER(original),
-		SDL_MATRIX_COEFFICIENTS_IDENTITY, SDL_CHROMA_LOCATION_NONE));
-	const auto encoding = infer ? detail::fillImageEncoding(original, fallback) : original;
-	if (encoding == original && adjustments.colorPrimaries == ImageLoadAdjustment::None
-		&& adjustments.transferCharacteristics == ImageLoadAdjustment::None && adjustments.colorRange == ImageLoadAdjustment::None)
-		return image;
-	// Preserve matching forwarded annotations and combine completed actions with actual new inferences.
-	const auto previous = detail::readImageLoadAdjustments(*image->handle());
+	auto previous = detail::readImageProvenance(*image->handle());
 	if (!previous)
 		return std::unexpected(previous.error());
-	adjustments.colorPrimaries = adjustments.colorPrimaries | previous->colorPrimaries;
-	adjustments.transferCharacteristics = adjustments.transferCharacteristics | previous->transferCharacteristics;
-	adjustments.colorRange = adjustments.colorRange | previous->colorRange;
-	const auto primaries = SDL_COLORSPACEPRIMARIES(encoding);
-	const auto transfer = SDL_COLORSPACETRANSFER(encoding);
-	if (SDL_COLORSPACEPRIMARIES(original) != primaries
-		&& primaries != SDL_COLOR_PRIMARIES_UNKNOWN && primaries != SDL_COLOR_PRIMARIES_UNSPECIFIED)
-		adjustments.colorPrimaries = adjustments.colorPrimaries | ImageLoadAdjustment::Guessed;
-	if (SDL_COLORSPACETRANSFER(original) != transfer
-		&& transfer != SDL_TRANSFER_CHARACTERISTICS_UNKNOWN && transfer != SDL_TRANSFER_CHARACTERISTICS_UNSPECIFIED)
-		adjustments.transferCharacteristics = adjustments.transferCharacteristics | ImageLoadAdjustment::Guessed;
-	if (SDL_COLORSPACERANGE(original) != SDL_COLORSPACERANGE(encoding) && SDL_COLORSPACERANGE(encoding) != SDL_COLOR_RANGE_UNKNOWN)
-		adjustments.colorRange = adjustments.colorRange | ImageLoadAdjustment::Guessed;
-	if (encoding != original && !SDL_SetSurfaceColorspace(image->handle(), encoding))
-		return detail::imageSDLError(ImageErrorCode::SDLFailure, "Assigning inferred image metadata");
-	if (auto recorded = detail::writeImageLoadAdjustments(*image->handle(), adjustments); !recorded)
+	// Preserve forwarded evidence unless this handler supplies a completed interpretation.
+	for (const auto member : {&ImageMetadataProvenance::colorPrimaries,
+		&ImageMetadataProvenance::transferCharacteristics, &ImageMetadataProvenance::colorRange,
+		&ImageMetadataProvenance::sdrWhitePoint, &ImageMetadataProvenance::hdrHeadroom})
+		if ((provenance.*member).origin == ImageMetadataOrigin::Unknown
+			&& !(provenance.*member).adapted && !(provenance.*member).dependsOnAssumptions
+			&& (provenance.*member).explanation.empty())
+			provenance.*member = previous.value().*member;
+
+	const auto original = SDL_GetSurfaceColorspace(image->handle());
+	if (!SDL_ISPIXELFORMAT_FOURCC(image->format()))
+	{
+		// Source declarations and format facts can fill missing components even in conservative mode.
+		const auto allowed = [](const ImagePropertyProvenance &record, bool assume) {
+			return record.origin != ImageMetadataOrigin::Unknown
+				&& (record.origin != ImageMetadataOrigin::Assumed || assume);
+		};
+		const bool complete = allowed(candidates.provenance.colorPrimaries, options.inferColorPrimaries)
+			|| allowed(candidates.provenance.transferCharacteristics, options.inferTransferCharacteristics)
+			|| allowed(candidates.provenance.colorRange, options.inferColorRange);
+		const auto fallback = static_cast<SDL_Colorspace>(SDL_DEFINE_COLORSPACE(
+			complete ? SDL_COLORSPACETYPE(candidates.colorspace) : SDL_COLORSPACETYPE(original),
+			allowed(candidates.provenance.colorRange, options.inferColorRange)
+				? SDL_COLORSPACERANGE(candidates.colorspace) : SDL_COLORSPACERANGE(original),
+			allowed(candidates.provenance.colorPrimaries, options.inferColorPrimaries)
+				? SDL_COLORSPACEPRIMARIES(candidates.colorspace) : SDL_COLORSPACEPRIMARIES(original),
+			allowed(candidates.provenance.transferCharacteristics, options.inferTransferCharacteristics)
+				? SDL_COLORSPACETRANSFER(candidates.colorspace) : SDL_COLORSPACETRANSFER(original),
+			SDL_MATRIX_COEFFICIENTS_IDENTITY, SDL_CHROMA_LOCATION_NONE));
+		const auto encoding = detail::fillImageEncoding(original, fallback);
+		if (SDL_COLORSPACEPRIMARIES(original) != SDL_COLORSPACEPRIMARIES(encoding))
+			provenance.colorPrimaries = candidates.provenance.colorPrimaries;
+		if (SDL_COLORSPACETRANSFER(original) != SDL_COLORSPACETRANSFER(encoding))
+			provenance.transferCharacteristics = candidates.provenance.transferCharacteristics;
+		if (SDL_COLORSPACERANGE(original) != SDL_COLORSPACERANGE(encoding))
+			provenance.colorRange = candidates.provenance.colorRange;
+		if (encoding != original && !SDL_SetSurfaceColorspace(image->handle(), encoding))
+			return detail::imageSDLError(ImageErrorCode::SDLFailure, "Assigning completed image interpretation");
+	}
+	if (auto recorded = detail::writeImageProvenance(*image->handle(), provenance); !recorded)
 		return std::unexpected(recorded.error());
 	return image;
 }
@@ -246,14 +263,6 @@ auto ImageLoader::load (
 	return std::unexpected(ImageError{ImageErrorCode::DecodeFailure, std::move(failures)});
 }
 
-auto ImageLoader::loadAndGuess (const std::filesystem::path &path) const -> std::expected<Image, ImageError> {
-	return load(path, {true, true, true});
-}
-
-auto ImageLoader::loadAndGuess (std::span<const std::byte> bytes, std::string_view hint) const
-	-> std::expected<Image, ImageError> {
-	return load(bytes, hint, {true, true, true});
-}
 
 
 ////

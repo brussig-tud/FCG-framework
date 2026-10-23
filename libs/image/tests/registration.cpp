@@ -34,7 +34,7 @@ public:
 		constexpr std::array magic{std::byte{'T'}, std::byte{'E'}, std::byte{'S'}, std::byte{'T'}};
 		return std::ranges::equal(bytes, magic);
 	}
-	[[nodiscard]] auto load (std::span<const std::byte>, std::string_view, fcg::ImageLoaderOptions options) const
+	[[nodiscard]] auto decode (std::span<const std::byte>, std::string_view, fcg::ImageLoaderOptions options) const
 		-> std::expected<fcg::Image, fcg::ImageError> override
 	{
 		return fcg::Image::adopt(SDL_CreateSurface(7, 3, SDL_PIXELFORMAT_RGBA32));

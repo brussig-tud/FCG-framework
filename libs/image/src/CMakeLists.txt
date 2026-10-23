@@ -3,6 +3,7 @@
 set(SOURCES
 	image.cpp
 	image_color.cpp
+	image_metadata.cpp
 	pixel_format.cpp
 	pixel_access.cpp
 	image_loader.cpp

@@ -39,27 +39,24 @@
 /// file-dialog filters with <tt>\ref fcg::extra::imageFileFilters "imageFileFilters"</tt>.
 ///
 /// \subsection fcg_image_loading_workflows_guessing Loading files with missing color metadata
-/// <tt>\ref fcg::ImageLoader::loadAndGuess "ImageLoader::loadAndGuess"</tt> asks the successful handler to infer
-/// missing primaries, transfer and range. The inherited <tt>\ref fcg::ImageFormatHandler::loadAndGuess
-/// "ImageFormatHandler::loadAndGuess"</tt> provides the same operation on every concrete handler. Each handler uses
-/// the input and its format's conventions to choose the values; consult its module guide for the particular policy.
-/// The general loading interface prescribes no encoding, and best-effort results can remain incomplete or unsupported
-/// by color-managed upload. Ordinary loads leave guessing disabled. Select individual components with
-/// <tt>\ref fcg::ImageLoaderOptions "ImageLoaderOptions"</tt>:
+/// Ordinary <tt>\ref fcg::ImageLoader::load "ImageLoader::load"</tt> and direct handler loads complete missing
+/// primaries, transfer and range using the format's conventions, then complete SDR white level and HDR headroom on
+/// eligible linear floating-point RGB images. Best-effort completion can leave metadata unresolved or unsupported
+/// for color-managed upload. Declared and identified custom encodings take precedence over assumptions.
+/// Select individual requests or disable optional assumptions and scans with
+/// <tt>\ref fcg::ImageLoaderOptions::conservative "ImageLoaderOptions::conservative"</tt>:
 /// \snippet hdr_examples.cpp guessing
-/// Guessing fills missing source information rather than replacing declarations. A handler can also convert colors
-/// while decoding; in that case the returned pixels and metadata describe the conversion result. For example,
-/// \ref fcg_radiance_hdr converts numerically defined unsupported gamuts to linear BT.709.
-/// Inspect <tt>\ref fcg::ImagePixelInfo::loadAdjustments "ImagePixelInfo::loadAdjustments"</tt> through
-/// <tt>\ref fcg::Image::pixelInfo "Image::pixelInfo"</tt> to see which properties were guessed or adapted.
-/// A guessed source property used for adaptation is marked with
-/// <tt>\ref fcg::ImageLoadAdjustment::GuessedAndAdapted "ImageLoadAdjustment::GuessedAndAdapted"</tt>.
-/// See \ref fcg_pixel_formats_workflows_loading for an example and the annotation lifetime rules.
+/// \snippet hdr_examples.cpp conservative
+/// A handler can adapt colors while decoding, such as Radiance's conversion to linear BT.709/D65. Returned pixels
+/// and metadata describe the output. Inspect <tt>\ref fcg::ImagePixelInfo::provenance "ImagePixelInfo::provenance"</tt>
+/// for each value's origin, adaptation and dependence on assumptions. A measured headroom can depend on assumed
+/// diffuse white. See \ref fcg_pixel_formats_workflows_loading for the evidence categories and an example.
 ///
 /// \subsection fcg_image_loading_workflows_handlers Adding a format handler
 /// Implement <tt>\ref fcg::ImageFormatHandler "ImageFormatHandler"</tt> and register it on a loader:
 /// \snippet image_examples.cpp registration
-/// \c accepts decides whether a load attempt is worth trying, and \c load performs the decoding. Registration transfers
+/// \c ImageFormatHandler::accepts decides whether a load attempt is worth trying, and
+/// \c ImageFormatHandler::decode performs format-specific decoding. Registration transfers
 /// ownership of the handler to the loader.
 ///
 /// \section fcg_image_loading_lifetime Ownership and lifetime
@@ -118,26 +115,40 @@ namespace fcg {
 // Structs and enums
 //
 
-/// \brief Requests best-effort inference of missing RGB metadata; every request is disabled by default.
+/// \brief Best-effort completion requests enabled by default for RGB and palette images.
 ///
-/// The handler that successfully decodes the input chooses values using available source information and conventions
-/// of its format. The values are not prescribed by this type and need not be known before loading. Enabled fields
-/// concern only unknown or unspecified source components on RGB and palette images; identified components, including
-/// custom encodings, take precedence. A handler may leave a component unidentified if it has no defensible inference.
-/// YUV interpretation is not guessed. These requests do not guarantee an encoding supported by color-managed upload.
-///
-/// Handlers may convert colors while decoding and report the resulting encoding; consult the handler's contract for
-/// sample preservation. \c ImageFormatHandler::loadAndGuess and \c ImageLoader::loadAndGuess enable every field.
+/// Identified source components, including custom encodings, take precedence. Handlers choose format-informed
+/// assumptions and may leave components unresolved. YUV interpretation is retained. Use \c conservative to
+/// disable optional assumptions and scans while retaining declarations and decoder-supplied information.
 struct ImageLoaderOptions
 {
-	/// Ask the successful handler to infer unidentified source primaries from the input and format conventions.
-	bool guessColorPrimaries = false;
+public:
 
-	/// Ask the successful handler to infer unidentified source transfer from the input and format conventions.
-	bool guessTransferCharacteristics = false;
+	////
+	// Object construction
 
-	/// Ask the successful handler to infer unidentified source range from the input and format conventions.
-	bool guessColorRange = false;
+	/// Return options that retain available information without optional assumptions or pixel scans.
+	///
+	/// \return Options with every optional completion request disabled.
+	[[nodiscard]] static auto conservative () -> ImageLoaderOptions {
+		return {false, false, false, {false, false}};
+	}
+
+
+	////
+	// Fields
+
+	/// Infer missing source primaries using the handler's format conventions.
+	bool inferColorPrimaries = true;
+
+	/// Infer missing source transfer using the handler's format conventions.
+	bool inferTransferCharacteristics = true;
+
+	/// Infer missing source color range using the handler's format conventions.
+	bool inferColorRange = true;
+
+	/// Complete missing SDR white level and HDR headroom on eligible decoded images.
+	ImageHDRMetadataOptions hdr;
 };
 
 /// \brief
@@ -170,13 +181,11 @@ struct ImageFileFormat
 /// An \c ImageLoader tries its registered handlers in turn; a handler can also be used on its own. To add support for
 /// a file format:
 /// 1. Derive from \c ImageFormatHandler.
-/// 2. Implement \c accepts to check cheaply, e.g. from a file signature or the hint, whether decoding should be
-///    attempted.
-/// 3. Implement the byte overload of \c load to decode the data into a new \c SDL_Surface, wrap it with
-///    \c Image::adopt, then optionally apply handler-chosen guesses with \c finishLoading after extracting metadata.
-///    Document any color conversion performed during decoding and report the resulting encoding. Record
-///    completed guessing and adaptation actions with the fourth argument of \c finishLoading. Add
-///    <tt>using ImageFormatHandler::load;</tt> to your class to keep the file overload of \c load available.
+/// 2. Implement \c accepts to check the signature or normalized hint cheaply.
+/// 3. Override the protected \c decode hook, extract source evidence and return an owned \c Image. Use
+///    \c resolveMetadata with evidence-bearing candidates to fill missing components and record adaptations.
+///    Report the encoding of the returned samples. The inherited public \c load wrappers complete brightness
+///    metadata after successful decoding.
 /// 4. Optionally override \c fileFormats to advertise the formats for file dialogs.
 /// 5. Register an instance with \c ImageLoader::registerHandler, or at namespace scope with
 ///    \c FormatHandlerRegistration.
@@ -239,12 +248,10 @@ public:
 	/// \c ImageLoader calls this only after \c accepts returned \c true, but direct callers, including the file
 	/// overload of \c load, may call it without calling \c accepts first. The returned image does not depend on
 	/// \c bytes after the call.
-	/// Implementations extract available metadata before applying \c options. Infer only missing RGB components using
-	/// input context and format conventions, for example by passing chosen candidates to \c finishLoading. Identified
-	/// source components take precedence. Implementations that convert colors must report the resulting encoding.
-	/// Implementations record guesses and loading adaptations in \c ImagePixelInfo::loadAdjustments. The helper
-	/// \c finishLoading records guesses it applies and accepts actions already performed by the handler.
-	/// The inherited \c loadAndGuess overloads call this operation with every inference request enabled.
+	/// The successful handler extracts source evidence before applying optional assumptions. The inherited wrapper
+	/// normalizes the hint, decodes, then completes missing white level and headroom on eligible linear floating RGB.
+	/// Supplied metadata is retained. Metadata origins, sample adaptations and known assumption dependencies are
+	/// available through \c ImagePixelInfo::provenance. Completion does not guarantee color-managed upload support.
 	///
 	/// \note
 	/// 	Implementations return a non-empty image on success; \c ImageLoader treats an empty image as a failure. The
@@ -255,12 +262,12 @@ public:
 	/// 	The encoded file contents, valid only during the call.
 	/// \param hint
 	/// 	The file name extension of the input, or empty if unknown.
-	/// \param options Requests to infer missing RGB metadata; \c loadAndGuess enables every request.
+	/// \param options Optional metadata-completion requests; all are enabled by default.
 	///
 	/// \return The decoded image, or an error describing why decoding failed.
 	[[nodiscard]] virtual auto load (
 		std::span<const std::byte> bytes, std::string_view hint={}, ImageLoaderOptions options={}
-	) const -> std::expected<Image, ImageError> = 0;
+	) const -> std::expected<Image, ImageError> final;
 
 	/// \brief
 	/// 	Reads a file completely and decodes it with this handler alone.
@@ -271,7 +278,7 @@ public:
 	///
 	/// \param path
 	/// 	The path of the image file.
-	/// \param options Requests to infer missing RGB metadata; \c loadAndGuess enables every request.
+	/// \param options Optional metadata-completion requests; all are enabled by default.
 	///
 	/// \return
 	/// 	The decoded image, \c ImageErrorCode::InvalidArgument if the path is empty or contains a NUL character
@@ -280,52 +287,43 @@ public:
 	[[nodiscard]] auto load (const std::filesystem::path &path, ImageLoaderOptions options={}) const
 		-> std::expected<Image, ImageError>;
 
-	/// \brief Decode memory while enabling every missing-metadata inference request in \c ImageLoaderOptions.
-	///
-	/// Identified source components take precedence over guesses. The handler may convert colors as described by
-	/// its loading contract. See \c load for errors and ownership.
-	///
-	/// \param bytes Encoded input borrowed during this call.
-	/// \param hint Optional file extension hint.
-	///
-	/// \return The decoded image with best-effort metadata, or an error from \c load.
-	[[nodiscard]] virtual auto loadAndGuess (std::span<const std::byte> bytes, std::string_view hint={}) const
-		-> std::expected<Image, ImageError> final;
-
-	/// \brief Read a file with every missing-metadata inference request enabled; see \c loadAndGuess for memory input.
-	///
-	/// \param path The image file path.
-	///
-	/// \return The independently owned decoded image, or an error from \c load.
-	[[nodiscard]] virtual auto loadAndGuess (const std::filesystem::path &path) const
-		-> std::expected<Image, ImageError> final;
-
 
 protected:
 
 	////
 	// Methods
 
-	/// \brief Apply handler-chosen candidates to requested missing components after decoding.
+	/// \brief Decode normalized input and establish the returned image's color interpretation.
 	///
-	/// Only unknown or unspecified RGB components enabled in \p options are filled. Identified components, including
-	/// custom encodings, and YUV surfaces are retained. Pixel samples are retained. The caller chooses candidates from
-	/// the input and format conventions; this helper supplies no default guesses or color conversion.
-	/// Newly filled components are annotated as \c ImageLoadAdjustment::Guessed. Previously recorded matching actions
-	/// are retained and combined with \p adjustments. Report both actions when an adaptation used guessed source data.
+	/// Extract source evidence before applying optional assumptions. A handler may adapt samples, and must report
+	/// the returned encoding and provenance. The public loading wrappers complete brightness metadata afterwards.
 	///
-	/// \param image Decoding result whose image is consumed on success; errors pass through unchanged.
-	/// \param options Inference requests to apply only to missing RGB components.
-	/// \param guesses RGB encoding containing the handler's candidates; unresolved components may remain unspecified.
-	/// \param adjustments Actions already completed by this handler, describing the image's returned color properties.
+	/// \param bytes Encoded bytes borrowed for this call.
+	/// \param hint Normalized lowercase extension, without a leading dot.
+	/// \param options Requests controlling optional assumptions before any sample adaptation.
 	///
-	/// \return
-	/// 	The image with updated metadata, the decoding error, or \c ImageErrorCode::SDLFailure if metadata cannot
-	/// 	be read or updated.
-	[[nodiscard]] static auto finishLoading (
-		std::expected<Image, ImageError> image, ImageLoaderOptions options, SDL_Colorspace guesses,
-		ImageLoadAdjustments adjustments={}
+	/// \return An independently owned nonempty image, or a decoding error.
+	[[nodiscard]] virtual auto decode (
+		std::span<const std::byte> bytes, std::string_view hint, ImageLoaderOptions options
+	) const -> std::expected<Image, ImageError> = 0;
+
+	/// \brief Complete missing RGB components and record the evidence for returned metadata.
+	///
+	/// Known candidate evidence is applied independently of assumption options. Candidates marked
+	/// \c ImageMetadataOrigin::Assumed require the corresponding option. Identified components and YUV
+	/// interpretation are retained. Completed evidence takes precedence over matching forwarded records.
+	///
+	/// \param image Decoded image consumed on success; decoding errors pass through.
+	/// \param options Controls which assumptions may fill missing RGB components.
+	/// \param candidates Candidate values and their evidence.
+	/// \param provenance Evidence and adaptations already established by the handler.
+	///
+	/// \return The annotated image, or a decoding or metadata storage error.
+	[[nodiscard]] static auto resolveMetadata (
+		std::expected<Image, ImageError> image, ImageLoaderOptions options, ImageMetadataCandidates candidates,
+		ImageMetadataProvenance provenance={}
 	) -> std::expected<Image, ImageError>;
+
 };
 
 /// \brief
@@ -453,7 +451,7 @@ public:
 	///
 	/// \param path
 	/// 	The path of the image file.
-	/// \param options Requests to infer missing RGB metadata; \c loadAndGuess enables every request.
+	/// \param options Optional metadata-completion requests; all are enabled by default.
 	///
 	/// \return
 	/// 	The decoded image, \c ImageErrorCode::InvalidArgument if the path is empty or contains a NUL character
@@ -475,7 +473,7 @@ public:
 	/// 	The file name extension of the input, e.g. <tt>"png"</tt>, or empty if unknown. A leading dot and ASCII
 	/// 	letter case are ignored. Formats with a file signature load without a hint; the SDL_image handler needs it
 	/// 	for TGA files.
-	/// \param options Requests to infer missing RGB metadata; \c loadAndGuess enables every request.
+	/// \param options Optional metadata-completion requests; all are enabled by default.
 	///
 	/// \return
 	/// 	The decoded image, or an error:
@@ -488,23 +486,6 @@ public:
 	[[nodiscard]] auto load (
 		std::span<const std::byte> bytes, std::string_view hint={}, ImageLoaderOptions options={}
 	) const -> std::expected<Image, ImageError>;
-
-	/// \brief
-	/// 	Read a file with every missing-metadata inference request enabled; see \c ImageFormatHandler::loadAndGuess.
-	///
-	/// \param path The image file path.
-	///
-	/// \return The decoded image with best-effort metadata, or an error from \c load.
-	[[nodiscard]] auto loadAndGuess (const std::filesystem::path &path) const -> std::expected<Image, ImageError>;
-
-	/// \brief
-	/// 	Decode memory with every missing-metadata inference request enabled; see \c ImageFormatHandler::loadAndGuess.
-	///
-	/// \param bytes Encoded input borrowed during this call.
-	/// \param hint Optional file extension hint.
-	///
-	/// \return The decoded image with best-effort metadata, or an error from \c load.
-	[[nodiscard]] auto loadAndGuess (std::span<const std::byte> bytes, std::string_view hint={}) const -> std::expected<Image, ImageError>;
 
 
 private:

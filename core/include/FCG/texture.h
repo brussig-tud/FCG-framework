@@ -30,8 +30,8 @@
 /// Choose normal color management for display, <tt>\ref fcg::Image::uploadWithFallback "uploadWithFallback"</tt> to
 /// supply missing encoding, or <tt>\ref fcg::Image::uploadStoredSamples "uploadStoredSamples"</tt> for numeric data
 /// textures. To establish missing metadata while loading, use
-/// <tt>\ref fcg::ImageLoader::loadAndGuess "ImageLoader::loadAndGuess"</tt> or the inherited handler alias
-/// <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt>. See \ref fcg_images and
+/// <tt>\ref fcg::ImageLoader::load "ImageLoader::load"</tt> or direct handler loading through
+/// <tt>\ref fcg::ImageFormatHandler::load "ImageFormatHandler::load"</tt>. See \ref fcg_images and
 /// \ref fcg_image_loading for these workflows and the conditional sample-preservation policy.
 ///
 /// \subsection fcg_textures_workflows_transfers Transfer paths

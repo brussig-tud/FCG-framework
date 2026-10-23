@@ -23,8 +23,8 @@
 /// - Decode a file and display it: \ref fcg_images for the CPU side, then upload the pixels with
 ///   <tt>\ref fcg::Image::upload "Image::upload"</tt> into a \ref fcg_textures "texture".
 /// - Loading by file extension or by content: \ref fcg_image_loading. For files with missing color metadata, use
-///   <tt>\ref fcg::ImageLoader::loadAndGuess "ImageLoader::loadAndGuess"</tt>, also available on handlers through
-///   <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt>.
+///   <tt>\ref fcg::ImageLoader::load "ImageLoader::load"</tt>, also available on handlers through
+///   <tt>\ref fcg::ImageFormatHandler::load "ImageFormatHandler::load"</tt>.
 /// - Using SDL_image directly: \ref fcg_sdl_image. To add a custom decoder, see \ref fcg_image_loading.
 /// - Loading floating-point HDR pixels: \ref fcg_radiance_hdr, \ref fcg_pfm, and \ref fcg_openexr.
 ///
@@ -89,10 +89,24 @@
 /// treats that declaration as established. Handlers may convert source encodings during decoding; these policies
 /// operate on the returned image. Use unconditional sample preservation when the shader should
 /// interpret those values itself. Sample preservation does not make encoded colors linear.
-/// To establish metadata on a newly loaded image instead, use
-/// <tt>\ref fcg::ImageLoader::loadAndGuess "ImageLoader::loadAndGuess"</tt> or the inherited handler alias
-/// <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt>.
+/// Ordinary <tt>\ref fcg::ImageLoader::load "ImageLoader::load"</tt> supplies best-effort metadata completion.
 /// See \ref fcg_textures for the texture that comes out.
+///
+/// \subsection fcg_images_workflows_metadata Refreshing brightness metadata after editing
+/// <tt>\ref fcg::Image::refreshMetadata "Image::refreshMetadata"</tt> refreshes exactly the SDR diffuse-white
+/// level, HDR headroom and their provenance. It can assume missing white as 1 and remeasure the stored RGB peak on
+/// linear binary16/binary32 images. Primaries, transfer and range retain their established interpretations.
+/// A measurement scans the image and reports unavailable analysis without rejecting otherwise usable pixels:
+/// \snippet hdr_examples.cpp metadata_refresh
+/// Ordinary <tt>\ref fcg::Image::converted "Image::converted"</tt> clears headroom when the RGB peak may change.
+/// Call the refresh afterwards when a current peak is needed, or choose the explicitly named conversion-and-refresh
+/// operation. Its refresh covers the same two brightness properties and their provenance:
+/// \snippet hdr_examples.cpp conversion_metadata
+/// Prefer <tt>\ref fcg::Image::editSurface "Image::editSurface"</tt> for external SDL editing. Its guard invalidates
+/// affected metadata before writable access and releases exclusivity on exceptions. Raw pointers from
+/// <tt>\ref fcg::Image::handle "Image::handle"</tt> require explicit
+/// <tt>\ref fcg::Image::notifySurfaceChanged "Image::notifySurfaceChanged"</tt> notification of changes.
+/// \snippet hdr_examples.cpp hdr_encoding
 ///
 /// \subsection fcg_images_workflows_delayed Images created later
 /// There is no default constructor and images cannot be copied, so use <tt>std::optional&lt;\ref fcg::Image
@@ -125,6 +139,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 
 // SDL3 library
 #include <SDL3/SDL_pixels.h>
@@ -201,6 +216,97 @@ struct ImageUploadOptions
 // Classes
 //
 
+/// \brief Exclusive mutable SDL access that invalidates affected metadata before editing begins.
+///
+/// Obtain a guard with <tt>Image::editSurface</tt>. Keep the image alive and unmoved until release. The guard borrows
+/// the surface and prevents conflicting framework access; follow SDL's locking rules for the SDL operations used.
+class ImageSurfaceEditGuard
+{
+	////
+	// Friend declarations
+
+	/// \c Image creates guards while retaining ownership of their borrowed surfaces.
+	friend class Image;
+
+public:
+
+	////
+	// Object construction/destruction
+
+	/// Release exclusive access and expire the borrowed surface pointer.
+	~ImageSurfaceEditGuard() { release(); }
+
+	/// Exclusive editing sessions cannot be copied.
+	ImageSurfaceEditGuard(const ImageSurfaceEditGuard&) = delete;
+
+	/// Exclusive editing sessions cannot be copy-assigned.
+	auto operator= (const ImageSurfaceEditGuard&) -> ImageSurfaceEditGuard& = delete;
+
+	/// \brief Transfer responsibility for the editing session.
+	///
+	/// \param other Session to consume; becomes inactive.
+	ImageSurfaceEditGuard(ImageSurfaceEditGuard &&other) noexcept
+		: m_surface(std::exchange(other.m_surface, nullptr)), m_active(std::exchange(other.m_active, nullptr)) {}
+
+	/// \brief Release this session and take over another.
+	///
+	/// \param other Session to consume; becomes inactive.
+	///
+	/// \return This guard.
+	auto operator= (ImageSurfaceEditGuard &&other) noexcept -> ImageSurfaceEditGuard&
+	{
+		if (this != &other) {
+			release();
+			m_surface = std::exchange(other.m_surface, nullptr);
+			m_active = std::exchange(other.m_active, nullptr);
+		}
+		return *this;
+	}
+
+
+	////
+	// Accessors
+
+	/// Return the borrowed mutable surface, or \c nullptr after release or move.
+	[[nodiscard]] auto surface () const & -> SDL_Surface* { return m_surface; }
+
+	/// Borrowing a surface from a temporary guard is unavailable.
+	auto surface () const && -> SDL_Surface* = delete;
+
+
+	////
+	// Methods
+
+	/// Release exclusive access early; pointers borrowed through this guard must no longer be used.
+	void release () noexcept
+	{
+		if (m_surface) {
+			*m_active = false;
+			m_surface = nullptr;
+			m_active = nullptr;
+		}
+	}
+
+
+private:
+
+	////
+	// Object construction
+
+	/// Borrow a surface after the owning image has invalidated metadata and established exclusive access.
+	ImageSurfaceEditGuard(SDL_Surface *surface, bool *active) : m_surface(surface), m_active(active) {}
+
+
+	////
+	// Fields
+
+	/// Surface owned by the image for the lifetime of the editing session.
+	SDL_Surface *m_surface;
+
+	/// Image-owned exclusivity flag, cleared on release.
+	bool *m_active;
+};
+
 /// \brief
 /// 	A decoded image in CPU memory, held as an \c SDL_Surface.
 ///
@@ -266,11 +372,12 @@ public:
 	// Accessors
 
 	/// \brief
-	/// 	Returns the underlying SDL surface for reading or modifying pixels and surface properties.
+	/// 	Returns an escape-hatch surface pointer for SDL integration.
 	///
 	/// The surface remains owned by this image; do not destroy it, and do not use the pointer after the image is
 	/// destroyed or moved from. Do not perform conflicting external pixel, locking, conversion or destruction
-	/// operations during an active pixel access session.
+	/// operations during an active pixel access session. Prefer \c editSurface for writes; raw writes require
+	/// \c notifySurfaceChanged before another framework operation relies on the modified state.
 	///
 	/// \return The surface, or \c nullptr if the image is empty.
 	[[nodiscard]] auto handle () -> SDL_Surface* { return m_handle; }
@@ -301,13 +408,59 @@ public:
 	////
 	// Methods
 
-	/// \brief Snapshot the current storage, palette, transparency, color encoding and loading annotations.
+	/// \brief Snapshot current storage, palette, transparency, color encoding, brightness metadata and provenance.
 	///
 	/// \return
 	/// 	Metadata, \c ImageErrorCode::InvalidState for an empty image, \c ImageErrorCode::UnsupportedFormat for
 	/// 	unrecognized storage, or \c ImageErrorCode::SDLFailure if surface metadata cannot be queried. External
 	/// 	metadata edits are reflected.
 	[[nodiscard]] auto pixelInfo () const -> std::expected<ImagePixelInfo, ImageError>;
+
+	/// \brief Refresh SDR diffuse-white level, HDR headroom, and their provenance.
+	///
+	/// For full-range linear binary16/binary32 RGB, a missing white level can be assumed as 1.0, and headroom is
+	/// remeasured as the maximum stored RGB component divided by white, with a minimum of 1. RGB at zero alpha
+	/// participates; alpha itself does not. Existing white is retained. Unsupported interpretation, invalid white,
+	/// nonfinite RGB, or an unrepresentable result is reported in the result diagnostic. An unavailable measurement
+	/// clears previously derived headroom and retains supplied headroom. Successful measurement replaces headroom.
+	/// This operation refreshes only white level, headroom, and their provenance; primaries, transfer and range
+	/// retain their current interpretations. Pixels are retained. A requested measurement scans the visible image.
+	///
+	/// \param options Controls white assumptions and peak measurement; both are enabled by default.
+	///
+	/// \return Completion details, \c ImageErrorCode::InvalidState for unavailable access, or a metadata/access error.
+	[[nodiscard]] auto refreshMetadata (ImageHDRMetadataOptions options={})
+		-> std::expected<ImageMetadataRefreshResult, ImageError>;
+
+	/// \brief Invalidate metadata affected by edits through a borrowed SDL surface.
+	///
+	/// Prefer \c editSurface for scoped edits. Call this before editing, or immediately afterwards before any
+	/// framework operation relies on changed state. Pixel changes clear content headroom. Color-metadata changes
+	/// also clear provenance; current SDL interpretation values are retained. Apply replacement headroom after
+	/// notification. Call \c refreshMetadata to obtain a current peak when needed.
+	///
+	/// \param changes Categories modified by external code; defaults to \c ImageSurfaceChanges::All.
+	///
+	/// \return Nothing on success, or an invalid-state, invalid-argument or metadata storage error.
+	[[nodiscard]] auto notifySurfaceChanged (ImageSurfaceChanges changes=ImageSurfaceChanges::All)
+		-> std::expected<void, ImageError>;
+
+	/// \brief Acquire the preferred scoped interface for mutable SDL processing.
+	///
+	/// Affected metadata is invalidated before the surface becomes available, including on exceptions or partial
+	/// writes. The guard owns framework exclusivity; SDL locks are the caller's responsibility. Do not destroy or
+	/// replace the surface. After editing, \c refreshMetadata can establish a current white level and headroom.
+	///
+	/// \pre Keep this image alive and unmoved until the guard is released; externally synchronize access.
+	///
+	/// \param changes Categories that may be modified; defaults to \c ImageSurfaceChanges::All.
+	///
+	/// \return An owned editing guard, or an invalid-state, invalid-argument or metadata storage error.
+	[[nodiscard]] auto editSurface (ImageSurfaceChanges changes=ImageSurfaceChanges::All) &
+		-> std::expected<ImageSurfaceEditGuard, ImageError>;
+
+	/// Borrowing an editing session from a temporary image is unavailable.
+	auto editSurface (ImageSurfaceChanges) && -> std::expected<ImageSurfaceEditGuard, ImageError> = delete;
 
 	/// \brief Analyze potential conversion effects without allocating output pixels or scanning sample values.
 	///
@@ -321,11 +474,13 @@ public:
 	/// \brief Allocate an independent converted image, retaining this image's pixels and metadata.
 	///
 	/// Omitted colorspace preserves RGB encoding and white-point units. A changed colorspace uses its default
-	/// white-point units. Relative HDR headroom is retained, and tone mapping is disabled.
-	/// The output retains loading annotations for unchanged color components and clears annotations for changed ones;
-	/// this explicit conversion does not add loading adaptations. This image's annotations remain unchanged.
+	/// white-point units, recorded as an assigned white level for linear and PQ output. Tone mapping is disabled.
+	/// Provenance follows the output interpretation and records actual color adaptations. Headroom is retained only
+	/// on paths known to preserve RGB values and white-level interpretation; other paths clear it. Call
+	/// \c refreshMetadata afterwards when a current peak is needed, or use \c convertedWithMetadata to include
+	/// this refresh automatically. Ordinary conversion performs no additional metadata scan.
 	/// Source and destination RGB encoding must be supported even when only the pixel layout changes. Use
-	/// \c ImageLoader::loadAndGuess or \c ImageFormatHandler::loadAndGuess to supply missing metadata when loading,
+	/// \c ImageLoader::load or \c ImageFormatHandler::load to supply missing metadata when loading,
 	/// or \c uploadStoredSamples when only a GPU texture of the stored numeric samples is needed.
 	///
 	/// \param targetFormat Non-indexed RGB destination identifier.
@@ -337,7 +492,26 @@ public:
 	[[nodiscard]] auto converted (SDL_PixelFormat targetFormat, PixelConversionOptions options = {}) const
 		-> std::expected<Image, ImageError>;
 
+	/// \brief Convert pixels and refresh SDR white level, HDR headroom, and their provenance on the output.
+	///
+	/// The conversion has the policies of \c converted. Afterwards, \c refreshMetadata retains existing white
+	/// or assumes missing white, and remeasures headroom on eligible linear floating-point RGB output. Those two
+	/// properties and their provenance are the complete refresh scope. Ineligible analysis leaves the converted
+	/// image usable. Color primaries, transfer and range describe the conversion's selected output interpretation.
+	///
+	/// \param targetFormat Non-indexed RGB destination storage.
+	/// \param conversionOptions Conversion loss, colorspace and transparency policies.
+	/// \param metadataOptions Controls white assumptions and peak measurement.
+	///
+	/// \return The independent image, or an error from conversion or metadata storage/access.
+	[[nodiscard]] auto convertedWithMetadata (
+		SDL_PixelFormat targetFormat, PixelConversionOptions conversionOptions={}, ImageHDRMetadataOptions metadataOptions={}
+	) const -> std::expected<Image, ImageError>;
+
 	/// \brief Acquire exclusive writable native access, locking the surface when required.
+	///
+	/// Content headroom is invalidated before writable storage becomes available, even if no write follows.
+	/// Call \c refreshMetadata afterwards when a current peak is needed.
 	///
 	/// \pre Keep this image alive and unmoved until the guard releases; externally synchronize access.
 	///
@@ -347,7 +521,7 @@ public:
 	/// \c ImageErrorCode::UnsupportedFormat for a format mismatch, or \c ImageErrorCode::SDLFailure on lock failure.
 	template<SDL_PixelFormat Format> requires PixelFormatTraits<Format>::supported
 	[[nodiscard]] auto mapPixels () & -> std::expected<PixelAccessGuard<Format, true>, ImageError> {
-		auto surface = acquirePixels(Format);
+		auto surface = acquireWritablePixels(Format);
 		if (!surface)
 			return std::unexpected(surface.error());
 		return PixelAccessGuard<Format, true>(*surface, &m_accessActive);
@@ -394,6 +568,8 @@ public:
 
 	/// \brief Write exact native components, preserving unused storage and color encoding.
 	///
+	/// Writable access invalidates content headroom. Call \c refreshMetadata when a current peak is needed.
+	///
 	/// \tparam Format Exact supported SDL format.
 	/// \param x Zero-based horizontal coordinate.
 	/// \param y Zero-based vertical coordinate; row zero is the top row.
@@ -429,6 +605,8 @@ public:
 
 	/// \brief Assign RGBA bytes in the source encoding, requiring permission for potential narrowing or alpha loss.
 	///
+	/// Writable access invalidates content headroom. Call \c refreshMetadata when a current peak is needed.
+	///
 	/// \param x Zero-based horizontal coordinate.
 	/// \param y Zero-based vertical coordinate.
 	/// \param value RGBA byte components using the image's straight or associated alpha convention.
@@ -441,6 +619,8 @@ public:
 
 	/// \brief Assign RGBA floats in the source encoding, requiring permission for potential narrowing or alpha loss.
 	///
+	/// Writable access invalidates content headroom. Call \c refreshMetadata when a current peak is needed.
+	///
 	/// \param x Zero-based horizontal coordinate.
 	/// \param y Zero-based vertical coordinate.
 	/// \param value RGBA components using the image's alpha convention; integer output rejects non-finite values.
@@ -452,6 +632,8 @@ public:
 		-> std::expected<void, ImageError>;
 
 	/// \brief Run a callback during one writable session; errors and exceptions release access.
+	///
+	/// Content headroom is invalidated before the callback. Call \c refreshMetadata afterwards when needed.
 	///
 	/// \tparam Format Exact supported SDL format.
 	/// \tparam Callback Callable returning void or <tt>std::expected&lt;void, ImageError&gt;</tt>.
@@ -575,8 +757,8 @@ public:
 	///
 	/// Query the resulting format with <tt>Texture::info().format</tt>. The upload is submitted without waiting for the
 	/// GPU, and the image itself is left unchanged; it may be modified or destroyed as soon as this method returns.
-	/// Color-managed RGB upload requires supported full-range encoding. Use \c ImageLoader::loadAndGuess or
-	/// \c ImageFormatHandler::loadAndGuess when loading files with missing metadata, or supply
+	/// Color-managed RGB upload requires supported full-range encoding. Use \c ImageLoader::load or
+	/// \c ImageFormatHandler::load when loading files with missing metadata, or supply
 	/// \c ImageUploadOptions::unidentifiedSourceColorspace to fill missing components for this upload alone.
 	/// Identified components are retained; custom or unsupported encodings still prevent color conversion.
 	/// Supported RGB encodings combine BT.709, BT.601, SMPTE 240M, BT.2020, DCI-P3 or Display P3 primaries with linear,
@@ -697,6 +879,9 @@ private:
 
 	/// Validate storage and acquire exclusive access, with an optional exact native format requirement.
 	[[nodiscard]] auto acquirePixels (SDL_PixelFormat requiredFormat) const -> std::expected<SDL_Surface*, ImageError>;
+
+	/// Acquire validated writable storage and invalidate content headroom before exposing it.
+	[[nodiscard]] auto acquireWritablePixels (SDL_PixelFormat requiredFormat) -> std::expected<SDL_Surface*, ImageError>;
 
 	/// Validate matching dimensions and disjoint physical storage for a neighborhood kernel.
 	[[nodiscard]] auto validateDestination (const Image &destination) const -> std::expected<void, ImageError>;

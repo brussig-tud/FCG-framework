@@ -330,10 +330,10 @@ auto Image::operator= (Image &&other) noexcept -> Image&
 	result.height = m_handle->h;
 	result.pitch = m_handle->pitch;
 	result.colorspace = SDL_GetSurfaceColorspace(m_handle);
-	const auto adjustments = detail::readImageLoadAdjustments(*m_handle);
+	const auto adjustments = detail::readImageProvenance(*m_handle);
 	if (!adjustments)
 		return std::unexpected(adjustments.error());
-	result.loadAdjustments = *adjustments;
+	result.provenance = *adjustments;
 	const auto *palette = SDL_GetSurfacePalette(m_handle);
 	result.hasPalette = palette != nullptr;
 	result.paletteSize = palette ? palette->ncolors : 0;
@@ -392,7 +392,7 @@ auto Image::operator= (Image &&other) noexcept -> Image&
 		return result;
 	}
 	if (from.storage != PixelStorage::YUV && !detail::supportedImageEncoding(source->colorspace)) {
-		result.diagnostic = "Source RGB encoding is insufficiently described or unsupported; use loadAndGuess or assign supported encoding";
+		result.diagnostic = "Source RGB encoding is insufficiently described or unsupported; use load or assign supported encoding";
 		return result;
 	}
 	if (from.storage == PixelStorage::YUV && source->colorspace != SDL_COLORSPACE_JPEG
@@ -499,7 +499,7 @@ auto Image::operator= (Image &&other) noexcept -> Image&
 		);
 		if (!output)
 			return std::unexpected(ImageError{ImageErrorCode::SDLFailure, std::string("Copying native channels: ") + SDL_GetError()});
-		if (auto recorded = detail::writeImageLoadAdjustments(*output, analysis->source.loadAdjustments); !recorded)
+		if (auto recorded = detail::convertedImageMetadata(*output, analysis->source, true); !recorded)
 			return std::unexpected(recorded.error());
 		auto result = Image::adopt(output.get());
 		if (result)
@@ -535,12 +535,41 @@ auto Image::operator= (Image &&other) noexcept -> Image&
 	}
 	if (!SDL_SetSurfaceColorKey(output.get(), false, 0))
 		return std::unexpected(ImageError{ImageErrorCode::SDLFailure, SDL_GetError()});
-	// Explicit conversion removes annotations only for color components that actually changed.
-	const auto retained = detail::filterImageLoadAdjustments(analysis->source.loadAdjustments,
-		analysis->source.colorspace, SDL_GetSurfaceColorspace(output.get()));
-	if (auto recorded = detail::writeImageLoadAdjustments(*output, retained); !recorded)
+	// Color conversion and quantization can change the content peak even when metadata labels agree.
+	if (auto recorded = detail::convertedImageMetadata(*output, analysis->source, false); !recorded)
 		return std::unexpected(recorded.error());
 	return Image::adopt(output.release());
+}
+
+auto Image::refreshMetadata (ImageHDRMetadataOptions options) -> std::expected<ImageMetadataRefreshResult, ImageError> {
+	if (!m_handle || m_accessActive)
+		return std::unexpected(ImageError{ImageErrorCode::InvalidState, "Metadata refresh requires an available image"});
+	return detail::refreshImageMetadata(*this, options, true);
+}
+
+auto Image::notifySurfaceChanged (ImageSurfaceChanges changes) -> std::expected<void, ImageError> {
+	if (!m_handle || m_accessActive)
+		return std::unexpected(ImageError{ImageErrorCode::InvalidState, "Surface notification requires an available image"});
+	return detail::invalidateImageMetadata(*m_handle, changes);
+}
+
+auto Image::editSurface (ImageSurfaceChanges changes) & -> std::expected<ImageSurfaceEditGuard, ImageError> {
+	if (auto invalidated = notifySurfaceChanged(changes); !invalidated)
+		return std::unexpected(invalidated.error());
+	m_accessActive = true;
+	return ImageSurfaceEditGuard(m_handle, &m_accessActive);
+}
+
+auto Image::convertedWithMetadata (
+	SDL_PixelFormat targetFormat, PixelConversionOptions conversionOptions, ImageHDRMetadataOptions metadataOptions
+) const -> std::expected<Image, ImageError>
+{
+	auto image = converted(targetFormat, conversionOptions);
+	if (!image)
+		return image;
+	if (auto refreshed = image->refreshMetadata(metadataOptions); !refreshed)
+		return std::unexpected(refreshed.error());
+	return image;
 }
 
 auto Image::upload (Device &device, ImageUploadOptions options) const -> std::expected<Texture, ImageError>
@@ -597,7 +626,7 @@ auto Image::upload (Device &device, ImageUploadOptions options) const -> std::ex
 			colorspace = detail::fillImageEncoding(colorspace, *options.unidentifiedSourceColorspace);
 		if (rgb && !detail::supportedImageEncoding(colorspace))
 			return std::unexpected(ImageError{ImageErrorCode::UnsupportedFormat,
-				"Image upload requires supported RGB encoding; use loadAndGuess, an upload fallback, or uploadStoredSamples"});
+				"Image upload requires supported RGB encoding; use load, an upload fallback, or uploadStoredSamples"});
 		if (!rgb && (description->storage != PixelStorage::YUV
 			|| (colorspace != SDL_COLORSPACE_JPEG && colorspace != SDL_COLORSPACE_BT601_LIMITED
 				&& colorspace != SDL_COLORSPACE_BT601_FULL && colorspace != SDL_COLORSPACE_BT709_LIMITED

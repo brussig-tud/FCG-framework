@@ -65,7 +65,7 @@ namespace hdr_examples {
 /// \return The owned image with best-effort metadata, or a decoding error.
 //! [guessing]
 [[nodiscard]] auto loadForTexture (const std::filesystem::path &path) -> std::expected<fcg::Image, fcg::ImageError> {
-	return fcg::ImageLoader::global().loadAndGuess(path);
+	return fcg::ImageLoader::global().load(path);
 }
 
 /// \brief Guess only primaries when the file already establishes its transfer function.
@@ -75,19 +75,42 @@ namespace hdr_examples {
 /// \return The owned image with identified or inferred primaries, or a decoding error.
 [[nodiscard]] auto loadWithGuessedPrimaries (const std::filesystem::path &path)
 	-> std::expected<fcg::Image, fcg::ImageError> {
-	return fcg::ImageLoader::global().load(path, {.guessColorPrimaries=true});
+	auto options = fcg::ImageLoaderOptions::conservative();
+	options.inferColorPrimaries = true;
+	return fcg::ImageLoader::global().load(path, options);
 }
 
-/// \brief Use the inherited guessing alias on a concrete handler.
+/// \brief Complete metadata through the inherited loading wrapper of a concrete handler.
 ///
 /// \param bytes Encoded PFM data borrowed during the call.
 ///
 /// \return The owned decoded image, or a decoding error.
 [[nodiscard]] auto loadPFMForTexture (std::span<const std::byte> bytes) -> std::expected<fcg::Image, fcg::ImageError> {
 	fcg::PFMImageFormatHandler decoder;
-	return decoder.loadAndGuess(bytes);
+	return decoder.load(bytes);
 }
 //! [guessing]
+
+/// Load source evidence without optional assumptions or brightness scans.
+//! [conservative]
+[[nodiscard]] auto loadConservatively (const std::filesystem::path &path) -> std::expected<fcg::Image, fcg::ImageError> {
+	return fcg::ImageLoader::global().load(path, fcg::ImageLoaderOptions::conservative());
+}
+//! [conservative]
+
+/// Refresh only SDR white level, HDR headroom and their provenance after pixel edits.
+//! [metadata_refresh]
+[[nodiscard]] auto refreshBrightness (fcg::Image &image) -> std::expected<fcg::ImageMetadataRefreshResult, fcg::ImageError> {
+	return image.refreshMetadata(); // Inspect the diagnostic when measurement is unavailable.
+}
+//! [metadata_refresh]
+
+/// Convert, then refresh only SDR white level, HDR headroom and their provenance on the output.
+//! [conversion_metadata]
+[[nodiscard]] auto convertAndRefresh (const fcg::Image &image) -> std::expected<fcg::Image, fcg::ImageError> {
+	return image.convertedWithMetadata(SDL_PIXELFORMAT_RGBA128_FLOAT);
+}
+//! [conversion_metadata]
 
 /// \brief Supply missing metadata only during upload, leaving the CPU image untouched.
 ///
@@ -133,8 +156,11 @@ namespace hdr_examples {
 [[nodiscard]] auto identifyEncoding (fcg::Image &image, SDL_Colorspace knownSourceEncoding)
 	-> std::expected<void, fcg::ImageError>
 {
-	// The caller knows the actual source encoding, for example from the asset's producer.
-	if (!image.handle() || !SDL_SetSurfaceColorspace(image.handle(), knownSourceEncoding))
+	// The producer supplies the actual source encoding; scoped editing invalidates affected metadata.
+	auto edit = image.editSurface(fcg::ImageSurfaceChanges::ColorMetadata);
+	if (!edit)
+		return std::unexpected(edit.error());
+	if (!SDL_SetSurfaceColorspace(edit->surface(), knownSourceEncoding))
 		return std::unexpected(fcg::ImageError{fcg::ImageErrorCode::SDLFailure, SDL_GetError()});
 	return {};
 }

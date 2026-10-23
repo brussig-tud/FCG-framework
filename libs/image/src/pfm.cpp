@@ -100,7 +100,7 @@ auto PFMImageFormatHandler::accepts (std::span<const std::byte> bytes, std::stri
 	return isPFM(bytes);
 }
 
-auto PFMImageFormatHandler::load (
+auto PFMImageFormatHandler::decode (
 	std::span<const std::byte> bytes, std::string_view hint, ImageLoaderOptions options
 ) const -> std::expected<Image, ImageError>
 {
@@ -162,7 +162,11 @@ auto PFMImageFormatHandler::load (
 		}
 	}
 	// PFM carries no color declarations; use the conventional linear RGB interpretation when requested.
-	return finishLoading(detail::adoptImageSurface(std::move(*surface)), options, SDL_COLORSPACE_SRGB_LINEAR);
+	const auto assumed = ImagePropertyProvenance{ImageMetadataOrigin::Assumed, false, true,
+		"PFM has no color declaration; conventional linear BT.709 is assumed"};
+	return resolveMetadata(detail::adoptImageSurface(std::move(*surface)), options,
+		{SDL_COLORSPACE_SRGB_LINEAR, {assumed, assumed}},
+		{.colorRange={ImageMetadataOrigin::FormatDefined, false, false, "PFM stores full-range RGB samples"}});
 }
 
 

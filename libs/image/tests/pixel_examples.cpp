@@ -50,19 +50,18 @@ namespace pixel_examples {
 }
 //! [conversion]
 
-/// \brief Check whether loading guessed the source primaries, including guesses followed by adaptation.
+/// \brief Check whether the current primaries interpretation depends on a known assumption.
 ///
-/// \param image The image whose current loading annotations should be inspected.
+/// \param image The image whose current provenance should be inspected.
 ///
-/// \return Whether the primaries annotation includes a guess, or an error from \c fcg::Image::pixelInfo.
+/// \return Whether the primaries interpretation depends on an assumption, or an error from \c fcg::Image::pixelInfo.
 //! [loading_adjustments]
 [[nodiscard]] auto loadingGuessedPrimaries (const fcg::Image &image) -> std::expected<bool, fcg::ImageError>
 {
 	const auto metadata = image.pixelInfo();
 	if (!metadata)
 		return std::unexpected(metadata.error());
-	const fcg::ImageLoadAdjustments actions = metadata->loadAdjustments;
-	return (actions.colorPrimaries & fcg::ImageLoadAdjustment::Guessed) != fcg::ImageLoadAdjustment::None;
+	return metadata->provenance.colorPrimaries.dependsOnAssumptions;
 }
 //! [loading_adjustments]
 

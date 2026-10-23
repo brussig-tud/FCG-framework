@@ -31,6 +31,7 @@
 #include <FCG/Image/image_loader.h>
 #include <FCG/Render/quad_renderer.h>
 #include <FCG/applet/camera_2d.h>
+#include <FCG/Extras/gui.h>
 #include <FCG/Extras/file_dialog.h>
 #include <FCG/Extras/file_filters.h>
 
@@ -129,7 +130,7 @@ public:
 				   &padding = ImGui::GetStyle().WindowPadding;
 		const auto workSizeX = ImGui::GetMainViewport()->WorkSize.x;
 		const auto initialWidth = player.toGuiUnits(264.f);
-		ImGui::SetNextWindowSize({ initialWidth, 0 }, ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize({initialWidth, 432}, ImGuiCond_FirstUseEver);
 		ImGui::SetNextWindowPos(
 			ImVec2{workSizeX-initialWidth - padding.x, workPos.y + padding.y}, ImGuiCond_FirstUseEver
 		);
@@ -146,7 +147,7 @@ public:
 
 		// Image metadata
 		if (image)
-			ImGui::Text("%d × %d pixels", image->width(), image->height());
+			fcg::extra::displayImageMetadata(*image);
 		else
 			ImGui::TextUnformatted("No image loaded");
 
@@ -221,7 +222,7 @@ protected:
 			throw std::runtime_error(updated.error().message);
 	}
 
-	/// \brief Loads \p filepath through \c fcg::ImageLoader::loadAndGuess and performs color-managed upload.
+	/// \brief Loads \p filepath through \c fcg::ImageLoader::load and performs color-managed upload.
 	///
 	/// Missing RGB metadata is labelled with the loader's default assumptions before uploading.
 	/// If loading fails, the error is logged and the previously loaded image, if any, stays on display.
@@ -233,7 +234,7 @@ protected:
 	void loadImage (fcg::Device &device, const std::filesystem::path &filepath)
 	{
 		// Load from file
-		auto maybeImage = fcg::ImageLoader::global().loadAndGuess(filepath);
+		auto maybeImage = fcg::ImageLoader::global().load(filepath);
 		if (!maybeImage) {
 			SDL_LogError(
 				SDL_LOG_CATEGORY_APPLICATION, "ImageViewerApplet: failed to load image '%s'\n%s",

@@ -15,8 +15,10 @@
 /// Use <tt>\ref fcg::PFMImageFormatHandler "PFMImageFormatHandler"</tt> directly or load through
 /// <tt>\ref fcg::ImageLoader::global "ImageLoader::global"</tt>.
 /// Both endian orders and LF/CRLF text headers are supported, with comments and blank lines between records.
-/// The raster must consume the remaining input. By default, color primaries and transfer are unspecified; loader
-/// options or the inherited <tt>\ref fcg::ImageFormatHandler::loadAndGuess "loadAndGuess"</tt> can request inference.
+/// The raster must consume the remaining input. Ordinary loading assumes missing color primaries as BT.709 and
+/// transfer as linear, then assumes missing SDR white as 1 and derives missing headroom from the RGB peak.
+/// <tt>\ref fcg::ImageLoaderOptions::conservative "ImageLoaderOptions::conservative"</tt> retains unidentified
+/// interpretation without optional assumptions or scans.
 ///
 /// This handler guesses BT.709 primaries and linear transfer when the corresponding requests are enabled. Range is
 /// full. These format-specific fallbacks label the decoded samples without changing them.
@@ -29,9 +31,9 @@
 /// formats.
 /// Inspect floating samples with <tt>\ref fcg::Image::readColorFloat "Image::readColorFloat"</tt>.
 /// This handler is included in every Image build.
-/// <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt> is inherited by this
+/// <tt>\ref fcg::ImageFormatHandler::load "ImageFormatHandler::load"</tt> is inherited by this
 /// handler and supplies missing color metadata. The registry offers
-/// <tt>\ref fcg::ImageLoader::loadAndGuess "ImageLoader::loadAndGuess"</tt> as well:
+/// <tt>\ref fcg::ImageLoader::load "ImageLoader::load"</tt> as well:
 /// \snippet hdr_examples.cpp guessing
 /// To retain source metadata, choose <tt>\ref fcg::Image::uploadWithFallback "uploadWithFallback"</tt> or upload
 /// stored values with <tt>\ref fcg::Image::uploadStoredSamples "uploadStoredSamples"</tt>. Conditional preservation
@@ -82,9 +84,10 @@ namespace fcg {
 /// \brief Decodes RGB and grayscale Portable Float Map files into three-channel 32-bit floating-point pixels.
 ///
 /// Both endian orders and LF/CRLF text headers are supported, with comments and blank lines between records.
-/// The raster must consume the remaining input. Color primaries and transfer are unspecified by default; use
-/// \c ImageLoaderOptions or the inherited \c loadAndGuess to infer missing metadata. This handler chooses BT.709
-/// primaries and linear transfer for enabled requests; range is full. Guessing retains decoded samples.
+/// The raster must consume the remaining input. Ordinary loading assumes BT.709 primaries, linear transfer and
+/// missing SDR white as 1, then derives missing headroom from the stored RGB peak. Range is format-defined as full.
+/// \c ImageLoaderOptions::conservative retains unidentified interpretation without optional assumptions or scans.
+/// Metadata completion retains decoded samples.
 ///
 /// \note
 ///         Rows use the conventional bottom-to-top file order, including when a producer uses another
@@ -104,9 +107,6 @@ public:
 	////
 	// Interface: ImageFormatHandler
 
-	/// Exposes the inherited filesystem loading overload.
-	using ImageFormatHandler::load;
-
 	/// Lists the supported PFM extensions.
 	///
 	/// \return Owning format records for file-dialog filters.
@@ -122,11 +122,17 @@ public:
 	[[nodiscard]] auto accepts (std::span<const std::byte> bytes, std::string_view hint={}) const
 		-> std::expected<bool, ImageError> override;
 
+
+protected:
+
+	////
+	// Interface: ImageFormatHandler
+
 	/// \brief Decodes a complete PFM image into independently owned floating-point storage.
 	///
 	/// \param bytes Encoded input, borrowed for this call.
 	/// \param hint Optional extension; the signature determines whether this decoder can load the input.
-	/// \param options Requests to infer missing RGB metadata; \c loadAndGuess enables every request.
+	/// \param options Controls optional assumptions and metadata completion; all requests are enabled by default.
 	///
 	/// \return
 	/// 	The image, \c ImageErrorCode::InvalidArgument for invalid arguments,
@@ -134,8 +140,8 @@ public:
 	/// 	malformed or unsupported variants, or \c ImageErrorCode::SDLFailure for surface setup failures.
 	///
 	/// 	hrows std::bad_alloc If a C++ allocation fails.
-	[[nodiscard]] auto load (
-		std::span<const std::byte> bytes, std::string_view hint={}, ImageLoaderOptions options={}
+	[[nodiscard]] auto decode (
+		std::span<const std::byte> bytes, std::string_view hint, ImageLoaderOptions options
 	) const -> std::expected<Image, ImageError> override;
 };
 

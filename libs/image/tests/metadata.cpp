@@ -6,6 +6,9 @@
 
 // C++ STL
 #include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <limits>
 #include <iostream>
 #include <memory>
 #include <set>
@@ -57,7 +60,7 @@ public:
 	}
 
 	/// Never decode; metadata must be independent of load operations.
-	[[nodiscard]] auto load (std::span<const std::byte>, std::string_view, fcg::ImageLoaderOptions options) const
+	[[nodiscard]] auto decode (std::span<const std::byte>, std::string_view, fcg::ImageLoaderOptions options) const
 		-> std::expected<fcg::Image, fcg::ImageError> override {
 		throw std::runtime_error("Metadata queried the decoder");
 	}
@@ -201,224 +204,265 @@ void uploadCapabilityTests ()
 	require(!fcg::detail::storedImageLayout(yuv, [] (SDL_GPUTextureFormat) { return true; }), "Preservation selected RGB for YUV storage");
 }
 
-/// Check that handlers choose candidates independently of storage and that only requested missing components change.
+/// Unwrap checked image operations with their diagnostic retained.
+template<class T>
+[[nodiscard]] auto take (std::expected<T, fcg::ImageError> result) -> T {
+	if (!result)
+		throw std::runtime_error(result.error().message);
+	return std::move(*result);
+}
+
+/// Construct a known float image, including invisible RGB that still contributes to stored-sample headroom.
+[[nodiscard]] auto floatImage (float peak=8.f) -> fcg::Image
+{
+	auto image = take(fcg::Image::adopt(SDL_CreateSurface(2, 2, SDL_PIXELFORMAT_RGBA128_FLOAT)));
+	require(bool(image.writePixel<SDL_PIXELFORMAT_RGBA128_FLOAT>(0, 0, {peak, -2.f, 1.f, 0.f})), "Write peak fixture");
+	require(bool(image.writePixel<SDL_PIXELFORMAT_RGBA128_FLOAT>(1, 0, {1.f, 2.f, 3.f, 1.f})), "Write fixture");
+	require(bool(image.writePixel<SDL_PIXELFORMAT_RGBA128_FLOAT>(0, 1, {0.f, 0.f, 0.f, 0.f})), "Write fixture");
+	require(bool(image.writePixel<SDL_PIXELFORMAT_RGBA128_FLOAT>(1, 1, {-1.f, -2.f, -3.f, 1.f})), "Write fixture");
+	return image;
+}
+
+/// Check selective assumptions, factual candidates, forwarding and common default finalization.
 void loadingOptionsTests ()
 {
 	class Decoder final : public fcg::ImageFormatHandler
 	{
 	public:
-		Decoder(SDL_PixelFormat format, SDL_Colorspace encoding, SDL_Colorspace guesses)
-			: format(format), encoding(encoding), guesses(guesses) {}
-
-		using ImageFormatHandler::finishLoading;
+		using ImageFormatHandler::resolveMetadata;
 
 		auto accepts (std::span<const std::byte>, std::string_view) const -> std::expected<bool, fcg::ImageError> override {
 			return true;
 		}
 
-		auto load (std::span<const std::byte>, std::string_view, fcg::ImageLoaderOptions options) const
+		auto decode (std::span<const std::byte>, std::string_view, fcg::ImageLoaderOptions options) const
 			-> std::expected<fcg::Image, fcg::ImageError> override
 		{
-			auto image = fcg::Image::adopt(SDL_CreateSurface(2, 2, format));
-			if (!image)
-				return image;
-			if (!SDL_SetSurfaceColorspace(image->handle(), encoding))
+			auto image = floatImage(peak);
+			if (!SDL_SetSurfaceColorspace(image.handle(), encoding))
 				return std::unexpected(fcg::ImageError{fcg::ImageErrorCode::SDLFailure, SDL_GetError()});
-			return finishLoading(std::move(image), options, guesses);
+			if (whitePoint && !SDL_SetFloatProperty(SDL_GetSurfaceProperties(image.handle()), SDL_PROP_SURFACE_SDR_WHITE_POINT_FLOAT, *whitePoint))
+				return std::unexpected(fcg::ImageError{fcg::ImageErrorCode::SDLFailure, SDL_GetError()});
+			if (headroom && !SDL_SetFloatProperty(SDL_GetSurfaceProperties(image.handle()), SDL_PROP_SURFACE_HDR_HEADROOM_FLOAT, *headroom))
+				return std::unexpected(fcg::ImageError{fcg::ImageErrorCode::SDLFailure, SDL_GetError()});
+			return resolveMetadata(std::move(image), options, candidates, provenance);
 		}
 
-		SDL_PixelFormat format;
-		SDL_Colorspace encoding;
-		SDL_Colorspace guesses;
+		float peak = 8.f;
+		std::optional<float> headroom;
+		std::optional<float> whitePoint;
+		SDL_Colorspace encoding = SDL_COLORSPACE_UNKNOWN;
+		fcg::ImageMetadataCandidates candidates;
+		fcg::ImageMetadataProvenance provenance;
 	};
-	const auto encoding = [] (SDL_ColorPrimaries primaries, SDL_TransferCharacteristics curve, SDL_ColorRange range) {
-		return static_cast<SDL_Colorspace>(SDL_DEFINE_COLORSPACE(SDL_COLOR_TYPE_RGB, range,
-			primaries, curve, SDL_MATRIX_COEFFICIENTS_IDENTITY, SDL_CHROMA_LOCATION_NONE));
-	};
-	const auto wide = encoding(SDL_COLOR_PRIMARIES_BT2020, SDL_TRANSFER_CHARACTERISTICS_PQ, SDL_COLOR_RANGE_LIMITED);
-	const auto partial = encoding(SDL_COLOR_PRIMARIES_CUSTOM, SDL_TRANSFER_CHARACTERISTICS_UNSPECIFIED, SDL_COLOR_RANGE_FULL);
+	using Origin = fcg::ImageMetadataOrigin;
+	const fcg::ImagePropertyProvenance assumed{Origin::Assumed, false, true, "Fixture format convention"};
+	const fcg::ImageMetadataCandidates candidates{SDL_COLORSPACE_SRGB_LINEAR, {assumed, assumed, assumed}};
 	const std::array<std::byte, 1> bytes{std::byte{1}};
-	for (const auto format : {SDL_PIXELFORMAT_RGBA32, SDL_PIXELFORMAT_RGB96_FLOAT, SDL_PIXELFORMAT_INDEX8})
-		for (const auto guesses : {SDL_COLORSPACE_SRGB_LINEAR, wide})
-			for (const auto original : {SDL_COLORSPACE_UNKNOWN, partial})
-				for (unsigned mask = 0; mask < 8; ++mask)
-				{
-					const fcg::ImageLoaderOptions options{bool(mask & 1), bool(mask & 2), bool(mask & 4)};
-					fcg::ImageLoader registry;
-					require(bool(registry.registerHandler("options", std::make_unique<Decoder>(format, original, guesses))),
-						"Options decoder registration failed");
-					auto image = registry.load(bytes, {}, options);
-					require(bool(image), "Registry failed to forward loader options");
-					const auto info = image->pixelInfo();
-					require(bool(info), "Could not inspect loading annotations");
-					const auto &actions = info->loadAdjustments;
-					using A = fcg::ImageLoadAdjustment;
-					require(actions.colorPrimaries == (options.guessColorPrimaries && original != partial ? A::Guessed : A::None)
-						&& actions.transferCharacteristics == (options.guessTransferCharacteristics ? A::Guessed : A::None)
-						&& actions.colorRange == (options.guessColorRange && original != partial ? A::Guessed : A::None),
-						"Annotations did not distinguish actual guesses from enabled options");
-					const auto color = SDL_GetSurfaceColorspace(image->handle());
-					require(SDL_COLORSPACEPRIMARIES(color) == (original == partial ? SDL_COLOR_PRIMARIES_CUSTOM
-						: options.guessColorPrimaries ? SDL_COLORSPACEPRIMARIES(guesses) : SDL_COLOR_PRIMARIES_UNKNOWN),
-						"Handler-chosen primary guessing failed");
-					require(SDL_COLORSPACETRANSFER(color) == (options.guessTransferCharacteristics ? SDL_COLORSPACETRANSFER(guesses)
-						: SDL_COLORSPACETRANSFER(original)), "Handler-chosen transfer guessing failed");
-					require(SDL_COLORSPACERANGE(color) == (original == partial ? SDL_COLOR_RANGE_FULL
-						: options.guessColorRange ? SDL_COLORSPACERANGE(guesses) : SDL_COLOR_RANGE_UNKNOWN),
-						"Handler-chosen range guessing failed");
-				}
-	for (const auto format : {SDL_PIXELFORMAT_RGBA32, SDL_PIXELFORMAT_NV12})
+	for (unsigned mask = 0; mask < 8; ++mask)
 	{
-		const auto declared = format == SDL_PIXELFORMAT_NV12 ? SDL_COLORSPACE_BT709_LIMITED
-			: encoding(SDL_COLOR_PRIMARIES_CUSTOM, SDL_TRANSFER_CHARACTERISTICS_HLG, SDL_COLOR_RANGE_LIMITED);
-		Decoder decoder(format, declared, SDL_COLORSPACE_SRGB);
-		auto image = decoder.loadAndGuess(bytes);
-		require(image && SDL_GetSurfaceColorspace(image->handle()) == declared, "Guessing replaced identified metadata or YUV encoding");
+		Decoder direct;
+		direct.candidates = candidates;
+		fcg::ImageLoader registry;
+		require(bool(registry.registerHandler("fixture", std::make_unique<Decoder>(direct))), "Register fixture");
+		const fcg::ImageLoaderOptions options{bool(mask & 1), bool(mask & 2), bool(mask & 4), {false, false}};
+		const auto image = take(registry.load(bytes, ".PFM", options));
+		const auto info = take(image.pixelInfo());
+		require(info.provenance.colorPrimaries.origin == (mask & 1 ? Origin::Assumed : Origin::Unknown)
+			&& info.provenance.transferCharacteristics.origin == (mask & 2 ? Origin::Assumed : Origin::Unknown)
+			&& info.provenance.colorRange.origin == (mask & 4 ? Origin::Assumed : Origin::Unknown), "Selective provenance");
+		require(!info.sdrWhitePoint && !info.hdrHeadroom, "Disabled brightness options were applied");
 	}
-	Decoder yuv(SDL_PIXELFORMAT_NV12, SDL_COLORSPACE_UNKNOWN, wide);
-	auto unchanged = yuv.loadAndGuess(bytes);
-	require(unchanged && SDL_GetSurfaceColorspace(unchanged->handle()) == SDL_COLORSPACE_UNKNOWN, "Guessing filled YUV metadata");
-	auto failed = Decoder::finishLoading(std::unexpected(fcg::ImageError{fcg::ImageErrorCode::DecodeFailure, "source error"}),
-		{true, true, true}, wide, {fcg::ImageLoadAdjustment::Adapted});
-	require(!failed && failed.error().message == "source error", "Guessing changed a decode failure");
-	// Handler-supplied adaptations combine with guesses; a forwarding pass preserves the combined result.
-	using A = fcg::ImageLoadAdjustment;
-	for (const auto action : {A::None, A::Guessed, A::Adapted, A::GuessedAndAdapted})
-	{
-		auto image = fcg::Image::adopt(SDL_CreateSurface(1, 1, SDL_PIXELFORMAT_RGBA32));
-		require(bool(image) && SDL_SetSurfaceColorspace(image->handle(), SDL_COLORSPACE_UNKNOWN), "Annotation fixture failed");
-		image = Decoder::finishLoading(std::move(image), {true, false, false}, SDL_COLORSPACE_SRGB,
-			{.colorPrimaries=action});
-		require(image && image->pixelInfo()->loadAdjustments.colorPrimaries == (action | A::Guessed), "Completed loading actions were not combined");
-		image = Decoder::finishLoading(std::move(image), {true, true, true}, SDL_COLORSPACE_SRGB);
-		require(image && image->pixelInfo()->loadAdjustments.colorPrimaries == (action | A::Guessed), "Forwarding lost loading annotations");
-	}
-	Decoder unresolved(SDL_PIXELFORMAT_RGBA32, SDL_COLORSPACE_UNKNOWN, SDL_COLORSPACE_UNKNOWN);
-	auto unknown = unresolved.loadAndGuess(bytes);
-	require(unknown && unknown->pixelInfo()->loadAdjustments.colorPrimaries == A::None
-		&& unknown->pixelInfo()->loadAdjustments.transferCharacteristics == A::None
-		&& unknown->pixelInfo()->loadAdjustments.colorRange == A::None, "Unresolved metadata was annotated as guessed");
 
+	Decoder decoder;
+	decoder.candidates = candidates;
+	auto conservative = take(decoder.load(bytes, {}, fcg::ImageLoaderOptions::conservative()));
+	require(take(conservative.pixelInfo()).colorspace == SDL_COLORSPACE_UNKNOWN, "Conservative loading assumed encoding");
+	auto completed = take(decoder.load(bytes));
+	const auto info = take(completed.pixelInfo());
+	require(info.sdrWhitePoint == 1.f && info.hdrHeadroom == 8.f, "Default finalization did not complete HDR metadata");
+	require(info.provenance.hdrHeadroom.origin == Origin::Derived
+		&& info.provenance.hdrHeadroom.dependsOnAssumptions, "Derived peak lost its assumption dependency");
+	// A supplied zero deliberately disables SDL tone mapping and must survive automatic completion.
+	decoder.headroom = 0.f;
+	decoder.peak = std::numeric_limits<float>::quiet_NaN();
+	decoder.provenance.hdrHeadroom = {Origin::DecoderReported, false, false, "Supplied content metadata"};
+	auto supplied = take(decoder.load(bytes));
+	require(supplied.pixelInfo()->hdrHeadroom == 0.f
+		&& supplied.pixelInfo()->provenance.hdrHeadroom.origin == Origin::DecoderReported,
+		"Default completion overwrote supplied zero headroom");
+	const auto unavailable = take(supplied.refreshMetadata());
+	require(!unavailable.headroomDerived && !unavailable.diagnostic.empty() && supplied.pixelInfo()->hdrHeadroom == 0.f,
+		"Unavailable explicit analysis discarded supplied metadata");
+	decoder.headroom.reset();
+	decoder.peak = 8.f;
+	decoder.provenance = {};
+	for (auto *record : {&decoder.candidates.provenance.colorPrimaries,
+		&decoder.candidates.provenance.transferCharacteristics, &decoder.candidates.provenance.colorRange}) {
+		record->origin = Origin::Declared;
+		record->dependsOnAssumptions = false;
+	}
+	const auto factual = take(decoder.load(bytes, {}, fcg::ImageLoaderOptions::conservative()));
+	require(take(factual.pixelInfo()).colorspace == SDL_COLORSPACE_SRGB_LINEAR, "Conservative load lost factual candidates");
+	decoder.encoding = static_cast<SDL_Colorspace>(SDL_DEFINE_COLORSPACE(SDL_COLOR_TYPE_RGB, SDL_COLOR_RANGE_FULL,
+		SDL_COLOR_PRIMARIES_CUSTOM, SDL_TRANSFER_CHARACTERISTICS_HLG, SDL_MATRIX_COEFFICIENTS_IDENTITY,
+		SDL_CHROMA_LOCATION_NONE));
+	require(take(decoder.load(bytes)).pixelInfo()->colorspace == decoder.encoding, "Completion replaced custom declarations");
+
+	decoder.encoding = SDL_COLORSPACE_SRGB_LINEAR;
+	decoder.whitePoint = 2.f;
+	decoder.headroom = 8.f;
+	const fcg::ImagePropertyProvenance declared{Origin::Declared, false, false, "Known interpretation"};
+	decoder.provenance = {declared, declared, declared, declared, {Origin::Assumed, false, true, "Content-only hint"}};
+	const auto contentHint = take(decoder.load(bytes));
+	const auto wide = static_cast<SDL_Colorspace>(SDL_DEFINE_COLORSPACE(SDL_COLOR_TYPE_RGB, SDL_COLOR_RANGE_FULL,
+		SDL_COLOR_PRIMARIES_BT2020, SDL_TRANSFER_CHARACTERISTICS_LINEAR, SDL_MATRIX_COEFFICIENTS_IDENTITY,
+		SDL_CHROMA_LOCATION_NONE));
+	const auto transformed = take(contentHint.converted(SDL_PIXELFORMAT_RGBA128_FLOAT,
+		{.lossPolicy=fcg::PixelLossPolicy::Allow, .colorspace=wide}));
+	require(!transformed.pixelInfo()->provenance.colorPrimaries.dependsOnAssumptions,
+		"A content-only peak assumption contaminated color-conversion evidence");
+	require(transformed.pixelInfo()->sdrWhitePoint == 1.f
+		&& transformed.pixelInfo()->provenance.sdrWhitePoint.origin == Origin::Assigned
+		&& transformed.pixelInfo()->provenance.sdrWhitePoint.adapted,
+		"Conversion failed to describe its selected destination white units");
+
+	const auto failed = Decoder::resolveMetadata(std::unexpected(fcg::ImageError{
+		fcg::ImageErrorCode::DecodeFailure, "source failure"}), {}, candidates);
+	require(!failed && failed.error().message == "source failure", "Resolution changed source failure");
+	auto forwarded = Decoder::resolveMetadata(std::move(completed), {}, candidates);
+	require(forwarded && forwarded->pixelInfo()->provenance.hdrHeadroom.origin == Origin::Derived,
+		"Forwarding lost established evidence");
 }
 
-/// Check loader annotation lifetime, explicit conversion clearing and raw SDL metadata mismatch suppression.
-void loadAdjustmentLifecycleTests ()
+/// Check current-image provenance, peak invalidation and both explicitly named conversion choices.
+void provenanceLifecycleTests ()
 {
-	using A = fcg::ImageLoadAdjustment;
-	static_assert(static_cast<unsigned>(A::None) == 0 && static_cast<unsigned>(A::Guessed) == 1
-		&& static_cast<unsigned>(A::Adapted) == 2 && static_cast<unsigned>(A::GuessedAndAdapted) == 3);
-	static_assert((A::Guessed | A::Adapted) == A::GuessedAndAdapted);
-	static_assert((A::GuessedAndAdapted & A::Guessed) == A::Guessed);
-	static_assert((A::GuessedAndAdapted & A::Adapted) == A::Adapted);
-	static_assert((A::Guessed & A::Adapted) == A::None);
-	static_assert(std::is_same_v<decltype(A::Guessed | A::Adapted), A>);
-	static_assert(std::is_same_v<decltype(A::Guessed & A::Adapted), A>);
-	class Loader final : public fcg::ImageFormatHandler
-	{
-	public:
-		auto accepts (std::span<const std::byte>, std::string_view) const -> std::expected<bool, fcg::ImageError> override {
-			return true;
-		}
-
-		auto load (std::span<const std::byte>, std::string_view, fcg::ImageLoaderOptions options) const
-			-> std::expected<fcg::Image, fcg::ImageError> override
-		{
-			std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> surface(SDL_CreateSurface(2, 2, format), SDL_DestroySurface);
-			if (!surface || !SDL_SetSurfaceColorspace(surface.get(), SDL_COLORSPACE_SRGB_LINEAR)
-				|| (SDL_ISPIXELFORMAT_INDEXED(format) && !SDL_CreateSurfacePalette(surface.get())))
-				return std::unexpected(fcg::ImageError{fcg::ImageErrorCode::SDLFailure, SDL_GetError()});
-			std::fill_n(static_cast<std::byte*>(surface->pixels), surface->pitch * surface->h, std::byte{0});
-			auto image = fcg::Image::adopt(surface.get());
-			if (image)
-				surface.release();
-			return finishLoading(std::move(image), options, SDL_COLORSPACE_SRGB, adjustments);
-		}
-
-		SDL_PixelFormat format = SDL_PIXELFORMAT_RGBA32;
-		fcg::ImageLoadAdjustments adjustments{A::GuessedAndAdapted, A::Adapted, A::Guessed};
-	};
-	const auto take = [] (std::expected<fcg::Image, fcg::ImageError> result) {
-		if (!result)
-			throw std::runtime_error(result.error().message);
-		return std::move(*result);
-	};
-	const auto check = [] (const fcg::Image &image, fcg::ImageLoadAdjustments expected) {
-		const auto info = image.pixelInfo();
-		require(info && info->loadAdjustments.colorPrimaries == expected.colorPrimaries
-			&& info->loadAdjustments.transferCharacteristics == expected.transferCharacteristics
-			&& info->loadAdjustments.colorRange == expected.colorRange, "Incorrect loading annotations after image operation");
-	};
-	const fcg::ImageLoadAdjustments all{A::GuessedAndAdapted, A::Adapted, A::Guessed};
-	const std::array<std::byte, 1> bytes{std::byte{1}};
-	Loader loader;
-	auto source = take(loader.load(bytes, {}, {}));
-	check(source, all);
-	auto snapshot = source.pixelInfo();
-	require(bool(snapshot), "Could not snapshot loading annotations");
-	snapshot->loadAdjustments = {};
-	check(source, all);
-	const auto analysis = source.conversionInfo(SDL_PIXELFORMAT_BGRA32);
-	require(analysis && analysis->source.loadAdjustments.colorPrimaries == A::GuessedAndAdapted, "Conversion analysis lost source annotations");
-	// Ownership transfers and adoption retain surface-owned records, while ordinary surfaces have no annotations.
+	using Origin = fcg::ImageMetadataOrigin;
+	auto source = floatImage();
+	const auto first = take(source.refreshMetadata());
+	require(first.whitePointAssumed && first.headroomDerived && first.diagnostic.empty(), "Refresh result incorrect");
 	auto moved = std::move(source);
-	require(!source.pixelInfo(), "Moved-from image retained metadata access");
-	source = take(fcg::Image::adopt(SDL_CreateSurface(2, 2, SDL_PIXELFORMAT_RGBA32)));
-	check(source, {});
+	require(!source.pixelInfo(), "Moved-from image retained metadata");
 	source = std::move(moved);
-	check(source, all);
-	check(take(fcg::Image::adopt(SDL_DuplicateSurface(source.handle()))), all);
-	require(bool(source.writePixel<SDL_PIXELFORMAT_RGBA32>(0, 0, {16, 32, 64, 255})), "Pixel edit failed");
-	check(source, all);
-	// Both the native-copy path and the general representation conversion preserve unchanged color annotations.
-	check(take(source.converted(SDL_PIXELFORMAT_BGRA32)), all);
-	check(take(source.converted(SDL_PIXELFORMAT_RGBA128_FLOAT)), all);
-	loader.format = SDL_PIXELFORMAT_INDEX8;
-	auto palette = take(loader.load(bytes, {}, {}));
-	check(take(palette.converted(SDL_PIXELFORMAT_RGBA32)), all);
-	require(SDL_SetSurfaceColorKey(palette.handle(), true, 0), "Could not set indexed color key");
-	check(take(palette.converted(SDL_PIXELFORMAT_RGBA128_FLOAT)), all);
-	// Replacing only transfer or only primaries clears just that component, independently of earlier loading actions.
-	auto transfer = take(source.converted(SDL_PIXELFORMAT_RGBA32,
-		{.lossPolicy=fcg::PixelLossPolicy::Allow, .colorspace=SDL_COLORSPACE_SRGB}));
-	check(transfer, {all.colorPrimaries, A::None, all.colorRange});
-	require(SDL_SetSurfaceColorspace(transfer.handle(), SDL_COLORSPACE_SRGB_LINEAR), "Could not restore converted colorspace");
-	check(transfer, {all.colorPrimaries, A::None, all.colorRange});
-	const auto wide = static_cast<SDL_Colorspace>(SDL_DEFINE_COLORSPACE(SDL_COLOR_TYPE_RGB, SDL_COLOR_RANGE_FULL,
-		SDL_COLOR_PRIMARIES_BT2020, SDL_TRANSFER_CHARACTERISTICS_LINEAR, SDL_MATRIX_COEFFICIENTS_IDENTITY, SDL_CHROMA_LOCATION_NONE));
-	auto gamut = take(source.converted(SDL_PIXELFORMAT_RGBA128_FLOAT,
-		{.lossPolicy=fcg::PixelLossPolicy::Allow, .colorspace=wide}));
-	check(gamut, {A::None, all.transferCharacteristics, all.colorRange});
-	check(source, all);
-	// Replacing every annotated component removes the complete record, including its stored comparison values.
-	loader.format = SDL_PIXELFORMAT_RGBA32;
-	loader.adjustments = {A::GuessedAndAdapted, A::Adapted};
-	auto resetSource = take(loader.load(bytes, {}, {}));
-	const auto wideSRGB = static_cast<SDL_Colorspace>(SDL_DEFINE_COLORSPACE(SDL_COLOR_TYPE_RGB, SDL_COLOR_RANGE_FULL,
-		SDL_COLOR_PRIMARIES_BT2020, SDL_TRANSFER_CHARACTERISTICS_SRGB, SDL_MATRIX_COEFFICIENTS_IDENTITY, SDL_CHROMA_LOCATION_NONE));
-	auto reset = take(resetSource.converted(SDL_PIXELFORMAT_RGBA128_FLOAT,
-		{.lossPolicy=fcg::PixelLossPolicy::Allow, .colorspace=wideSRGB}));
-	check(reset, {});
-	require(SDL_SetSurfaceColorspace(reset.handle(), SDL_COLORSPACE_SRGB_LINEAR), "Could not restore reset encoding");
-	check(reset, {});
-	// Raw SDL edits hide mismatches without changing their stored annotations, allowing the original values to restore them.
-	const std::array changed{
-		std::pair{wide, fcg::ImageLoadAdjustments{A::None, all.transferCharacteristics, all.colorRange}},
-		std::pair{SDL_COLORSPACE_SRGB, fcg::ImageLoadAdjustments{all.colorPrimaries, A::None, all.colorRange}},
-		std::pair{static_cast<SDL_Colorspace>(SDL_DEFINE_COLORSPACE(SDL_COLOR_TYPE_RGB, SDL_COLOR_RANGE_LIMITED,
-			SDL_COLOR_PRIMARIES_BT709, SDL_TRANSFER_CHARACTERISTICS_LINEAR, SDL_MATRIX_COEFFICIENTS_IDENTITY,
-			SDL_CHROMA_LOCATION_NONE)), fcg::ImageLoadAdjustments{all.colorPrimaries, all.transferCharacteristics, A::None}}
-	};
-	for (const auto &[encoding, expected] : changed) {
-		require(SDL_SetSurfaceColorspace(source.handle(), encoding), "Could not edit color metadata");
-		check(source, expected);
-		require(SDL_SetSurfaceColorspace(source.handle(), SDL_COLORSPACE_SRGB_LINEAR), "Could not restore color metadata");
-		check(source, all);
+	const auto duplicate = take(fcg::Image::adopt(SDL_DuplicateSurface(source.handle())));
+	require(duplicate.pixelInfo()->provenance.hdrHeadroom.origin == Origin::Derived
+		&& duplicate.pixelInfo()->hdrHeadroom == 8.f, "Surface duplication lost provenance");
+	const auto snapshot = take(source.pixelInfo());
+	(void)take(source.readColorFloat(0, 0));
+	{
+		auto reader = take(std::as_const(source).mapPixels<SDL_PIXELFORMAT_RGBA128_FLOAT>());
+		require(source.pixelInfo()->hdrHeadroom == 8.f, "Read-only mapping invalidated peak");
 	}
-	// A copied output must not resurrect source annotations that were already suppressed before conversion.
-	require(SDL_SetSurfaceColorspace(source.handle(), wide), "Could not edit source primaries");
-	auto filtered = take(source.converted(SDL_PIXELFORMAT_BGRA32));
-	require(SDL_SetSurfaceColorspace(filtered.handle(), SDL_COLORSPACE_SRGB_LINEAR), "Could not edit copy primaries");
-	check(filtered, {A::None, all.transferCharacteristics, all.colorRange});
+	const auto reordered = take(source.converted(SDL_PIXELFORMAT_BGRA128_FLOAT));
+	require(reordered.pixelInfo()->hdrHeadroom == 8.f, "Exact reorder lost headroom");
+	const auto narrowed = take(source.converted(SDL_PIXELFORMAT_RGBA64_FLOAT, {.lossPolicy=fcg::PixelLossPolicy::Allow}));
+	require(!narrowed.pixelInfo()->hdrHeadroom, "Quantization retained stale headroom");
+	const auto refreshed = take(source.convertedWithMetadata(SDL_PIXELFORMAT_RGBA64_FLOAT,
+		{.lossPolicy=fcg::PixelLossPolicy::Allow}));
+	require(refreshed.pixelInfo()->hdrHeadroom == 8.f, "Named conversion did not remeasure output");
+	const auto sdr = take(source.convertedWithMetadata(SDL_PIXELFORMAT_RGBA32, {.lossPolicy=fcg::PixelLossPolicy::Allow}));
+	require(!sdr.pixelInfo()->hdrHeadroom, "Ineligible conversion fabricated a peak");
+	const auto wide = static_cast<SDL_Colorspace>(SDL_DEFINE_COLORSPACE(SDL_COLOR_TYPE_RGB, SDL_COLOR_RANGE_FULL,
+		SDL_COLOR_PRIMARIES_BT2020, SDL_TRANSFER_CHARACTERISTICS_LINEAR, SDL_MATRIX_COEFFICIENTS_IDENTITY,
+		SDL_CHROMA_LOCATION_NONE));
+	const auto converted = take(source.convertedWithMetadata(SDL_PIXELFORMAT_RGBA128_FLOAT,
+		{.lossPolicy=fcg::PixelLossPolicy::Allow, .colorspace=wide}));
+	require(converted.pixelInfo()->provenance.colorPrimaries.origin == Origin::Assigned
+		&& converted.pixelInfo()->provenance.colorPrimaries.adapted
+		&& converted.pixelInfo()->provenance.colorPrimaries.dependsOnAssumptions,
+		"Conversion discarded assumption-dependent processing");
+	require(source.pixelInfo()->hdrHeadroom == snapshot.hdrHeadroom, "Independent operation changed source metadata");
+
+	// Writable borrowing invalidates before any view escapes, even when the session performs no write.
+	{
+		auto writer = take(source.mapPixels<SDL_PIXELFORMAT_RGBA128_FLOAT>());
+		require(!source.pixelInfo()->hdrHeadroom && !source.refreshMetadata(), "Writable mapping retained a valid peak");
+	}
+	(void)take(source.refreshMetadata());
+	try {
+		auto guard = take(source.editSurface(fcg::ImageSurfaceChanges::Pixels));
+		require(!source.pixelInfo()->hdrHeadroom && !source.converted(SDL_PIXELFORMAT_RGBA128_FLOAT), "Edit guard lost exclusivity");
+		auto transferred = std::move(guard);
+		require(!guard.surface() && transferred.surface(), "Surface guard move did not transfer ownership");
+		throw std::runtime_error("partial external edit");
+	} catch (const std::runtime_error&) {
+		(void)take(source.refreshMetadata());
+	}
+	require(source.pixelInfo()->hdrHeadroom == 8.f, "Exception left editing access active");
+	require(SDL_SetSurfaceColorspace(source.handle(), wide), "Change raw metadata");
+	require(bool(source.notifySurfaceChanged(fcg::ImageSurfaceChanges::ColorMetadata)), "Notify raw metadata edit");
+	require(!source.pixelInfo()->hdrHeadroom && source.pixelInfo()->provenance.sdrWhitePoint.origin == Origin::Unknown,
+		"External edit retained dependent provenance");
+	require(SDL_SetSurfaceColorspace(source.handle(), SDL_COLORSPACE_SRGB_LINEAR), "Restore raw colorspace");
+	require(source.pixelInfo()->provenance.hdrHeadroom.origin == Origin::Unknown, "Invalidated provenance resurrected");
+	require(!source.notifySurfaceChanged(static_cast<fcg::ImageSurfaceChanges>(0)), "Invalid change categories accepted");
+}
+
+/// Exercise peak definitions and unavailable-analysis outcomes without loading a particular file format.
+void brightnessTests ()
+{
+	for (const auto format : {SDL_PIXELFORMAT_RGB48_FLOAT, SDL_PIXELFORMAT_BGR48_FLOAT,
+		SDL_PIXELFORMAT_RGBA64_FLOAT, SDL_PIXELFORMAT_ARGB64_FLOAT, SDL_PIXELFORMAT_BGRA64_FLOAT,
+		SDL_PIXELFORMAT_ABGR64_FLOAT, SDL_PIXELFORMAT_RGB96_FLOAT, SDL_PIXELFORMAT_BGR96_FLOAT,
+		SDL_PIXELFORMAT_RGBA128_FLOAT, SDL_PIXELFORMAT_ARGB128_FLOAT, SDL_PIXELFORMAT_BGRA128_FLOAT,
+		SDL_PIXELFORMAT_ABGR128_FLOAT})
+	{
+		auto image = take(fcg::Image::adopt(SDL_CreateSurface(3, 2, format)));
+		for (int y = 0; y < 2; ++y)
+			for (int x = 0; x < 3; ++x)
+				require(bool(image.writeColorFloat(x, y, {8.f, -1.f, 2.f, 0.f}, fcg::PixelLossPolicy::Allow)), "Write ordered float");
+		require(SDL_SetFloatProperty(SDL_GetSurfaceProperties(image.handle()), SDL_PROP_SURFACE_SDR_WHITE_POINT_FLOAT, 2.f), "Set white");
+		for (int y = 0; y < image.height(); ++y) {
+			const auto visible = std::size_t(image.width()) * SDL_BYTESPERPIXEL(image.format());
+			std::memset(static_cast<std::byte*>(image.handle()->pixels) + std::size_t(y) * image.pitch() + visible,
+				0xff, std::size_t(image.pitch()) - visible);
+		}
+		const auto result = take(image.refreshMetadata());
+		require(result.headroomDerived && !result.whitePointAssumed && image.pixelInfo()->hdrHeadroom == 4.f,
+			"Float order, precision, alpha or explicit white affected peak incorrectly");
+	}
+	auto image = floatImage();
+	const auto missingWhite = take(image.refreshMetadata({false, true}));
+	require(!missingWhite.headroomDerived && !missingWhite.diagnostic.empty(), "Missing white was silently assumed");
+	const auto noScan = take(image.refreshMetadata({true, false}));
+	require(noScan.whitePointAssumed && !noScan.headroomDerived && !image.pixelInfo()->hdrHeadroom, "Disabled peak scan ran");
+	for (const auto value : {0.f, -1.f, std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()})
+	{
+		require(SDL_SetFloatProperty(SDL_GetSurfaceProperties(image.handle()), SDL_PROP_SURFACE_SDR_WHITE_POINT_FLOAT, value), "Set invalid white");
+		const auto report = take(image.refreshMetadata());
+		require(!report.headroomDerived && !report.diagnostic.empty(), "Invalid white accepted for peak");
+	}
+	require(SDL_SetFloatProperty(SDL_GetSurfaceProperties(image.handle()), SDL_PROP_SURFACE_SDR_WHITE_POINT_FLOAT, 1.f), "Restore white");
+	for (const auto value : {std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()})
+	{
+		require(bool(image.writePixel<SDL_PIXELFORMAT_RGBA128_FLOAT>(0, 0, {value, 0.f, 0.f, 1.f})), "Set nonfinite RGB");
+		const auto report = take(image.refreshMetadata());
+		require(!report.headroomDerived && !report.diagnostic.empty() && !image.pixelInfo()->hdrHeadroom, "Nonfinite RGB yielded headroom");
+	}
+	require(bool(image.writePixel<SDL_PIXELFORMAT_RGBA128_FLOAT>(0, 0,
+		{std::numeric_limits<float>::max(), 0.f, 0.f, 1.f})), "Set huge RGB");
+	require(SDL_SetFloatProperty(SDL_GetSurfaceProperties(image.handle()), SDL_PROP_SURFACE_SDR_WHITE_POINT_FLOAT,
+		std::numeric_limits<float>::denorm_min()), "Set tiny white");
+	require(!take(image.refreshMetadata()).headroomDerived, "Unrepresentable ratio accepted");
+
+	// Luminous zero-alpha pixels count; a nonfinite alpha component itself is ignored.
+	image = floatImage();
+	require(bool(image.writePixel<SDL_PIXELFORMAT_RGBA128_FLOAT>(0, 0,
+		{9.f, 0.f, 0.f, std::numeric_limits<float>::quiet_NaN()})), "Set ignored alpha");
+	(void)take(image.refreshMetadata());
+	require(image.pixelInfo()->hdrHeadroom == 9.f, "Alpha contaminated RGB peak");
+	require(bool(image.notifySurfaceChanged(fcg::ImageSurfaceChanges::Pixels)), "Notify pixel edit");
+	require(!image.pixelInfo()->hdrHeadroom, "Raw notification retained content peak");
+	for (const auto value : {0.f, -3.f})
+	{
+		require(bool(image.transformPixels<SDL_PIXELFORMAT_RGBA128_FLOAT>([value](auto pixel) {
+			pixel.r = pixel.g = pixel.b = value;
+			return pixel;
+		})), "Set nonpositive image");
+		(void)take(image.refreshMetadata());
+		require(image.pixelInfo()->hdrHeadroom == 1.f, "Nonpositive content did not yield unit headroom");
+	}
 }
 
 /// Check contextual SDL_image fallback choices and preservation of backend-provided labels.
@@ -456,13 +500,14 @@ void backendGuessTests ()
 	fcg::SDLImageFormatHandler decoder;
 	const auto bytes = std::as_bytes(std::span(qoi));
 	auto ordinary = decoder.load(bytes, "png");
-	auto guessed = decoder.loadAndGuess(bytes, "png");
+	auto guessed = decoder.load(bytes, "png");
 	require(ordinary && guessed && SDL_GetSurfaceColorspace(ordinary->handle()) == SDL_GetSurfaceColorspace(guessed->handle()),
 		"Guessing replaced SDL_image's established label");
 	const auto info = guessed->pixelInfo();
-	require(info && info->loadAdjustments.colorPrimaries == fcg::ImageLoadAdjustment::None
-		&& info->loadAdjustments.transferCharacteristics == fcg::ImageLoadAdjustment::None
-		&& info->loadAdjustments.colorRange == fcg::ImageLoadAdjustment::None, "SDL_image defaults were retrospectively annotated");
+	require(info && info->provenance.colorPrimaries.origin == fcg::ImageMetadataOrigin::DecoderReported
+		&& info->provenance.transferCharacteristics.origin == fcg::ImageMetadataOrigin::DecoderReported
+		&& info->provenance.colorRange.origin == fcg::ImageMetadataOrigin::DecoderReported,
+		"SDL_image labels were promoted to declarations");
 #endif
 }
 
@@ -484,7 +529,8 @@ auto main () -> int
 		filterTests();
 		backendTests();
 		loadingOptionsTests();
-		loadAdjustmentLifecycleTests();
+		provenanceLifecycleTests();
+		brightnessTests();
 		backendGuessTests();
 		uploadCapabilityTests();
 		std::cout << "Format snapshots, registry order, codec capabilities, and viewer filters passed\n";

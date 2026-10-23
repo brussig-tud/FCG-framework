@@ -18,13 +18,15 @@
 /// Explicit <tt>PRIMARIES</tt> coordinates establish the source gamut and white point. Gamuts supported by
 /// <tt>\ref fcg::Image::upload "Image::upload"</tt> are retained; other numerically defined gamuts are converted to
 /// linear BT.709/D65 with Bradford white-point adaptation. Returned metadata describes these output samples.
-/// Without declared primaries, they remain unspecified unless guessing is requested. Primary guessing uses the
+/// Missing primaries are assumed by default. The assumption uses the
 /// conventional Radiance gamut: red <tt>(.64, .33)</tt>, green <tt>(.29, .60)</tt>, blue <tt>(.15, .06)</tt> and
 /// equal-energy white <tt>(1/3, 1/3)</tt>, then converts it to linear BT.709/D65. Range is full.
-/// <tt>\ref fcg::ImagePixelInfo::loadAdjustments "ImagePixelInfo::loadAdjustments"</tt> marks inferred and adapted
-/// primaries as <tt>\ref fcg::ImageLoadAdjustment::GuessedAndAdapted "GuessedAndAdapted"</tt>. Adapting declared
-/// primaries or decoding non-unit gamma is marked <tt>\ref fcg::ImageLoadAdjustment::Adapted "Adapted"</tt> on the
-/// corresponding property.
+/// <tt>\ref fcg::ImagePixelInfo::provenance "ImagePixelInfo::provenance"</tt> records assigned output primaries,
+/// sample adaptation and dependence on assumed source interpretation. Missing SDR white is assumed as 1 and missing
+/// headroom is derived from the peak after sample adaptations. Use
+/// <tt>\ref fcg::ImageLoaderOptions::conservative "ImageLoaderOptions::conservative"</tt> to retain unidentified
+/// primaries without optional assumptions or scans. Declared numeric gamma and unsupported declared gamuts are
+/// normalized on conservative loads too.
 ///
 /// \section fcg_radiance_hdr_usage Getting started
 /// \snippet hdr_examples.cpp radiance_direct
@@ -34,9 +36,9 @@
 /// formats.
 /// Inspect floating samples with <tt>\ref fcg::Image::readColorFloat "Image::readColorFloat"</tt>.
 /// This handler is included in every Image build.
-/// <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt> is inherited by this
+/// <tt>\ref fcg::ImageFormatHandler::load "ImageFormatHandler::load"</tt> is inherited by this
 /// handler and supplies missing color metadata. The registry offers
-/// <tt>\ref fcg::ImageLoader::loadAndGuess "ImageLoader::loadAndGuess"</tt> as well:
+/// <tt>\ref fcg::ImageLoader::load "ImageLoader::load"</tt> as well:
 /// \snippet hdr_examples.cpp guessing
 /// Color conversion preserves unclamped floating-point values, including HDR and negative out-of-gamut components.
 /// Exposure and color-correction adjustments already present in the samples are retained. Upload preservation
@@ -91,8 +93,8 @@ namespace fcg {
 /// describes the output encoding; original color records remain available through the surface properties under
 /// <tt>fcg.image.source.color_metadata</tt>.
 ///
-/// Missing primaries remain unspecified unless \c ImageLoaderOptions::guessColorPrimaries is enabled, including
-/// through the inherited \c loadAndGuess. This request selects the conventional Radiance gamut and equal-energy white,
+/// Missing primaries remain unspecified unless \c ImageLoaderOptions::inferColorPrimaries is enabled, including
+/// on ordinary \c load calls. This request selects the conventional Radiance gamut and equal-energy white,
 /// then converts to linear BT.709/D65. Declared primaries take precedence. Missing transfer is interpreted as linear.
 ///
 /// \note
@@ -113,9 +115,6 @@ public:
 	////
 	// Interface: ImageFormatHandler
 
-	/// Exposes the inherited filesystem loading overload.
-	using ImageFormatHandler::load;
-
 	/// Lists the supported Radiance HDR extensions.
 	///
 	/// \return Owning format records for file-dialog filters.
@@ -131,11 +130,17 @@ public:
 	[[nodiscard]] auto accepts (std::span<const std::byte> bytes, std::string_view hint={}) const
 		-> std::expected<bool, ImageError> override;
 
+
+protected:
+
+	////
+	// Interface: ImageFormatHandler
+
 	/// \brief Decodes a complete Radiance HDR image into independently owned floating-point storage.
 	///
 	/// \param bytes Encoded input, borrowed for this call.
 	/// \param hint Optional extension; the signature determines whether this decoder can load the input.
-	/// \param options Requests to infer missing RGB metadata; \c loadAndGuess enables every request.
+	/// \param options Controls optional assumptions and metadata completion; all requests are enabled by default.
 	///
 	/// \return
 	/// 	The image, \c ImageErrorCode::InvalidArgument for invalid arguments,
@@ -144,8 +149,8 @@ public:
 	/// 	or \c ImageErrorCode::SDLFailure for surface setup failures.
 	///
 	/// 	hrows std::bad_alloc If a C++ allocation fails.
-	[[nodiscard]] auto load (
-		std::span<const std::byte> bytes, std::string_view hint={}, ImageLoaderOptions options={}
+	[[nodiscard]] auto decode (
+		std::span<const std::byte> bytes, std::string_view hint, ImageLoaderOptions options
 	) const -> std::expected<Image, ImageError> override;
 };
 

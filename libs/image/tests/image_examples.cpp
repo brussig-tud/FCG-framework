@@ -123,7 +123,7 @@ public:
 	{
 		return builtinHandler.accepts(bytes, hint);
 	}
-	auto load (std::span<const std::byte> bytes, std::string_view hint, fcg::ImageLoaderOptions options) const
+	auto decode (std::span<const std::byte> bytes, std::string_view hint, fcg::ImageLoaderOptions options) const
 		-> std::expected<fcg::Image, fcg::ImageError> override
 	{
 		return builtinHandler.load(bytes, hint, options);

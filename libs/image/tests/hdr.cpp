@@ -89,13 +89,19 @@ void byte (std::vector<std::byte> &bytes, unsigned value) {
 	return value;
 }
 
-/// Check the independently recorded loading actions for all three color components.
-void requireAdjustments (const fcg::Image &image, fcg::ImageLoadAdjustments expected)
+/// Expected interpretation actions used to verify independent source normalization.
+enum class ExpectedInterpretation { Known, Assumed, Adapted, AssumedAndAdapted };
+
+/// Check assumption and adaptation independently for the three color components.
+void requireAdjustments (const fcg::Image &image, std::array<ExpectedInterpretation, 3> expected)
 {
-	const auto info = image.pixelInfo();
-	require(info && info->loadAdjustments.colorPrimaries == expected.colorPrimaries
-		&& info->loadAdjustments.transferCharacteristics == expected.transferCharacteristics
-		&& info->loadAdjustments.colorRange == expected.colorRange, "Incorrect HDR/PFM loading annotations");
+	const auto info = take(image.pixelInfo());
+	const std::array records{info.provenance.colorPrimaries, info.provenance.transferCharacteristics, info.provenance.colorRange};
+	for (unsigned i = 0; i < records.size(); ++i) {
+		const bool assumed = expected[i] == ExpectedInterpretation::Assumed || expected[i] == ExpectedInterpretation::AssumedAndAdapted;
+		const bool adapted = expected[i] == ExpectedInterpretation::Adapted || expected[i] == ExpectedInterpretation::AssumedAndAdapted;
+		require(records[i].dependsOnAssumptions == assumed && records[i].adapted == adapted, "Incorrect HDR/PFM provenance");
+	}
 }
 
 /// Construct a flat or RLE Radiance image with distinguishable rows and HDR values.
@@ -122,7 +128,7 @@ void pfmTests ()
 		for (const bool little : {false, true})
 		{
 			auto bytes = pfm(rgb, little, 2);
-			auto image = take(decoder.load(bytes, ".HDR"));
+			auto image = take(decoder.load(bytes, ".HDR", fcg::ImageLoaderOptions::conservative()));
 			requireAdjustments(image, {});
 			require(image.width() == 2 && image.height() == 2 && image.format() == SDL_PIXELFORMAT_RGB96_FLOAT,
 				"PFM dimensions or float representation changed");
@@ -166,17 +172,17 @@ void pfmTests ()
 		const fcg::ImageLoaderOptions options{bool(mask & 1), bool(mask & 2), bool(mask & 4)};
 		auto guessed = take(decoder.load(pfm(true, true), {}, options));
 		const auto color = SDL_GetSurfaceColorspace(guessed.handle());
-		require(SDL_COLORSPACEPRIMARIES(color) == (options.guessColorPrimaries
+		require(SDL_COLORSPACEPRIMARIES(color) == (options.inferColorPrimaries
 			? SDL_COLOR_PRIMARIES_BT709 : SDL_COLOR_PRIMARIES_UNSPECIFIED), "PFM primary guessing toggle ignored");
-		require(SDL_COLORSPACETRANSFER(color) == (options.guessTransferCharacteristics
+		require(SDL_COLORSPACETRANSFER(color) == (options.inferTransferCharacteristics
 			? SDL_TRANSFER_CHARACTERISTICS_LINEAR : SDL_TRANSFER_CHARACTERISTICS_UNSPECIFIED), "PFM transfer guessing toggle ignored");
 		require(sample(guessed, 0, 0, 0) == 7.f, "Guessing changed PFM samples");
-		using A = fcg::ImageLoadAdjustment;
-		requireAdjustments(guessed, {options.guessColorPrimaries ? A::Guessed : A::None,
-			options.guessTransferCharacteristics ? A::Guessed : A::None, A::None});
+		using A = ExpectedInterpretation;
+		requireAdjustments(guessed, {options.inferColorPrimaries ? A::Assumed : A::Known,
+			options.inferTransferCharacteristics ? A::Assumed : A::Known, A::Known});
 	}
 	const fcg::ImageFormatHandler &base = decoder;
-	auto guessed = take(base.loadAndGuess(pfm(true, false)));
+	auto guessed = take(base.load(pfm(true, false)));
 	require(SDL_GetSurfaceColorspace(guessed.handle()) == SDL_COLORSPACE_SRGB_LINEAR, "Inherited guessing alias failed");
 	const auto unaligned = pfm(false, false);
 	auto storage = encoded("x");
@@ -191,7 +197,7 @@ void hdrTests ()
 	for (const bool rle : {false, true})
 	{
 		auto bytes = hdr(rle);
-		auto image = take(decoder.load(bytes, "png"));
+		auto image = take(decoder.load(bytes, "png", fcg::ImageLoaderOptions::conservative()));
 		requireAdjustments(image, {});
 		if (sample(image, 0, 0, 0) != 2.f || sample(image, 0, 1, 0) != 4.f || sample(image, 0, 0, 1) != 1.f)
 			throw std::runtime_error("HDR samples or orientation changed: " + std::to_string(sample(image, 0, 0, 0))
@@ -208,7 +214,7 @@ void hdrTests ()
 		for (unsigned x = 0; x < 8; ++x)
 			for (const unsigned value : {128u, 64u, 32u, 130u + y})
 				byte(wideFlat, value);
-	auto wide = take(decoder.load(wideFlat));
+	auto wide = take(decoder.load(wideFlat, {}, fcg::ImageLoaderOptions::conservative()));
 	require(sample(wide, 7, 1, 0) == 4.f && sample(wide, 7, 1, 2) == 1.f, "Wide flat HDR raster lost rows");
 	auto invalid = hdr(true);
 	invalid[invalid.size() - 2] = std::byte{0};
@@ -245,13 +251,13 @@ void hdrTests ()
 			+ "\nFORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 1\n");
 		for (const auto value : {128u, 64u, 32u, 130u})
 			byte(tagged, value);
-		auto decoded = take(decoder.loadAndGuess(tagged));
+		auto decoded = take(decoder.load(tagged));
 		const bool supported = expected == SDL_COLOR_PRIMARIES_BT709 || expected == SDL_COLOR_PRIMARIES_BT601
 			|| expected == SDL_COLOR_PRIMARIES_BT2020 || expected == SDL_COLOR_PRIMARIES_SMPTE431
 			|| expected == SDL_COLOR_PRIMARIES_SMPTE432;
 		require(SDL_COLORSPACEPRIMARIES(SDL_GetSurfaceColorspace(decoded.handle())) == (supported ? expected : SDL_COLOR_PRIMARIES_BT709),
 			"HDR known gamut was neither retained nor converted accurately");
-		requireAdjustments(decoded, {supported ? fcg::ImageLoadAdjustment::None : fcg::ImageLoadAdjustment::Adapted});
+		requireAdjustments(decoded, {supported ? ExpectedInterpretation::Known : ExpectedInterpretation::Adapted});
 	}
 	for (const auto &[gamma, exponent] : std::array<std::pair<std::string_view, float>, 4>{{
 		{"1", 1.f}, {"2.2", 2.2f}, {"2.8", 2.8f}, {"2.4", 2.4f}}})
@@ -261,10 +267,10 @@ void hdrTests ()
 			"EXPOSURE=+2\nCOLORCORR=+1 +2 +3\nFORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 1\n");
 		for (const auto value : {128u, 64u, 32u, 130u})
 			byte(tagged, value);
-		auto decoded = take(decoder.loadAndGuess(tagged));
+		auto decoded = take(decoder.load(tagged));
 		require(SDL_GetSurfaceColorspace(decoded.handle()) == SDL_COLORSPACE_SRGB_LINEAR, "HDR gamma was not linearized");
-		requireAdjustments(decoded, {fcg::ImageLoadAdjustment::None, exponent == 1.f
-			? fcg::ImageLoadAdjustment::None : fcg::ImageLoadAdjustment::Adapted});
+		requireAdjustments(decoded, {ExpectedInterpretation::Known, exponent == 1.f
+			? ExpectedInterpretation::Known : ExpectedInterpretation::Adapted});
 		require(std::abs(sample(decoded, 0, 0, 0) - std::pow(2.f, exponent)) < 1e-5f
 			&& std::abs(sample(decoded, 0, 0, 2) - std::pow(.5f, exponent)) < 1e-5f,
 			"HDR gamma conversion or stored radiometric adjustment is incorrect");
@@ -279,7 +285,7 @@ void hdrTests ()
 		auto tagged = encoded(std::string("#?RGBE\n") + records + "FORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 1\n");
 		for (const auto value : {128u, 64u, 32u, 130u})
 			byte(tagged, value);
-		const auto rejected = decoder.loadAndGuess(tagged);
+		const auto rejected = decoder.load(tagged);
 		require(!rejected && rejected.error().code == fcg::ImageErrorCode::DecodeFailure,
 			"Malformed, contradictory or unrepresentable HDR color metadata was accepted");
 	}
@@ -317,7 +323,7 @@ void hdrConversionTests ()
 		for (unsigned mask = 0; mask < 8; ++mask)
 		{
 			auto image = take(decoder.load(bytes, "png", {bool(mask & 1), bool(mask & 2), bool(mask & 4)}));
-			requireAdjustments(image, {mask & 1 ? fcg::ImageLoadAdjustment::GuessedAndAdapted : fcg::ImageLoadAdjustment::None});
+			requireAdjustments(image, {mask & 1 ? ExpectedInterpretation::AssumedAndAdapted : ExpectedInterpretation::Known});
 			require(SDL_COLORSPACEPRIMARIES(SDL_GetSurfaceColorspace(image.handle())) == (mask & 1
 				? SDL_COLOR_PRIMARIES_BT709 : SDL_COLOR_PRIMARIES_UNSPECIFIED), "Radiance primary inference toggle ignored");
 			for (unsigned c = 0; c < 3; ++c)
@@ -326,7 +332,7 @@ void hdrConversionTests ()
 	}
 	for (const unsigned exponent : {129u, 132u})
 	{
-		auto neutral = take(decoder.loadAndGuess(fixture("", {128, 128, 128, exponent})));
+		auto neutral = take(decoder.load(fixture("", {128, 128, 128, exponent})));
 		for (unsigned c = 0; c < 3; ++c)
 			near(sample(neutral, 0, 0, c), std::ldexp(1., int(exponent) - 129));
 	}
@@ -334,17 +340,17 @@ void hdrConversionTests ()
 	const auto records = "PRIMARIES=.64 .33 .30 .60 .15 .06 .333 .333\nGAMMA=2\nEXPOSURE=2\nCOLORCORR=1 2 3\n";
 	const auto bytes = fixture(records, {128, 64, 32, 130});
 	auto custom = take(decoder.load(bytes));
-	requireAdjustments(custom, {fcg::ImageLoadAdjustment::Adapted, fcg::ImageLoadAdjustment::Adapted});
-	auto inferred = take(decoder.loadAndGuess(fixture("GAMMA=2\n", {128, 64, 32, 130})));
-	requireAdjustments(inferred, {fcg::ImageLoadAdjustment::GuessedAndAdapted, fcg::ImageLoadAdjustment::Adapted});
+	requireAdjustments(custom, {ExpectedInterpretation::Adapted, ExpectedInterpretation::Adapted});
+	auto inferred = take(decoder.load(fixture("GAMMA=2\n", {128, 64, 32, 130})));
+	requireAdjustments(inferred, {ExpectedInterpretation::AssumedAndAdapted, ExpectedInterpretation::Adapted});
 	require(SDL_GetSurfaceColorspace(custom.handle()) == SDL_COLORSPACE_SRGB_LINEAR, "Ordinary Radiance loading did not normalize a custom encoding");
 	const std::array<double, 3> expected{4.3799359997, 1.0223044413, .2668932999};
 	for (unsigned c = 0; c < 3; ++c)
 		near(sample(custom, 0, 0, c), expected[c]);
 	require(std::string_view(SDL_GetStringProperty(SDL_GetSurfaceProperties(custom.handle()),
 		"fcg.image.source.color_metadata", "")) == records, "Radiance conversion lost original metadata records");
-	auto unknown = take(decoder.load(fixture("GAMMA=2\n", {128, 64, 32, 130})));
-	requireAdjustments(unknown, {fcg::ImageLoadAdjustment::None, fcg::ImageLoadAdjustment::Adapted});
+	auto unknown = take(decoder.load(fixture("GAMMA=2\n", {128, 64, 32, 130}), {}, fcg::ImageLoaderOptions::conservative()));
+	requireAdjustments(unknown, {ExpectedInterpretation::Known, ExpectedInterpretation::Adapted});
 	require(SDL_COLORSPACEPRIMARIES(SDL_GetSurfaceColorspace(unknown.handle())) == SDL_COLOR_PRIMARIES_UNSPECIFIED,
 		"Gamma conversion guessed disabled primaries");
 	near(sample(unknown, 0, 0, 0), 4.);
@@ -393,12 +399,12 @@ void dispatchTests (const std::filesystem::path &fixtures, const std::filesystem
 		std::ofstream file(path, std::ios::binary);
 		file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 	}
-	auto portableDirect = take(portable.loadAndGuess(path));
-	auto portableRegistered = take(fcg::ImageLoader::global().loadAndGuess(path));
+	auto portableDirect = take(portable.load(path));
+	auto portableRegistered = take(fcg::ImageLoader::global().load(path));
 	require(SDL_GetSurfaceColorspace(portableDirect.handle()) == SDL_COLORSPACE_SRGB_LINEAR
 		&& SDL_GetSurfaceColorspace(portableRegistered.handle()) == SDL_COLORSPACE_SRGB_LINEAR, "File guessing aliases failed");
-	requireAdjustments(portableDirect, {fcg::ImageLoadAdjustment::Guessed, fcg::ImageLoadAdjustment::Guessed});
-	requireAdjustments(portableRegistered, {fcg::ImageLoadAdjustment::Guessed, fcg::ImageLoadAdjustment::Guessed});
+	requireAdjustments(portableDirect, {ExpectedInterpretation::Assumed, ExpectedInterpretation::Assumed});
+	requireAdjustments(portableRegistered, {ExpectedInterpretation::Assumed, ExpectedInterpretation::Assumed});
 	require(bool(portable.load(path)) && bool(fcg::ImageLoader::global().load(path)), "File overload or signature precedence failed");
 	const auto radiancePath = scratch / "radiance.PNG";
 	/* Close the Radiance fixture before testing filesystem dispatch. */ {
@@ -407,10 +413,10 @@ void dispatchTests (const std::filesystem::path &fixtures, const std::filesystem
 		file.write(reinterpret_cast<const char*>(radianceBytes.data()), static_cast<std::streamsize>(radianceBytes.size()));
 	}
 	const fcg::ImageFormatHandler &base = radiance;
-	auto direct = take(base.loadAndGuess(radiancePath));
-	auto registered = take(fcg::ImageLoader::global().loadAndGuess(radiancePath));
-	requireAdjustments(direct, {fcg::ImageLoadAdjustment::GuessedAndAdapted});
-	requireAdjustments(registered, {fcg::ImageLoadAdjustment::GuessedAndAdapted});
+	auto direct = take(base.load(radiancePath));
+	auto registered = take(fcg::ImageLoader::global().load(radiancePath));
+	requireAdjustments(direct, {ExpectedInterpretation::AssumedAndAdapted});
+	requireAdjustments(registered, {ExpectedInterpretation::AssumedAndAdapted});
 	require(SDL_GetSurfaceColorspace(direct.handle()) == SDL_COLORSPACE_SRGB_LINEAR
 		&& SDL_GetSurfaceColorspace(registered.handle()) == SDL_COLORSPACE_SRGB_LINEAR
 		&& sample(direct, 0, 0, 0) == sample(registered, 0, 0, 0)

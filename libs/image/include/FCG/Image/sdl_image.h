@@ -37,15 +37,18 @@
 /// of the handler on them as with any other handler.
 ///
 /// Missing RGB metadata can be filled with the inherited
-/// <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt>, or selected individually
+/// <tt>\ref fcg::ImageFormatHandler::load "ImageFormatHandler::load"</tt>, or selected individually
 /// through <tt>\ref fcg::ImageLoaderOptions "ImageLoaderOptions"</tt>. Every component supplied by SDL_image is
 /// retained, including its default labels. For missing primaries, an identified PQ or HLG transfer suggests BT.2020;
 /// otherwise this handler chooses BT.709. Missing transfer uses a QOI header's linear/sRGB flag or the BT.709 curve
 /// for PGM/PPM; remaining formats use linear for floating output and sRGB for integer or palette output. Missing range
 /// is filled with full RGB range. Guessing retains the decoded samples.
-/// <tt>\ref fcg::ImagePixelInfo::loadAdjustments "ImagePixelInfo::loadAdjustments"</tt> marks components actually
-/// filled by this handler as <tt>\ref fcg::ImageLoadAdjustment::Guessed "Guessed"</tt>. Unreported defaults and
-/// transformations inside SDL_image are not classified.
+/// <tt>\ref fcg::ImagePixelInfo::provenance "ImagePixelInfo::provenance"</tt> identifies opaque SDL_image values
+/// as decoder-reported. Candidates taken from inspected QOI headers are declared; PGM/PPM transfer is format-defined.
+/// Other completed components are assumptions. Eligible linear float output also receives an assumed missing SDR
+/// white level and measured missing headroom. Supplied brightness properties are retained. Use
+/// <tt>\ref fcg::ImageLoaderOptions::conservative "ImageLoaderOptions::conservative"</tt> to disable optional
+/// assumptions and scans while retaining available source and backend information.
 ///
 /// \section fcg_sdl_image_lifetime Ownership and lifetime
 /// The handler owns no initialization state, cache, or GPU resource, and no SDL video initialization is needed for
@@ -154,6 +157,12 @@ public:
 	[[nodiscard]] auto accepts (std::span<const std::byte> bytes, std::string_view hint={}) const
 		-> std::expected<bool, ImageError> override;
 
+
+protected:
+
+	////
+	// Interface: ImageFormatHandler
+
 	/// \brief
 	/// 	Decodes encoded file contents with SDL_image.
 	///
@@ -165,7 +174,7 @@ public:
 	/// 	The encoded file contents, valid only during the call; must not be empty.
 	/// \param hint
 	/// 	The file name extension of the input, or empty if unknown. A leading dot and ASCII letter case are ignored.
-	/// \param options Requests to infer missing RGB metadata; \c loadAndGuess enables every request.
+	/// \param options Controls optional assumptions and metadata completion; all requests are enabled by default.
 	///
 	/// \return
 	/// 	The decoded image, or an error:
@@ -173,8 +182,8 @@ public:
 	/// 	- \c ImageErrorCode::SDLFailure if reading the data through an SDL memory stream failed;
 	/// 	- \c ImageErrorCode::DecodeFailure if SDL_image could not decode the data, including when the format is
 	/// 	  not recognized or not supported by the build. The message contains SDL's error description.
-	[[nodiscard]] auto load (
-		std::span<const std::byte> bytes, std::string_view hint={}, ImageLoaderOptions options={}
+	[[nodiscard]] auto decode (
+		std::span<const std::byte> bytes, std::string_view hint, ImageLoaderOptions options
 	) const -> std::expected<Image, ImageError> override;
 };
 

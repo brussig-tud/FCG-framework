@@ -26,14 +26,17 @@
 /// An ACES image-container declaration takes precedence over the color identifier. An explicit <tt>colorInteropID</tt>
 /// other than empty or <tt>unknown</tt> takes precedence over <tt>chromaticities</tt>. Recognized identifiers establish
 /// each representable component; for example, linear Rec.2020 and linear P3-D65 can be uploaded with color conversion.
-/// With an absent, empty or <tt>unknown</tt> identifier, explicit chromaticities establish primaries and linear transfer.
-/// Without either attribute, transfer is linear and primaries are unspecified; an empty or <tt>unknown</tt> identifier
-/// without chromaticities leaves transfer unspecified too. Enabled inference requests choose BT.709 primaries,
-/// linear transfer and full range for missing components. These are this handler's fallbacks; an absent identifier
-/// does not establish the source gamut. Guessing retains decoded samples.
+/// With an absent, empty or <tt>unknown</tt> identifier, explicit chromaticities establish primaries. Missing
+/// primaries and transfer are assumed as BT.709 and linear by default; full range is format-defined. Inspect
+/// <tt>\ref fcg::ImagePixelInfo::provenance "ImagePixelInfo::provenance"</tt> to distinguish declared values from
+/// assumptions. Use <tt>\ref fcg::ImageLoaderOptions::conservative "ImageLoaderOptions::conservative"</tt> to
+/// retain unidentified components without optional assumptions or pixel scans. Label completion retains samples.
+/// Linear float output also receives an assumed missing SDR white level of 1 and peak-derived missing headroom.
+/// The source attributes <tt>whiteLuminance</tt> and <tt>sampToNits</tt> describe radiometric calibration; they are
+/// retained as source information rather than used as diffuse-white levels.
 ///
 /// ACES and Adobe RGB gamuts, the <tt>data</tt> identifier and unrecognized identifiers retain custom components.
-/// Recognized gamma and HLG transfers can also be unsupported for color conversion. Missing-metadata guesses retain
+/// Recognized gamma and HLG transfers can also be unsupported for color conversion. Missing-metadata assumptions retain
 /// these declarations. Use <tt>\ref fcg::Image::uploadStoredSamples "Image::uploadStoredSamples"</tt> to upload their
 /// numeric samples; <tt>\ref fcg::Image::uploadStoredSamplesIfUnknown "uploadStoredSamplesIfUnknown"</tt> selects
 /// preservation only when an encoding component is missing.
@@ -43,9 +46,9 @@
 /// formats.
 /// Inspect floating samples with <tt>\ref fcg::Image::readColorFloat "Image::readColorFloat"</tt>.
 /// The class is available only when <tt>FCG_IMAGE_HAS_OPENEXR</tt> is one.
-/// <tt>\ref fcg::ImageFormatHandler::loadAndGuess "ImageFormatHandler::loadAndGuess"</tt> is inherited by this
+/// <tt>\ref fcg::ImageFormatHandler::load "ImageFormatHandler::load"</tt> is inherited by this
 /// handler and supplies missing color metadata. The registry offers
-/// <tt>\ref fcg::ImageLoader::loadAndGuess "ImageLoader::loadAndGuess"</tt> as well:
+/// <tt>\ref fcg::ImageLoader::load "ImageLoader::load"</tt> as well:
 /// \snippet hdr_examples.cpp guessing
 /// To retain source metadata, choose <tt>\ref fcg::Image::uploadWithFallback "uploadWithFallback"</tt> or upload
 /// stored values with <tt>\ref fcg::Image::uploadStoredSamples "uploadStoredSamples"</tt>. Conditional preservation
@@ -100,7 +103,7 @@ namespace fcg {
 ///
 /// The returned extent is the data window, rebased to pixel <tt>(0, 0)</tt>. Recognized color metadata supplies
 /// the encoding; unidentified components remain unspecified unless loader inference requests are enabled. The inherited
-/// \c loadAndGuess supplies missing metadata. Identified custom components, including ACES gamuts and the
+/// \c load supplies missing metadata. Identified custom components, including ACES gamuts and the
 /// <tt>data</tt> identifier, are retained. Enable <tt>FCG_IMAGE_OPENEXR</tt> before configuring the framework.
 ///
 /// \note
@@ -121,9 +124,6 @@ public:
 	////
 	// Interface: ImageFormatHandler
 
-	/// Exposes the inherited filesystem loading overload.
-	using ImageFormatHandler::load;
-
 	/// Lists the supported OpenEXR extensions.
 	///
 	/// \return Owning format records for file-dialog filters.
@@ -139,11 +139,17 @@ public:
 	[[nodiscard]] auto accepts (std::span<const std::byte> bytes, std::string_view hint={}) const
 		-> std::expected<bool, ImageError> override;
 
+
+protected:
+
+	////
+	// Interface: ImageFormatHandler
+
 	/// \brief Decodes a complete OpenEXR image into independently owned floating-point storage.
 	///
 	/// \param bytes Encoded input, borrowed for this call.
 	/// \param hint Optional extension; the signature determines whether this decoder can load the input.
-	/// \param options Requests to infer missing RGB metadata; \c loadAndGuess enables every request.
+	/// \param options Controls optional assumptions and metadata completion; all requests are enabled by default.
 	///
 	/// \return
 	/// 	The image, \c ImageErrorCode::InvalidArgument for invalid arguments,
@@ -151,8 +157,8 @@ public:
 	/// 	malformed or unsupported variants, or \c ImageErrorCode::SDLFailure for surface setup failures.
 	///
 	/// 	hrows std::bad_alloc If a C++ allocation fails.
-	[[nodiscard]] auto load (
-		std::span<const std::byte> bytes, std::string_view hint={}, ImageLoaderOptions options={}
+	[[nodiscard]] auto decode (
+		std::span<const std::byte> bytes, std::string_view hint, ImageLoaderOptions options
 	) const -> std::expected<Image, ImageError> override;
 };
 

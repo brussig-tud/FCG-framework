@@ -68,7 +68,7 @@ struct NormalizedHDR
 	SDL_Colorspace colorspace;
 
 	/// Guessed source components and adaptations performed before surface creation.
-	fcg::ImageLoadAdjustments adjustments;
+	fcg::ImageMetadataProvenance provenance;
 };
 
 /// Reject singular or numerically unstable color bases before inverting them.
@@ -133,13 +133,19 @@ struct NormalizedHDR
 ) -> std::expected<NormalizedHDR, fcg::ImageError>
 {
 	using namespace fcg::detail;
-	fcg::ImageLoadAdjustments adjustments;
+	fcg::ImageMetadataProvenance provenance;
 	auto primaries = header.primaries;
 	// Radiance's conventional green primary and equal-energy white differ from Rec.709/D65.
-	if (!primaries && options.guessColorPrimaries) {
+	if (!primaries && options.inferColorPrimaries) {
 		primaries = std::array{.64f, .33f, .29f, .60f, .15f, .06f, 1.f / 3, 1.f / 3};
-		adjustments.colorPrimaries = fcg::ImageLoadAdjustment::Guessed;
+		provenance.colorPrimaries = {fcg::ImageMetadataOrigin::Assumed, false, true,
+			"Missing Radiance primaries interpreted using the conventional RGB/equal-energy-white gamut"};
 	}
+	if (header.primaries)
+		provenance.colorPrimaries = {fcg::ImageMetadataOrigin::Declared, false, false, "Radiance PRIMARIES record"};
+	provenance.transferCharacteristics = {fcg::ImageMetadataOrigin::FormatDefined, false, false,
+		"Radiance RGBE uses linear light after decoding the declared gamma"};
+	provenance.colorRange = {fcg::ImageMetadataOrigin::FormatDefined, false, false, "Radiance stores full-range RGB"};
 	auto encoding = imageRGBColorspace(primaries ? imageColorPrimaries(*primaries) : SDL_COLOR_PRIMARIES_UNSPECIFIED,
 		SDL_TRANSFER_CHARACTERISTICS_LINEAR);
 	glm::dmat3 transform(1.);
@@ -157,13 +163,16 @@ struct NormalizedHDR
 			transform = *conversion;
 			convertGamut = true;
 			encoding = SDL_COLORSPACE_SRGB_LINEAR;
-			adjustments.colorPrimaries = adjustments.colorPrimaries | fcg::ImageLoadAdjustment::Adapted;
+			provenance.colorPrimaries = {fcg::ImageMetadataOrigin::Assigned, true,
+				provenance.colorPrimaries.dependsOnAssumptions,
+				"Radiance source gamut adapted to linear BT.709/D65 using Bradford white adaptation"};
 		}
 	}
 	if (!convertGamut && header.gamma == 1.f)
-		return NormalizedHDR{encoding, adjustments};
+		return NormalizedHDR{encoding, provenance};
 	if (header.gamma != 1.f)
-		adjustments.transferCharacteristics = fcg::ImageLoadAdjustment::Adapted;
+		provenance.transferCharacteristics = {fcg::ImageMetadataOrigin::Assigned, true, false,
+			"Declared Radiance GAMMA decoded to linear light"};
 	// Decode the transfer before mixing channels; exposure and COLORCORR remain stored in the values.
 	for (std::size_t i = 0; i < pixels.size(); i += 3)
 	{
@@ -179,7 +188,7 @@ struct NormalizedHDR
 			pixels[i + c] = static_cast<float>(rgb[c]);
 		}
 	}
-	return NormalizedHDR{encoding, adjustments};
+	return NormalizedHDR{encoding, provenance};
 }
 
 /// Recognize only the identifiers stb's HDR decoder supports.
@@ -357,7 +366,7 @@ auto RadianceHDRFormatHandler::accepts (std::span<const std::byte> bytes, std::s
 	return isRadiance(bytes);
 }
 
-auto RadianceHDRFormatHandler::load (
+auto RadianceHDRFormatHandler::decode (
 	std::span<const std::byte> bytes, std::string_view hint, ImageLoaderOptions options
 ) const -> std::expected<Image, ImageError>
 {
@@ -413,7 +422,7 @@ auto RadianceHDRFormatHandler::load (
 	for (int y = 0; y < header->height; ++y)
 		std::memcpy(static_cast<std::byte*>((*surface)->pixels) + std::size_t(y) * (*surface)->pitch,
 			pixels.data() + std::size_t(y) * header->width * 3, std::size_t(header->width) * 3 * sizeof(float));
-	return finishLoading(detail::adoptImageSurface(std::move(*surface)), {}, SDL_COLORSPACE_UNKNOWN, normalized->adjustments);
+	return resolveMetadata(detail::adoptImageSurface(std::move(*surface)), options, {}, normalized->provenance);
 }
 
 

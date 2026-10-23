@@ -61,17 +61,28 @@ struct EncodedImage
 // Functions
 //
 
-/// Suppress annotations independently when the current color component differs from its recorded value.
-[[nodiscard]] auto filterImageLoadAdjustments (
-	ImageLoadAdjustments adjustments, SDL_Colorspace recorded, SDL_Colorspace current
-) -> ImageLoadAdjustments;
+/// Read surface-owned provenance, filtering records whose associated current value no longer matches.
+[[nodiscard]] auto readImageProvenance (SDL_Surface &surface) -> std::expected<ImageMetadataProvenance, ImageError>;
 
-/// Read surface-owned loader annotations, suppressing components that no longer match the recorded encoding.
-[[nodiscard]] auto readImageLoadAdjustments (SDL_Surface &surface) -> std::expected<ImageLoadAdjustments, ImageError>;
-
-/// Store annotations against the surface's current encoding, removing all records when every action is absent.
-[[nodiscard]] auto writeImageLoadAdjustments (SDL_Surface &surface, ImageLoadAdjustments adjustments)
+/// Store independent copyable provenance records bound to the current surface metadata.
+[[nodiscard]] auto writeImageProvenance (SDL_Surface &surface, const ImageMetadataProvenance &provenance)
 	-> std::expected<void, ImageError>;
+
+/// Clear content headroom and, for interpretation edits, affected provenance before writable access.
+[[nodiscard]] auto invalidateImageMetadata (SDL_Surface &surface, ImageSurfaceChanges changes)
+	-> std::expected<void, ImageError>;
+
+/// Complete missing brightness metadata or explicitly remeasure existing headroom.
+[[nodiscard]] auto refreshImageMetadata (Image &image, ImageHDRMetadataOptions options, bool replaceHeadroom)
+	-> std::expected<ImageMetadataRefreshResult, ImageError>;
+
+/// Whether color encoding or SDR white interpretation relies on known assumptions; headroom is not an input.
+[[nodiscard]] auto imageUsesAssumptions (const ImageMetadataProvenance &provenance) -> bool;
+
+/// Update output provenance and discard content peaks after a conversion that can change RGB values.
+[[nodiscard]] auto convertedImageMetadata (
+	SDL_Surface &surface, const ImagePixelInfo &source, bool preserveRGB
+) -> std::expected<void, ImageError>;
 
 /// Build a full-range RGB encoding with independently identified primaries and transfer.
 [[nodiscard]] auto imageRGBColorspace (SDL_ColorPrimaries primaries, SDL_TransferCharacteristics transfer)

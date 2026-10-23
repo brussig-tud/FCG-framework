@@ -271,6 +271,18 @@ void detail::releasePixels (SDL_Surface *surface, bool *active) noexcept {
 	return m_handle;
 }
 
+[[nodiscard]] auto Image::acquireWritablePixels (SDL_PixelFormat requiredFormat) -> std::expected<SDL_Surface*, ImageError>
+{
+	auto surface = acquirePixels(requiredFormat);
+	if (!surface)
+		return surface;
+	if (auto invalidated = detail::invalidateImageMetadata(**surface, ImageSurfaceChanges::Pixels); !invalidated) {
+		detail::releasePixels(*surface, &m_accessActive);
+		return std::unexpected(invalidated.error());
+	}
+	return surface;
+}
+
 [[nodiscard]] auto Image::validateDestination (const Image &destination) const -> std::expected<void, ImageError>
 {
 	if (!m_handle || !destination.m_handle || m_accessActive || destination.m_accessActive)
@@ -331,7 +343,7 @@ void detail::releasePixels (SDL_Surface *surface, bool *active) noexcept {
 {
 	if (policy != PixelLossPolicy::Allow && policy != PixelLossPolicy::Reject)
 		return std::unexpected(ImageError{ImageErrorCode::InvalidArgument, "Invalid pixel write loss policy"});
-	auto acquired = acquirePixels(SDL_PIXELFORMAT_UNKNOWN);
+	auto acquired = acquireWritablePixels(SDL_PIXELFORMAT_UNKNOWN);
 	if (!acquired)
 		return std::unexpected(acquired.error());
 	const auto release = [this](SDL_Surface *surface) { detail::releasePixels(surface, &m_accessActive); };
