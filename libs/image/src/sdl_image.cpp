@@ -236,22 +236,22 @@ auto SDLImageFormatHandler::decode (
 		return image;
 	surface.release();
 	ImageMetadataProvenance provenance;
-	const auto reported = ImagePropertyProvenance{ImageMetadataOrigin::DecoderReported, false, false,
-		"SDL_image supplied this value; its source evidence and internal processing are opaque"};
+	const auto declared = ImagePropertyProvenance{ImageMetadataOrigin::Declared, false, false,
+		"SDL_image supplied this value."};
 	const auto color = SDL_GetSurfaceColorspace(image->handle());
 	if (SDL_COLORSPACEPRIMARIES(color) != SDL_COLOR_PRIMARIES_UNKNOWN
 		&& SDL_COLORSPACEPRIMARIES(color) != SDL_COLOR_PRIMARIES_UNSPECIFIED)
-		provenance.colorPrimaries = reported;
+		provenance.colorPrimaries = declared;
 	if (SDL_COLORSPACETRANSFER(color) != SDL_TRANSFER_CHARACTERISTICS_UNKNOWN
 		&& SDL_COLORSPACETRANSFER(color) != SDL_TRANSFER_CHARACTERISTICS_UNSPECIFIED)
-		provenance.transferCharacteristics = reported;
+		provenance.transferCharacteristics = declared;
 	if (SDL_COLORSPACERANGE(color) != SDL_COLOR_RANGE_UNKNOWN)
-		provenance.colorRange = reported;
+		provenance.colorRange = declared;
 	const auto properties = SDL_GetSurfaceProperties(image->handle());
 	if (SDL_HasProperty(properties, SDL_PROP_SURFACE_SDR_WHITE_POINT_FLOAT))
-		provenance.sdrWhitePoint = reported;
+		provenance.sdrWhitePoint = declared;
 	if (SDL_HasProperty(properties, SDL_PROP_SURFACE_HDR_HEADROOM_FLOAT))
-		provenance.hdrHeadroom = reported;
+		provenance.hdrHeadroom = declared;
 	const auto assumed = ImagePropertyProvenance{ImageMetadataOrigin::Assumed, false, true,
 		"Missing SDL_image interpretation completed using storage and format conventions"};
 	ImageMetadataCandidates candidates{guesses, {assumed, assumed, assumed}};

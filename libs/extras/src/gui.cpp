@@ -242,7 +242,6 @@ void row (const char *label, const std::string &value)
 		case fcg::ImageMetadataOrigin::Unknown: return "unclassified";
 		case fcg::ImageMetadataOrigin::Declared: return "declared";
 		case fcg::ImageMetadataOrigin::FormatDefined: return "format-defined";
-		case fcg::ImageMetadataOrigin::DecoderReported: return "decoder-reported";
 		case fcg::ImageMetadataOrigin::Assumed: return "assumed";
 		case fcg::ImageMetadataOrigin::Derived: return "derived";
 		case fcg::ImageMetadataOrigin::Assigned: return "assigned";
@@ -253,19 +252,22 @@ void row (const char *label, const std::string &value)
 /// Append current evidence with a subdued dotted underline hinting at the explanatory tooltip.
 void annotatedRow (const char *label, const std::string &value, const fcg::ImagePropertyProvenance &provenance)
 {
-	if (provenance.origin == fcg::ImageMetadataOrigin::Unknown && provenance.explanation.empty()
+	if ((provenance.origin == fcg::ImageMetadataOrigin::Declared
+		|| (provenance.origin == fcg::ImageMetadataOrigin::Unknown && provenance.explanation.empty()))
 		&& !provenance.adapted && !provenance.dependsOnAssumptions) {
 		row(label, value);
 		return;
 	}
 
 	// Keep the value and every wrapped annotation line in one tooltip hover target.
-	std::string annotation = std::string("(") + originText(provenance.origin);
+	std::string annotation;
+	if (provenance.origin != fcg::ImageMetadataOrigin::Declared)
+		annotation = originText(provenance.origin);
 	if (provenance.adapted)
-		annotation += "; adapted";
+		annotation += annotation.empty() ? "adapted" : "; adapted";
 	if (provenance.dependsOnAssumptions && provenance.origin != fcg::ImageMetadataOrigin::Assumed)
-		annotation += "; assumed inputs";
-	annotation += ')';
+		annotation += annotation.empty() ? "assumed inputs" : "; assumed inputs";
+	annotation = '(' + annotation + ')';
 	const auto tooltip = std::format("Origin: {}.{}{}\n{}", originText(provenance.origin),
 		provenance.adapted ? " Samples were adapted to this interpretation." : "",
 		provenance.dependsOnAssumptions ? " A known assumption contributes to this value or its processing." : "",
@@ -312,8 +314,10 @@ void annotatedRow (const char *label, const std::string &value, const fcg::Image
 	const auto color = ImGui::GetColorU32(ImGuiCol_TextDisabled, hovered ? 1.f : .65f);
 	for (const auto &[minimum, maximum] : lines)
 		for (float x = minimum.x; x < maximum.x; x += step)
-			ImGui::GetWindowDrawList()->AddLine(ImVec2(x, maximum.y - scale),
-				ImVec2(std::min(x + scale, maximum.x), maximum.y - scale), color, std::max(1.f, scale));
+			ImGui::GetWindowDrawList()->AddLine(
+				ImVec2(x, maximum.y-scale), ImVec2(std::min(x+scale, maximum.x), maximum.y-scale),
+				color, std::max(1.f, scale)
+			);
 }
 
 // Anonymous namespace end
@@ -374,7 +378,9 @@ void displayImageMetadata (const Image &image)
 	// Describe physical storage separately from color encoding.
 	if (ImGui::CollapsingHeader("Pixel storage") && beginTable("storage"))
 	{
-		row("Pixel format", std::format("{} (0x{:08X})", format.name, std::to_underlying(format.format)));
+		row(
+			"Pixel format", std::format("{} (0x{:08X})", format.name, std::to_underlying(format.format))
+		);
 		row("Storage organization", enumText(format.storage));
 		row("Numeric representation", representation);
 		row("Channel order", channelOrder);
@@ -387,7 +393,10 @@ void displayImageMetadata (const Image &image)
 		row("Bits per pixel", optionalText(format.bitsPerPixel, "Unavailable"));
 		row("Bytes per pixel", optionalText(format.bytesPerPixel, "Unavailable"));
 		// The library uses zero for unused bits when physical storage size is unavailable.
-		row("Unused storage bits", format.bytesPerPixel ? std::format("{}", format.unusedBits) : "Unavailable");
+		row(
+			"Unused storage bits",
+			format.bytesPerPixel ? std::format("{}", format.unusedBits) : "Unavailable"
+		);
 		row("Row pitch", std::format("{} bytes", info.pitch));
 		row("YUV sample bits", optionalText(format.yuvSampleBits, "Unavailable"));
 		row("YUV storage bits", optionalText(format.yuvStorageBits, "Unavailable"));
@@ -410,8 +419,14 @@ void displayImageMetadata (const Image &image)
 			? "Unknown" : enumText(SDL_COLORSPACEMATRIX(colorspace)));
 		row("Chroma location", colorspace == SDL_COLORSPACE_UNKNOWN
 			? "Unknown" : enumText(SDL_COLORSPACECHROMA(colorspace)));
-		annotatedRow("SDR white level (colorspace units)", optionalText(info.sdrWhitePoint, "Not specified"), info.provenance.sdrWhitePoint);
-		annotatedRow("HDR headroom (relative to SDR white)", optionalText(info.hdrHeadroom, "Not specified"), info.provenance.hdrHeadroom);
+		annotatedRow(
+			"SDR white level (colorspace units)", optionalText(info.sdrWhitePoint, "Not specified"),
+			info.provenance.sdrWhitePoint
+		);
+		annotatedRow(
+			"HDR headroom (relative to SDR white)", optionalText(info.hdrHeadroom, "Not specified"),
+			info.provenance.hdrHeadroom
+		);
 		ImGui::EndTable();
 	}
 
@@ -420,7 +435,9 @@ void displayImageMetadata (const Image &image)
 		row("Palette attached", yesNo(info.hasPalette));
 		row("Palette entries", std::format("{}", info.paletteSize));
 		row("Alpha capable", yesNo(format.hasAlpha));
-		row("Color key (sample or index)", info.colorKey ? std::format("0x{:08X}", *info.colorKey) : "None");
+		row(
+			"Color key (sample or index)", info.colorKey ? std::format("0x{:08X}", *info.colorKey) : "None"
+		);
 		ImGui::EndTable();
 	}
 

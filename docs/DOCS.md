@@ -165,7 +165,8 @@ transfer and range, plus `ImageHDRMetadataOptions` for missing SDR white and hea
 `ImageLoaderOptions::conservative()` disables optional assumptions and scans. Extracted declarations, format-defined
 facts and backend-supplied labels remain available. Identified custom encodings take precedence over fallbacks.
 PFM and missing EXR components use conventional linear BT.709 assumptions. EXR chromaticities establish primaries,
-not an explicit transfer declaration. SDL_image's existing labels remain decoder-reported, including opaque defaults.
+not an explicit transfer declaration. SDL_image's supplied metadata is treated as factual declarations, including
+its default labels and brightness properties.
 Missing QOI transfer comes from the header; PGM/PPM transfer is format-defined. Other missing SDL_image components use
 BT.709 (BT.2020 for identified PQ/HLG), float-linear or integer/palette-sRGB transfer, and full range as assumptions.
 
@@ -178,9 +179,9 @@ metadata. Neither calibration value is assigned directly to SDR white.
 
 `ImagePixelInfo::provenance` has independent records for primaries/chromatic white, transfer, range, SDR white level
 and headroom. Each record contains `ImageMetadataOrigin`, `adapted`, `dependsOnAssumptions`, and an owned explanation.
-Origins distinguish Unknown, Declared, FormatDefined, DecoderReported, Assumed, Derived and Assigned. Assigned describes
-an explicit output definition; adaptation and dependence on assumed inputs remain independent. Derived headroom can
-therefore depend on assumed white. Absence of a recorded assumption is not an accuracy guarantee.
+Origins distinguish Unknown, Declared, FormatDefined, Assumed, Derived and Assigned. Declared covers explicit source
+declarations and decoder-supplied values. Assigned describes an explicit output definition; adaptation and dependence
+on assumed inputs remain independent. Derived headroom can therefore depend on assumed white.
 
 Records use private copyable numeric/string SDL properties bound to their associated current value. Surface moves,
 adoption and independent copies retain records. Raw mismatches suppress stale evidence defensively; supported changes
@@ -217,8 +218,9 @@ Custom handlers override the protected `decode(bytes, normalizedHint, options)` 
 image. Final public `load` wrappers normalize arguments and run shared brightness completion after decoding, for both
 direct calls and registry dispatch. The protected `resolveMetadata(image, options, candidates, provenance)` helper
 merges evidence-bearing candidates into genuinely missing RGB components without replacing custom encodings. Known
-candidate declarations/facts do not require assumption permission. Completed source/adaptation provenance takes
-precedence over matching forwarded records. Format-specific sample adaptations happen before final peak measurement.
+candidate declarations/facts, including decoder-supplied declarations, do not require assumption permission. Completed
+source/adaptation provenance takes precedence over matching forwarded records. Format-specific sample adaptations
+happen before final peak measurement.
 
 The existing installed-target contract still requires external dependencies to be supplied separately. Source-built
 EXR fallbacks are static; supplied shared packages remain externally managed. Bundled decoder license notices accompany

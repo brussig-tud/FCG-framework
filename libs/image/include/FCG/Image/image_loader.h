@@ -42,7 +42,8 @@
 /// Ordinary <tt>\ref fcg::ImageLoader::load "ImageLoader::load"</tt> and direct handler loads complete missing
 /// primaries, transfer and range using the format's conventions, then complete SDR white level and HDR headroom on
 /// eligible linear floating-point RGB images. Best-effort completion can leave metadata unresolved or unsupported
-/// for color-managed upload. Declared and identified custom encodings take precedence over assumptions.
+/// for color-managed upload. Declarations include decoder-supplied values. Declared and identified custom encodings
+/// take precedence over assumptions.
 /// Select individual requests or disable optional assumptions and scans with
 /// <tt>\ref fcg::ImageLoaderOptions::conservative "ImageLoaderOptions::conservative"</tt>:
 /// \snippet hdr_examples.cpp guessing
@@ -295,8 +296,9 @@ protected:
 
 	/// \brief Decode normalized input and establish the returned image's color interpretation.
 	///
-	/// Extract source evidence before applying optional assumptions. A handler may adapt samples, and must report
-	/// the returned encoding and provenance. The public loading wrappers complete brightness metadata afterwards.
+	/// Extract source evidence before applying optional assumptions. Use \c ImageMetadataOrigin::Declared for
+	/// decoder-supplied values. A handler may adapt samples, and must report the returned encoding and
+	/// provenance. The public loading wrappers complete brightness metadata afterwards.
 	///
 	/// \param bytes Encoded bytes borrowed for this call.
 	/// \param hint Normalized lowercase extension, without a leading dot.
@@ -309,9 +311,10 @@ protected:
 
 	/// \brief Complete missing RGB components and record the evidence for returned metadata.
 	///
-	/// Known candidate evidence is applied independently of assumption options. Candidates marked
-	/// \c ImageMetadataOrigin::Assumed require the corresponding option. Identified components and YUV
-	/// interpretation are retained. Completed evidence takes precedence over matching forwarded records.
+	/// Known candidate evidence, including decoder-supplied declarations, is applied independently of assumption
+	/// options. Candidates marked \c ImageMetadataOrigin::Assumed require the corresponding option. Identified
+	/// components and YUV interpretation are retained. Completed evidence takes precedence over matching forwarded
+	/// records.
 	///
 	/// \param image Decoded image consumed on success; decoding errors pass through.
 	/// \param options Controls which assumptions may fill missing RGB components.

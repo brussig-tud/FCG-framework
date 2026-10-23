@@ -43,8 +43,9 @@
 /// otherwise this handler chooses BT.709. Missing transfer uses a QOI header's linear/sRGB flag or the BT.709 curve
 /// for PGM/PPM; remaining formats use linear for floating output and sRGB for integer or palette output. Missing range
 /// is filled with full RGB range. Guessing retains the decoded samples.
-/// <tt>\ref fcg::ImagePixelInfo::provenance "ImagePixelInfo::provenance"</tt> identifies opaque SDL_image values
-/// as decoder-reported. Candidates taken from inspected QOI headers are declared; PGM/PPM transfer is format-defined.
+/// <tt>\ref fcg::ImagePixelInfo::provenance "ImagePixelInfo::provenance"</tt> records SDL_image's supplied color and
+/// brightness values, including its defaults, as declarations. Candidates taken from inspected QOI headers are also
+/// declared; PGM/PPM transfer is format-defined.
 /// Other completed components are assumptions. Eligible linear float output also receives an assumed missing SDR
 /// white level and measured missing headroom. Supplied brightness properties are retained. Use
 /// <tt>\ref fcg::ImageLoaderOptions::conservative "ImageLoaderOptions::conservative"</tt> to disable optional

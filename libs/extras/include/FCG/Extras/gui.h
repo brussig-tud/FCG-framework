@@ -43,10 +43,10 @@
 /// <tt>\ref fcg::extra::displayImageMetadata "displayImageMetadata"</tt> and
 /// <tt>\ref fcg::extra::showImageMetadataWindow "showImageMetadataWindow"</tt> display dimensions, pixel storage,
 /// color encoding, and palette and transparency information from an <tt>\ref fcg::Image "Image"</tt>.
-/// Expand the detail sections to inspect individual properties. Loading annotations appear beside color primaries,
-/// transfer characteristics and color range as <tt>(guessed)</tt>, <tt>(adapted)</tt>, or <tt>(guessed+adapted)</tt>.
-/// Hover an annotated value for an explanation. An unmarked value means no loading action was recorded; it does not
-/// establish that the source declared the property. See \ref fcg_pixel_formats for the metadata contracts.
+/// Expand the detail sections to inspect individual properties. Provenance annotations appear beside color and
+/// brightness values, such as <tt>(assumed)</tt> or <tt>(derived; assumed inputs)</tt>. Declared values appear without
+/// an origin label. Sample adaptations and known assumption dependencies remain annotated. Hover an annotated value
+/// for an explanation. See \ref fcg_pixel_formats for the metadata contracts.
 ///
 /// Each display reads the image's current metadata. If metadata is unavailable, the inspector displays the error
 /// message. To embed the same image more than once in one window, enclose each call in a distinct

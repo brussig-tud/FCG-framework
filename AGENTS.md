@@ -221,7 +221,7 @@ Whether the opening brace is on the same line as the struct name depends on how 
 
 ### General commenting
 
-Avoid long, monolithic code sequences. Structure them into smaller logical blocks, each started by a short explanatory comment summarizing the purpose of the block. This summary typically uses double-slash `//` style. Subsequent blocks should be separated by exactly one blank line. 
+Avoid long, monolithic code sequences. Structure them into smaller logical blocks (subsequent blocks separated by exactly one blank line), each started by a short explanatory comment summarizing the purpose of the block. This summary typically uses double-slash `//` style. In case the block summary comment is single-statement, they should **not** be ended by a period. Only multi-statement comments use periods.
 
 If a local scope is needed for a block, always open it with a single-line block comment `/* Descriptive local scope comment */ {`. The contents of this block comment can be descriptive for the entire scope if it is short (instead of the explanatory `//` comment), otherwise fall back to the usual separate `//`-style comment explaining the purpose of the block, with a generic scope-opening comment on the next line:
 ```C++
@@ -236,6 +236,7 @@ If a local scope is needed for a block, always open it with a single-line block 
 }
 ```
 The opening brace of such an explicitly opened local scope *always* goes on the same line as the comment, separated from it by a single space; it never goes on the next line.
+
 
 A 2-level hierarchy may be used to further structure long blocks that are awkward to separate into smaller top-level blocks. The sub-blocks should be tightly packed without a blank line in between, with each sub-block opened by an explanatory comment of the form `// - description of the logical sub block`, or if a local scope is needed, `/* - description of the logical sub block */ {` (note the lower-case first letter). Simple toy example:
 ```C++

@@ -286,14 +286,43 @@ void loadingOptionsTests ()
 	// A supplied zero deliberately disables SDL tone mapping and must survive automatic completion.
 	decoder.headroom = 0.f;
 	decoder.peak = std::numeric_limits<float>::quiet_NaN();
-	decoder.provenance.hdrHeadroom = {Origin::DecoderReported, false, false, "Supplied content metadata"};
+	decoder.provenance.hdrHeadroom = {Origin::Declared, false, false, "Supplied content metadata"};
 	auto supplied = take(decoder.load(bytes));
 	require(supplied.pixelInfo()->hdrHeadroom == 0.f
-		&& supplied.pixelInfo()->provenance.hdrHeadroom.origin == Origin::DecoderReported,
+		&& supplied.pixelInfo()->provenance.hdrHeadroom.origin == Origin::Declared,
 		"Default completion overwrote supplied zero headroom");
 	const auto unavailable = take(supplied.refreshMetadata());
-	require(!unavailable.headroomDerived && !unavailable.diagnostic.empty() && supplied.pixelInfo()->hdrHeadroom == 0.f,
+	require(!unavailable.headroomDerived && !unavailable.diagnostic.empty() && supplied.pixelInfo()->hdrHeadroom == 0.f
+		&& supplied.pixelInfo()->provenance.hdrHeadroom.origin == Origin::Declared,
 		"Unavailable explicit analysis discarded supplied metadata");
+
+	// Decoder declarations survive completion, forwarding, moves and independent surface copies.
+	/* Exercise every declared property in default and conservative loading. */ {
+		Decoder trustedDecoder;
+		trustedDecoder.encoding = SDL_COLORSPACE_SRGB_LINEAR;
+		trustedDecoder.whitePoint = 2.f;
+		trustedDecoder.headroom = 0.f;
+		const fcg::ImagePropertyProvenance declared{Origin::Declared, false, false, "Decoder supplied this value."};
+		trustedDecoder.provenance = {declared, declared, declared, declared, declared};
+		for (const auto options : {fcg::ImageLoaderOptions{}, fcg::ImageLoaderOptions::conservative()})
+		{
+			auto trusted = take(trustedDecoder.load(bytes, {}, options));
+			auto moved = std::move(trusted);
+			auto forwarded = take(Decoder::resolveMetadata(std::move(moved), options, candidates));
+			const auto duplicate = take(fcg::Image::adopt(SDL_DuplicateSurface(forwarded.handle())));
+			for (const auto *image : std::array<const fcg::Image*, 2>{&forwarded, &duplicate})
+			{
+				const auto metadata = take(image->pixelInfo());
+				require(metadata.colorspace == trustedDecoder.encoding && metadata.sdrWhitePoint == 2.f
+					&& metadata.hdrHeadroom == 0.f, "Decoder declarations were changed");
+				for (const auto *record : {&metadata.provenance.colorPrimaries, &metadata.provenance.transferCharacteristics,
+					&metadata.provenance.colorRange, &metadata.provenance.sdrWhitePoint, &metadata.provenance.hdrHeadroom})
+					require(record->origin == Origin::Declared && !record->adapted && !record->dependsOnAssumptions
+						&& record->explanation == declared.explanation, "Decoder declaration provenance was lost");
+			}
+		}
+	}
+
 	decoder.headroom.reset();
 	decoder.peak = 8.f;
 	decoder.provenance = {};
@@ -494,20 +523,22 @@ void backendGuessTests ()
 	require(SDL_COLORSPACETRANSFER(candidate(qoi, "PNG")) == SDL_TRANSFER_CHARACTERISTICS_SRGB,
 		"Another selected format was overridden by fallback byte inspection");
 #if FCG_SDL_IMAGE_QOI
-	// The backend owns its labels, even when it ignores the source flag; guessing must retain those labels.
+	// Both loading policies retain the decoder's declarations.
 	qoi.append("\xff\x80\x40\x20\xff", 5);
 	qoi.append("\0\0\0\0\0\0\0\1", 8);
 	fcg::SDLImageFormatHandler decoder;
 	const auto bytes = std::as_bytes(std::span(qoi));
-	auto ordinary = decoder.load(bytes, "png");
-	auto guessed = decoder.load(bytes, "png");
-	require(ordinary && guessed && SDL_GetSurfaceColorspace(ordinary->handle()) == SDL_GetSurfaceColorspace(guessed->handle()),
-		"Guessing replaced SDL_image's established label");
-	const auto info = guessed->pixelInfo();
-	require(info && info->provenance.colorPrimaries.origin == fcg::ImageMetadataOrigin::DecoderReported
-		&& info->provenance.transferCharacteristics.origin == fcg::ImageMetadataOrigin::DecoderReported
-		&& info->provenance.colorRange.origin == fcg::ImageMetadataOrigin::DecoderReported,
-		"SDL_image labels were promoted to declarations");
+	const auto ordinary = take(decoder.load(bytes, "png"));
+	const auto conservative = take(decoder.load(bytes, "png", fcg::ImageLoaderOptions::conservative()));
+	const auto ordinaryInfo = take(ordinary.pixelInfo());
+	const auto conservativeInfo = take(conservative.pixelInfo());
+	require(ordinaryInfo.colorspace == conservativeInfo.colorspace, "Loading policy changed SDL_image's declarations");
+	for (const auto *info : {&ordinaryInfo, &conservativeInfo})
+		for (const auto *record : {&info->provenance.colorPrimaries, &info->provenance.transferCharacteristics,
+			&info->provenance.colorRange})
+			require(record->origin == fcg::ImageMetadataOrigin::Declared && !record->adapted
+				&& !record->dependsOnAssumptions && record->explanation == "SDL_image supplied this value.",
+				"SDL_image supplied metadata was not recorded as a declaration");
 #endif
 }
 

@@ -35,9 +35,10 @@
 /// \subsection fcg_pixel_formats_workflows_loading Inspecting metadata evidence
 /// <tt>\ref fcg::ImagePixelInfo::provenance "ImagePixelInfo::provenance"</tt> describes the origin of primaries,
 /// transfer, range, SDR white level and headroom. Each <tt>\ref fcg::ImagePropertyProvenance
-/// "ImagePropertyProvenance"</tt> distinguishes source declarations, format definitions, opaque decoder results,
-/// assumptions, calculated values and assigned output definitions. Independent fields record sample adaptation and
-/// dependence on known assumptions. A calculated headroom can therefore remain dependent on assumed diffuse white:
+/// "ImagePropertyProvenance"</tt> distinguishes declarations, format definitions, assumptions, calculated values and
+/// assigned output definitions. Declarations include values supplied by a decoder. Independent fields record sample
+/// adaptation and dependence on known assumptions. A calculated headroom can therefore remain dependent on assumed
+/// diffuse white:
 /// \snippet pixel_examples.cpp loading_adjustments
 /// Moving or independently copying an image retains its evidence. Pixel edits invalidate content headroom; encoding
 /// changes also invalidate dependent evidence. Explicit conversion records its destination interpretation. Ordinary
@@ -203,14 +204,11 @@ enum class ImageMetadataOrigin
 	/// No evidence is recorded; this includes externally supplied surface metadata.
 	Unknown,
 
-	/// The handler inspected an explicit source declaration.
+	/// An explicit source declaration or a decoder supplied the value.
 	Declared,
 
 	/// The file format defines the value independently of optional declarations.
 	FormatDefined,
-
-	/// A decoder supplied the value without exposing its evidence or processing.
-	DecoderReported,
 
 	/// A fallback interpretation was selected for missing source information.
 	Assumed,
@@ -224,8 +222,8 @@ enum class ImageMetadataOrigin
 
 /// \brief Evidence and processing associated with one current metadata property.
 ///
-/// These records describe the current interpretation, rather than an operation history. An absent recorded
-/// assumption is not a guarantee of color accuracy, particularly for opaque decoder results.
+/// These records describe the current interpretation. Adaptation and dependence on assumptions are recorded
+/// independently of the value's origin.
 struct ImagePropertyProvenance
 {
 	/// How the current value was established.
