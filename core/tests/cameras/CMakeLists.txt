@@ -6,6 +6,8 @@ add_executable(camera-smoke main.cpp)
 target_link_libraries(camera-smoke PRIVATE Core)
 add_test(NAME camera-smoke COMMAND camera-smoke)
 
+# Interactive GUI review after building (replace debug with the selected preset):
+# cmake -E env FCG_CAMERA_PROBE_INTERACTIVE=1 build/debug/bin/camera-lifecycle
 add_executable(camera-lifecycle lifecycle.cpp)
 target_link_libraries(camera-lifecycle PRIVATE Core)
 add_test(NAME camera-lifecycle COMMAND camera-lifecycle)

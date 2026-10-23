@@ -28,8 +28,39 @@
 /// \subsection fcg_sdl_image_workflows_formats Knowing which formats are available
 /// Format detection uses SDL_image's content probes, so signature-based formats load even with a wrong filename.
 /// Extension-only formats such as TGA need a hint. Probes and hints are not a guarantee that decoding succeeds:
-/// optional codecs can be disabled in the linked SDL_image build. See the
-/// \ref fcg_image_overview "Image library overview" for enabling additional codecs.
+/// optional codecs can be disabled in the linked SDL_image build. Inspect
+/// <tt>\ref fcg::ImageFormatHandler::fileFormats "fileFormats"</tt> for the advertised formats.
+///
+/// \subsection fcg_sdl_image_workflows_enabling Enabling additional formats
+/// Source builds provide common formats such as PNG and JPEG by default. Formats needing external codecs, such as
+/// WebP, AVIF and TIFF, are disabled by default. Enable them with SDL_image's CMake options before adding the
+/// framework. For example, to load WebP with installed codec dependencies:
+/// \code{.cmake}
+/// set(SDLIMAGE_WEBP ON CACHE BOOL "Enable WebP decoding")
+/// set(SDLIMAGE_STRICT ON CACHE BOOL "Require requested codec dependencies")
+/// CPMAddPackage(NAME FCG SOURCE_DIR "/path/to/framework")
+/// target_link_libraries(my_app PRIVATE FCG-Framework::Image)
+/// \endcode
+/// Replace the source path with your framework checkout, or use your project's pinned CPM repository and revision.
+/// Choose the option for the format you need; each option below defaults to OFF in source builds:
+///
+/// | Format or decoder | CMake option |
+/// | --- | --- |
+/// | WebP | <tt>SDLIMAGE_WEBP</tt> |
+/// | AVIF | <tt>SDLIMAGE_AVIF</tt> |
+/// | TIFF | <tt>SDLIMAGE_TIF</tt> |
+/// | JPEG XL | <tt>SDLIMAGE_JXL</tt> |
+/// | PNG through libpng | <tt>SDLIMAGE_PNG_LIBPNG</tt> |
+///
+/// PNG decoding is already available without libpng. <tt>SDLIMAGE_STRICT</tt> makes missing codec dependencies a
+/// configuration error. To build enabled codec dependencies from SDL_image's bundled sources, also set
+/// <tt>SDLIMAGE_VENDORED</tt> to ON. These options can be normal CMake variables, cache entries, or command-line
+/// <tt>-D</tt> settings.
+///
+/// Supplied or installed SDL_image packages retain the formats they were built with; the options above apply to
+/// source builds. <tt>\ref fcg::ImageFormatHandler::fileFormats "fileFormats"</tt> lists the resulting capabilities.
+/// For advanced build configuration, see the
+/// <a href="https://github.com/brussig-tud/FCG-framework/blob/master/cmake/DEPENDENCIES.md#sdl_image-codec-configuration">dependency reference</a>.
 ///
 /// \subsection fcg_sdl_image_workflows_registering Registering the handler on other loaders
 /// The global loader comes with an instance of this handler registered under the ID <tt>"sdl_image"</tt> with

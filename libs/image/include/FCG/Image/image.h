@@ -32,16 +32,9 @@
 /// \ref fcg_pixel_formats and \ref fcg_pixel_access. Saving and animation sequences are outside its scope.
 ///
 /// \section fcg_image_formats Supporting more image formats
-/// Formats with external codec dependencies such as WebP or AVIF are disabled by default in source builds. Enable
-/// them before adding the framework:
-/// \code{.cmake}
-/// set(SDLIMAGE_WEBP ON CACHE BOOL "Enable WebP decoding")
-/// CPMAddPackage(NAME FCG SOURCE_DIR "/path/to/framework")
-/// target_link_libraries(my_app PRIVATE FCG-Framework::Image)
-/// \endcode
-/// The full build and codec reference is part of the framework's maintainer documentation.
-/// Radiance HDR and PFM are always available. Enable OpenEXR before adding the framework with
-/// <tt>set(FCG_IMAGE_OPENEXR ON CACHE BOOL "Enable OpenEXR decoding")</tt>.
+/// Radiance HDR and PFM are always available. For additional SDL_image codecs such as WebP or AVIF, follow
+/// \ref fcg_sdl_image_workflows_enabling "Enabling additional formats". For OpenEXR enablement and feature checks,
+/// see \ref fcg_openexr.
 
 
 
@@ -409,6 +402,8 @@ public:
 	// Methods
 
 	/// \brief Snapshot current storage, palette, transparency, color encoding, brightness metadata and provenance.
+	///
+	/// This query reads metadata without scanning pixels. Use \c refreshMetadata to measure the current RGB peak.
 	///
 	/// \return
 	/// 	Metadata, \c ImageErrorCode::InvalidState for an empty image, \c ImageErrorCode::UnsupportedFormat for

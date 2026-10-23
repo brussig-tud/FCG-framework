@@ -33,3 +33,18 @@ The GPU `texture-smoke` test also uses any locally available Memorial file suppo
 compares texture samples with the image returned by each loading route: guessing, an upload fallback, and both
 sample-preservation policies. Missing files are ignored; EXR is checked only when its handler is enabled. A mandatory
 generated Radiance fixture checks conversion and upload of negative and above-one components without teaching assets.
+
+
+# Running the checks
+
+After building the framework, run from the repository root:
+
+```sh
+ctest --preset release -R 'image-|texture-smoke|install'
+```
+
+Repeat with `release-shared` for shared libraries, and check both `FCG_IMAGE_OPENEXR=OFF` and
+`FCG_IMAGE_OPENEXR=ON`. The enabled configuration adds `image-exr-smoke` and `image-exr-assets`; the former uses
+generated fixtures and the latter optionally compares the local Memorial assets described above. These tests do
+not download the teaching assets. Documentation validation is described in
+[Maintaining the framework documentation](../../../../docs/DOCS.md).

@@ -31,6 +31,8 @@ cmake --build --preset debug --target fcg-docs
 
 The manual is written to `build/debug/docs/html/index.html`.
 
+See [Maintaining the framework documentation](docs/DOCS.md) for authoring, registration, validation, and publishing.
+
 To use the framework in your own project, add it as a CMake dependency (e.g. via CPM) and link against the library targets `FCG-Framework::Core`, `FCG-Framework::Image`, `FCG-Framework::Render` and `FCG-Framework::Extras` as needed. See the full framework documentation for details.
 
 
@@ -46,7 +48,8 @@ To use the framework in your own project, add it as a CMake dependency (e.g. via
 | `FCG_INCLUDE_PACKAGING` | `ON` for top-level builds | Include install and packaging rules. |
 | `FCG_BUILD_DOCUMENTATION` | `ON` for top-level builds | Enable the `fcg-docs` documentation target (requires Doxygen). |
 
-The formats of a source-built *SDL_image* are configured through the upstream `SDLIMAGE_*` options; see `docs/DOCS.md` for details.
+To enable additional image codecs, follow the [SDL_image guide](https://brussig-tud.github.io/FCG-framework/group__fcg__sdl__image.html#fcg_sdl_image_workflows_enabling).
+See [Maintaining framework dependencies](cmake/DEPENDENCIES.md) for dependency resolution, overrides, linkage, and codec troubleshooting.
 
 
 # Overview

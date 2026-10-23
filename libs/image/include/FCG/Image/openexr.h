@@ -15,10 +15,15 @@
 /// Use <tt>\ref fcg::OpenEXRImageFormatHandler "OpenEXRImageFormatHandler"</tt> directly or load through
 /// <tt>\ref fcg::ImageLoader::global "ImageLoader::global"</tt>.
 /// The returned extent is the data window, rebased to pixel <tt>(0, 0)</tt>. Recognized color metadata supplies
-/// the encoding; unidentified components remain unspecified unless loader inference requests are enabled. Enable
-/// <tt>FCG_IMAGE_OPENEXR</tt> before configuring the framework.
+/// the encoding; unidentified components remain unspecified unless loader inference requests are enabled.
 ///
 /// \section fcg_openexr_usage Getting started
+/// Enable OpenEXR before adding the framework to your CMake project:
+/// \code{.cmake}
+/// set(FCG_IMAGE_OPENEXR ON CACHE BOOL "Enable OpenEXR decoding")
+/// \endcode
+/// Include <tt>\#include &lt;FCG/Image/features.h&gt;</tt> and test the numeric macro
+/// <tt>FCG_IMAGE_HAS_OPENEXR</tt> when your code must also compile without OpenEXR support:
 /// \snippet hdr_examples.cpp exr_direct
 ///
 /// \section fcg_openexr_workflows Common tasks
