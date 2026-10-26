@@ -322,7 +322,7 @@ auto detail::PrimitiveResources::create (
 		if (!vs)
 			return sdlFailure("Creating primitive vertex shader");
 		ShaderOwner fs(device.createShader(ShaderStage::FRAGMENT, frag->spirv,
-			ShaderResources{.uniformBuffers = ellipsoid ? 2u : 1u, .samplers = (unsigned)textured}), releaseShader);
+			ShaderResources{.uniformBuffers = ellipsoid ? 2u : 1u, .samplers = (unsigned)textured}, target), releaseShader);
 		if (!fs)
 			return sdlFailure("Creating primitive fragment shader");
 		SDL_GPUColorTargetDescription color{};

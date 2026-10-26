@@ -732,6 +732,16 @@ void pixels (fcg::Device &device)
 /// Resource reflection and MSL/HLSL translation exercise non-Vulkan shader contracts on Linux.
 void shaders ()
 {
+	/// Own the properties used to exercise both configured and default translation.
+	struct Properties
+	{
+		/// Release the translation settings.
+		~Properties() { SDL_DestroyProperties(id); }
+
+		/// Settings borrowed by shadercross during each translation.
+		SDL_PropertiesID id = SDL_CreateProperties();
+	} properties;
+	require(properties.id != 0, SDL_GetError());
 	require(SDL_ShaderCross_Init(), SDL_GetError());
 	for (const auto name : {"primitive", "textured", "ellipsoid", "ellipsoid_textured"})
 	{
@@ -743,7 +753,7 @@ void shaders ()
 		{
 			const auto data = shader->stage(stage);
 			require(data.has_value(), "Missing shader stage");
-			const SDL_ShaderCross_SPIRV_Info info{
+			SDL_ShaderCross_SPIRV_Info info{
 				.bytecode = (const Uint8*)data->spirv.data(), .bytecode_size = data->spirv.size(), .entrypoint = "main",
 				.shader_stage = stage == fcg::ShaderStage::VERTEX ? SDL_SHADERCROSS_SHADERSTAGE_VERTEX : SDL_SHADERCROSS_SHADERSTAGE_FRAGMENT
 			};
@@ -756,18 +766,29 @@ void shaders ()
 				|| ellipsoid ? 2u : 1u)
 				&& resources.num_samplers == (stage == fcg::ShaderStage::FRAGMENT && textured ? 1u : 0u),
 				"Wrong shader resources");
-			auto *msl = (char*)SDL_ShaderCross_TranspileMSLFromSPIRV(&info);
-			require(msl, SDL_GetError());
-			if (ellipsoid && stage == fcg::ShaderStage::FRAGMENT)
-				require(std::strstr(msl, "depth(any)") && std::strstr(msl, "sample_perspective")
-					&& std::strstr(msl, "sample_no_perspective"), "MSL lost analytic depth or sample interpolation");
-			SDL_free(msl);
-			auto *hlsl = (char*)SDL_ShaderCross_TranspileHLSLFromSPIRV(&info);
-			require(hlsl, SDL_GetError());
-			if (ellipsoid && stage == fcg::ShaderStage::FRAGMENT)
-				require(std::strstr(hlsl, "SV_Depth") && std::strstr(hlsl, "sample "),
-					"HLSL lost analytic depth or sample interpolation");
-			SDL_free(hlsl);
+			// Exercise the default, explicit preservation, and suppression without altering the SPIR-V
+			for (const int enabled : {-1, 1, 0})
+			{
+				info.props = enabled < 0 ? 0 : properties.id;
+				if (enabled >= 0)
+					require(SDL_SetBooleanProperty(properties.id,
+						SDL_SHADERCROSS_PROP_SPIRV_MSL_ENABLE_FRAG_DEPTH_BUILTIN_BOOLEAN, enabled != 0), SDL_GetError());
+				const std::unique_ptr<char, decltype(&SDL_free)> msl(
+					(char*)SDL_ShaderCross_TranspileMSLFromSPIRV(&info), SDL_free);
+				require(msl != nullptr, SDL_GetError());
+				if (ellipsoid && stage == fcg::ShaderStage::FRAGMENT) {
+					require((std::strstr(msl.get(), "[[depth(") != nullptr) == (enabled != 0),
+						"MSL fragment-depth property was not applied");
+					require(std::strstr(msl.get(), "[[color(0)]]") && std::strstr(msl.get(), "sample_perspective")
+						&& std::strstr(msl.get(), "sample_no_perspective"), "MSL lost color or sample interpolation");
+				}
+				const std::unique_ptr<char, decltype(&SDL_free)> hlsl(
+					(char*)SDL_ShaderCross_TranspileHLSLFromSPIRV(&info), SDL_free);
+				require(hlsl != nullptr, SDL_GetError());
+				if (ellipsoid && stage == fcg::ShaderStage::FRAGMENT)
+					require(std::strstr(hlsl.get(), "SV_Depth") && std::strstr(hlsl.get(), "sample "),
+						"HLSL lost analytic depth or sample interpolation");
+			}
 		}
 	}
 	SDL_ShaderCross_Quit();

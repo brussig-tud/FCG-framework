@@ -28,6 +28,9 @@
 /// are what <tt>\ref fcg::pushUniforms "pushUniforms"</tt> writes into.
 /// The <tt>\ref fcg::Device::createShader "numUniformBlocks overload"</tt> declares uniform blocks only; use the
 /// <tt>\ref fcg::Device::createShader "ShaderResources overload"</tt> for shaders that also use samplers or storage.
+/// For a fragment shader that writes depth, pass the pipeline's <tt>\ref fcg::RenderTargetInfo "RenderTargetInfo"</tt>
+/// to the target-aware overload. It also supports rendering to targets without a depth attachment:
+/// \snippet device_examples.cpp targeted_shader_creation
 ///
 /// \section fcg_devices_workflows Common tasks
 /// \subsection fcg_devices_workflows_windows Claiming windows
@@ -88,6 +91,7 @@ struct SDL_GPUFence;
 // Framework types
 namespace fcg {
 	class Window;
+	struct RenderTargetInfo;
 }
 
 
@@ -125,8 +129,7 @@ enum class ShaderStage
 
 
 
-/// \brief
-/// 	Resource counts declared by one graphics shader stage, passed to \c Device::createShader.
+/// \brief Resource counts declared by one graphics shader stage, passed to \c Device::createShader.
 ///
 /// The counts must exactly match the resources the shader declares. When writing GLSL for SPIR-V, a vertex shader
 /// declares its samplers, storage textures and storage buffers in descriptor set 0 and its uniform blocks in set 1. A
@@ -160,8 +163,7 @@ struct ShaderResources
 // Classes
 //
 
-/// \brief
-/// 	The GPU device shared by all windows and applets.
+/// \brief The GPU device shared by all windows and applets.
 ///
 /// All rendering in the framework goes through this single device, so GPU resources such as textures, buffers and
 /// pipelines can be used freely across windows. For example, an applet can render into a texture and use that texture
@@ -196,13 +198,11 @@ class FCG_FRAMEWORK_EXPORT Device
 	////
 	// Types
 
-	/// \brief
-	/// 	Node in the list of fences of abandoned readbacks.
+	/// \brief Node in the list of fences of abandoned readbacks.
 	///
 	/// Readbacks allocate their node before submission, so that abandoning a pending readback neither allocates nor
 	/// blocks.
-	struct RetiredFence
-	{
+	struct RetiredFence {
 		/// Fence held until its submission completes.
 		SDL_GPUFence *handle = nullptr;
 
@@ -211,8 +211,7 @@ class FCG_FRAMEWORK_EXPORT Device
 	};
 
 	/// Passkey that restricts use of the public constructor to \c Device::create.
-	class PrivateConstructorKey final
-	{
+	class PrivateConstructorKey final {
 		/// Constructs the key in \c Device::create.
 		friend Device;
 
@@ -226,21 +225,17 @@ public:
 	////
 	// Object construction/destruction
 
-	/// \brief
-	/// 	Construct a device wrapping the given SDL GPU device handle.
+	/// \brief Construct a device wrapping the given SDL GPU device handle.
 	///
 	/// Not callable by applications; use \c create instead.
 	///
-	/// \param key
-	/// 	Passkey that only \c Device can create.
-	/// \param handle
-	/// 	SDL GPU device handle. The device takes ownership and destroys it on destruction.
+	/// \param key Passkey that only \c Device can create.
+	/// \param handle SDL GPU device handle. The device takes ownership and destroys it on destruction.
 	explicit Device([[maybe_unused]] PrivateConstructorKey key, SDL_GPUDevice *handle)
 		: m_handle(handle)
 	{}
 
-	/// \brief
-	/// 	Create a GPU device that supports SPIR-V, DXIL and MSL shaders.
+	/// \brief Create a GPU device that supports SPIR-V, DXIL and MSL shaders.
 	///
 	/// Failures are written to the SDL log.
 	///
@@ -248,12 +243,10 @@ public:
 	/// 	In debug builds, the device is created with SDL GPU validation enabled, which reports incorrect use of the
 	/// 	SDL GPU API in the SDL log.
 	///
-	/// \return
-	/// 	The device, or \c std::nullopt if SDL could not create a GPU device.
+	/// \return The device, or \c std::nullopt if SDL could not create a GPU device.
 	[[nodiscard]] static auto create () -> std::optional<Device>;
 
-	/// \brief
-	/// 	Wait for the GPU to finish all pending work, release all window claims and destroy the device.
+	/// \brief Wait for the GPU to finish all pending work, release all window claims and destroy the device.
 	///
 	/// \pre
 	/// 	All resources created from this device have been destroyed, and every window still claimed by this device
@@ -270,8 +263,7 @@ public:
 	////
 	// Accessors
 
-	/// \brief
-	/// 	Access the underlying SDL GPU device, e.g. for creating pipelines or acquiring command buffers.
+	/// \brief Access the underlying SDL GPU device, e.g. for creating pipelines or acquiring command buffers.
 	///
 	/// \return
 	/// 	The SDL GPU device handle, valid until this device is destroyed. The device keeps ownership; never destroy
@@ -287,8 +279,7 @@ public:
 	/// Block until the GPU has finished all work submitted so far.
 	void waitIdle () const;
 
-	/// \brief
-	/// 	Claim the given window for this device, enabling rendering into it.
+	/// \brief Claim the given window for this device, enabling rendering into it.
 	///
 	/// A window can be claimed by at most one device at a time.
 	///
@@ -296,19 +287,16 @@ public:
 	/// 	\c window is not null. The window must outlive this device, or be released with \c unclaimWindow before
 	/// 	it is destroyed.
 	///
-	/// \param window
-	/// 	The window to claim.
+	/// \param window The window to claim.
 	///
 	/// \return
-	/// 	\c true if the window was claimed, \c false if SDL failed to claim the window or to create the resources
-	/// 	for its shared scene sampler. Failures are written to the SDL log.
+	/// 	\c true if the window was claimed, \c false if SDL failed to claim the window or to create the resources for
+	/// 	its shared scene sampler. Failures are written to the SDL log.
 	///
-	/// \throws std::logic_error
-	/// 	If the window is already claimed by this or another device.
+	/// \throws std::logic_error If the window is already claimed by this or another device.
 	[[nodiscard]] auto claimWindow (std::unique_ptr<Window> &window) -> bool;
 
-	/// \brief
-	/// 	Release this device's claim on the given window.
+	/// \brief Release this device's claim on the given window.
 	///
 	/// Blocks until the GPU has finished all pending work, then releases the window's GPU resources. Afterwards, the
 	/// window can be destroyed or claimed again.
@@ -322,28 +310,21 @@ public:
 	/// 	Violating this precondition would require unusual manual lifetime management, such as releasing
 	/// 	the claim partway through a frame in a custom rendering loop.
 	///
-	/// \param window
-	/// 	The window to release.
+	/// \param window The window to release.
 	///
-	/// \throws std::logic_error
-	/// 	If the window is not currently claimed by this device.
+	/// \throws std::logic_error If the window is not currently claimed by this device.
 	void unclaimWindow (std::unique_ptr<Window> &window);
 
-	/// \brief
-	/// 	Create a vertex or fragment shader from SPIR-V bytecode that uses only uniform blocks.
+	/// \brief Create a vertex or fragment shader from SPIR-V bytecode that uses only uniform blocks.
 	///
 	/// The shader declares no samplers, storage textures or storage buffers. Use the overload taking
 	/// <tt>\ref ShaderResources "ShaderResources"</tt> for shaders that use them. On backends other than Vulkan, the
 	/// SPIR-V is translated to the backend's shader language when the shader is created.
 	///
-	/// \param stage
-	/// 	The shader stage; must be <tt>ShaderStage::VERTEX</tt> or <tt>ShaderStage::FRAGMENT</tt>.
-	/// \param spirv
-	/// 	The non-empty SPIR-V bytecode. Only read during the call.
-	/// \param numUniformBlocks
-	/// 	The number of uniform blocks the shader declares; at most 4.
-	/// \param entrypoint
-	/// 	The name of the shader's entry point function.
+	/// \param stage The shader stage; must be <tt>ShaderStage::VERTEX</tt> or <tt>ShaderStage::FRAGMENT</tt>.
+	/// \param spirv The non-empty SPIR-V bytecode. Only read during the call.
+	/// \param numUniformBlocks The number of uniform blocks the shader declares; at most 4.
+	/// \param entrypoint The name of the shader's entry point function.
 	///
 	/// \return
 	/// 	The shader, or \c nullptr on failure, with details written to the SDL log. The caller owns the shader and
@@ -354,21 +335,17 @@ public:
 		std::string_view entrypoint="main"
 	) const -> SDL_GPUShader*;
 
-	/// \brief
-	/// 	Create a vertex or fragment shader from SPIR-V bytecode with explicit resource counts.
+	/// \brief Create a vertex or fragment shader from SPIR-V bytecode with explicit resource counts.
 	///
 	/// On backends other than Vulkan, the SPIR-V is translated to the backend's shader language when the shader is
 	/// created. Compute pipelines are created directly through SDL.
 	///
-	/// \param stage
-	/// 	The shader stage; must be <tt>ShaderStage::VERTEX</tt> or <tt>ShaderStage::FRAGMENT</tt>.
-	/// \param spirv
-	/// 	The non-empty SPIR-V bytecode. Only read during the call.
+	/// \param stage The shader stage; must be <tt>ShaderStage::VERTEX</tt> or <tt>ShaderStage::FRAGMENT</tt>.
+	/// \param spirv The non-empty SPIR-V bytecode. Only read during the call.
 	/// \param resources
 	/// 	The resource counts declared by the shader, following the binding rules described for
 	/// 	<tt>\ref ShaderResources "ShaderResources"</tt>. At most 4 uniform blocks are allowed.
-	/// \param entrypoint
-	/// 	The name of the shader's entry point function.
+	/// \param entrypoint The name of the shader's entry point function.
 	///
 	/// \return
 	/// 	The shader, or \c nullptr on failure, with details written to the SDL log. The caller owns the shader and
@@ -379,24 +356,61 @@ public:
 		std::string_view entrypoint="main"
 	) const -> SDL_GPUShader*;
 
+	/// \brief Create a vertex or fragment shader for the depth-attachment configuration of a render target.
+	///
+	/// Fragment-depth output has no effect when the target has no depth attachment. Vertex shaders are unaffected. The
+	/// target's color format and sample count do not specialize the shader.
+	///
+	/// \pre
+	/// 	Use the returned fragment shader only with pipelines having the same presence of a depth attachment as
+	/// 	\p target.
+	///
+	/// \param stage The shader stage; must be <tt>ShaderStage::VERTEX</tt> or <tt>ShaderStage::FRAGMENT</tt>.
+	/// \param spirv The non-empty SPIR-V bytecode, borrowed only during the call.
+	/// \param resources
+	/// 	The resource counts declared by the shader, following the binding rules of <tt>ShaderResources</tt>. At most
+	/// 	four uniform blocks are allowed.
+	/// \param target The target description, borrowed only during the call.
+	/// \param entrypoint The name of the shader's entry point function.
+	///
+	/// \return
+	/// 	The shader, or \c nullptr on invalid input or compilation failure, with details written to the SDL log. The
+	/// 	caller owns the shader and must release it with \c SDL_ReleaseGPUShader. Pipelines keep their own reference,
+	/// 	so it can be released after creating all pipelines that use it.
+	[[nodiscard]] auto createShader (
+		ShaderStage stage, std::span<const std::byte> spirv, const ShaderResources &resources,
+		const RenderTargetInfo &target, std::string_view entrypoint="main"
+	) const -> SDL_GPUShader*;
+
 
 private:
 
 	////
 	// Methods
 
-	/// \brief
-	/// 	Release a completed fence immediately, or keep it in the retirement list until a later collection.
+	/// \brief Create a shader through the shared resource validation and backend translation path.
+	///
+	/// \param stage The requested graphics stage.
+	/// \param spirv The borrowed SPIR-V bytecode.
+	/// \param resources The declared resource counts.
+	/// \param entrypoint The borrowed entry-point name.
+	/// \param fragmentDepthOutput Whether the target accepts fragment-depth output on Metal.
+	///
+	/// \return The caller-owned SDL shader, or \c nullptr with a logged diagnostic.
+	[[nodiscard]] auto createShaderImpl (
+		ShaderStage stage, std::span<const std::byte> spirv, const ShaderResources &resources,
+		std::string_view entrypoint, bool fragmentDepthOutput
+	) const -> SDL_GPUShader*;
+
+	/// \brief Release a completed fence immediately, or keep it in the retirement list until a later collection.
 	///
 	/// Never waits and never allocates. Nodes must be allocated before submission, so that readback destructors
 	/// cannot fail due to allocation.
 	///
-	/// \param fence
-	/// 	The node holding the fence to retire; ignored if null or holding a null fence.
+	/// \param fence The node holding the fence to retire; ignored if null or holding a null fence.
 	void retireFence (std::unique_ptr<RetiredFence> fence);
 
-	/// \brief
-	/// 	Poll and release the fences of abandoned readbacks.
+	/// \brief Poll and release the fences of abandoned readbacks.
 	///
 	/// Called when creating new readbacks, on explicit idle waits, and on device destruction.
 	///

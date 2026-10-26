@@ -7,6 +7,14 @@ add_test(NAME render-smoke COMMAND render-smoke)
 set_tests_properties(render-smoke PROPERTIES TIMEOUT 90
 	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
 
+# Exercise production shader dispatch with real MSL translation on all platforms, without a Metal device.
+add_executable(render-shader-targets shader_targets.cpp)
+target_compile_definitions(render-shader-targets PRIVATE FCG_FRAMEWORK_STATIC_DEFINE)
+target_link_libraries(render-shader-targets PRIVATE Render fcg-render-shaders SDL3_shadercross::SDL3_shadercross)
+add_test(NAME render-shader-targets COMMAND render-shader-targets)
+set_tests_properties(render-shader-targets PROPERTIES TIMEOUT 90
+	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
+
 add_executable(render-lifecycle lifecycle.cpp)
 target_link_libraries(render-lifecycle PRIVATE Render)
 add_test(NAME render-lifecycle COMMAND render-lifecycle)

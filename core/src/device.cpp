@@ -10,6 +10,10 @@
 // SDL_shadercross (runtime SPIR-V translation for non-Vulkan backends)
 #include <SDL3_shadercross/SDL_shadercross.h>
 
+#ifndef SDL_SHADERCROSS_PROP_SPIRV_MSL_ENABLE_FRAG_DEPTH_BUILTIN_BOOLEAN
+#error "FCG requires SDL_shadercross with the Metal fragment-depth property; use the framework's patched dependency"
+#endif
+
 // C++ STL
 #include <mutex>
 #include <span>
@@ -18,6 +22,7 @@
 // Local includes
 #include "FCG/window.h"
 #include "FCG/device.h"
+#include "FCG/render_target.h"
 
 
 
@@ -85,7 +90,8 @@ void Device::waitIdle () const {
 	collectRetiredFences(SDL_WaitForGPUIdle(m_handle));
 }
 
-void Device::retireFence (std::unique_ptr<RetiredFence> fence) {
+void Device::retireFence (std::unique_ptr<RetiredFence> fence)
+{
 	if (!fence || !fence->handle)
 		return;
 	if (SDL_QueryGPUFence(m_handle, fence->handle)) {
@@ -97,10 +103,12 @@ void Device::retireFence (std::unique_ptr<RetiredFence> fence) {
 	m_retiredFences = std::move(fence);
 }
 
-void Device::collectRetiredFences (bool idle) const {
+void Device::collectRetiredFences (bool idle) const
+{
 	std::lock_guard lock(m_fenceMutex);
 	auto *link = &m_retiredFences;
-	while (*link) {
+	while (*link)
+	{
 		if (idle || SDL_QueryGPUFence(m_handle, (*link)->handle)) {
 			auto fence = std::move(*link);
 			*link = std::move(fence->next);
@@ -125,15 +133,32 @@ void Device::unclaimWindow (std::unique_ptr<Window> &window) {
 
 auto Device::createShader (
 	ShaderStage stage, std::span<const std::byte> spirv, unsigned numUniformBlocks, std::string_view entrypoint
-) const -> SDL_GPUShader*
-{
+) const -> SDL_GPUShader* {
 	return createShader(stage, spirv, ShaderResources{.uniformBuffers = numUniformBlocks}, entrypoint);
 }
 
 auto Device::createShader (
 	ShaderStage stage, std::span<const std::byte> spirv, const ShaderResources &resources, std::string_view entrypoint
+) const -> SDL_GPUShader* {
+	return createShaderImpl(stage, spirv, resources, entrypoint, true);
+}
+
+auto Device::createShader (
+	ShaderStage stage, std::span<const std::byte> spirv, const ShaderResources &resources,
+	const RenderTargetInfo &target, std::string_view entrypoint
+) const -> SDL_GPUShader* {
+	return createShaderImpl(
+		stage, spirv, resources, entrypoint,
+		target.depthStencilFormat != SDL_GPU_TEXTUREFORMAT_INVALID
+	);
+}
+
+auto Device::createShaderImpl (
+	ShaderStage stage, std::span<const std::byte> spirv, const ShaderResources &resources,
+	std::string_view entrypoint, bool fragmentDepthOutput
 ) const -> SDL_GPUShader*
 {
+	// Validate the shared graphics-shader inputs before selecting a backend
 	if (stage != ShaderStage::VERTEX && stage != ShaderStage::FRAGMENT) {
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Creating compute shaders is not supported yet");
 		return nullptr;
@@ -147,12 +172,15 @@ auto Device::createShader (
 		return nullptr;
 	}
 
+	// Resolve the stage, entry point, and supported formats once for both creation paths
 	const SDL_GPUShaderStage sdlStage = (stage == ShaderStage::VERTEX)
 		? SDL_GPU_SHADERSTAGE_VERTEX : SDL_GPU_SHADERSTAGE_FRAGMENT;
 	const std::string entry {entrypoint};
+	const auto formats = SDL_GetGPUShaderFormats(m_handle);
 
 	// On Vulkan backends we can use the SPIR-V directly
-	if (SDL_GetGPUShaderFormats(m_handle) & SDL_GPU_SHADERFORMAT_SPIRV) {
+	if (formats & SDL_GPU_SHADERFORMAT_SPIRV)
+	{
 		SDL_GPUShaderCreateInfo info {};
 		info.code_size = spirv.size();
 		info.code = reinterpret_cast<const Uint8*>(spirv.data());
@@ -174,12 +202,36 @@ auto Device::createShader (
 	static std::once_flag shadercrossInit;
 	std::call_once(shadercrossInit, [] { SDL_ShaderCross_Init(); });
 
+	// Keep per-call translation properties alive through compilation and release them on every exit
+	struct Properties {
+		~Properties() {
+			if (id)
+				SDL_DestroyProperties(id);
+		}
+		SDL_PropertiesID id = 0;
+	} properties;
+	if ((formats & SDL_GPU_SHADERFORMAT_MSL) && stage == ShaderStage::FRAGMENT && !fragmentDepthOutput)
+	{
+		properties.id = SDL_CreateProperties();
+		if (!properties.id || !SDL_SetBooleanProperty(
+		    	properties.id, SDL_SHADERCROSS_PROP_SPIRV_MSL_ENABLE_FRAG_DEPTH_BUILTIN_BOOLEAN, false
+		    ))
+		{
+			SDL_LogError(
+				SDL_LOG_CATEGORY_APPLICATION, "Preparing shader translation properties failed: %s", SDL_GetError()
+			);
+			return nullptr;
+		}
+	}
+
+	// Describe the source for the existing runtime translator
 	SDL_ShaderCross_SPIRV_Info info {};
 	info.bytecode = reinterpret_cast<const Uint8*>(spirv.data());
 	info.bytecode_size = spirv.size();
 	info.entrypoint = entry.c_str();
-	info.shader_stage = (stage == ShaderStage::VERTEX)
-		? SDL_SHADERCROSS_SHADERSTAGE_VERTEX : SDL_SHADERCROSS_SHADERSTAGE_FRAGMENT;
+	info.shader_stage = (stage == ShaderStage::VERTEX) ?
+		SDL_SHADERCROSS_SHADERSTAGE_VERTEX : SDL_SHADERCROSS_SHADERSTAGE_FRAGMENT;
+	info.props = properties.id;
 
 	// Use the same explicit resource contract on every backend.
 	const SDL_ShaderCross_GraphicsShaderResourceInfo resourceInfo {

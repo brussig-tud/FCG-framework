@@ -15,6 +15,7 @@
 // FCG Framework
 // [includes]
 #include <FCG/device.h>
+#include <FCG/render_target.h>
 #include <FCG/window.h>
 // [includes]
 
@@ -50,3 +51,15 @@ void setup (std::unique_ptr<fcg::Window> &window)
 	);
 }
 // [shader_creation]
+
+/// Create a fragment shader for pipelines with the given depth-attachment configuration.
+// [targeted_shader_creation]
+[[nodiscard]] auto makeTargetedFragmentShader (
+	const fcg::Device &device, std::span<const std::byte> spirv, const fcg::RenderTargetInfo &target
+) -> SDL_GPUShader* {
+	// One uniform block, no samplers or storage resources
+	return device.createShader(
+		fcg::ShaderStage::FRAGMENT, spirv, fcg::ShaderResources{.uniformBuffers = 1}, target
+	);
+}
+// [targeted_shader_creation]

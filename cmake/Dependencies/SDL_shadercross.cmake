@@ -14,3 +14,4 @@ CPMAddPackage(
 		"SDLSHADERCROSS_CLI OFF"
 		"SDLSHADERCROSS_INSTALL OFF"
 )
+include("${CMAKE_CURRENT_LIST_DIR}/../Patches/SDL_shadercross-metal-fragment-depth.cmake")

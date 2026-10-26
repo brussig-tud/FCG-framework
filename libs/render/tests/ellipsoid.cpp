@@ -608,6 +608,19 @@ void interoperability (fcg::Device &device)
 			}
 	}
 
+	// Depth testing must use the analytic surface even when writes are disabled
+	auto tested = take(fcg::EllipsoidRenderer::create(device, scene.target(), {.depthWrite = false}));
+	auto quadOnly = scene.render([&] (auto *commands, auto *pass) {
+		check(quads.draw(quadData, state, commands, pass));
+	});
+	auto testedImage = scene.render([&] (auto *commands, auto *pass) {
+		check(quads.draw(quadData, state, commands, pass));
+		check(tested.draw(sphereData, state, commands, pass));
+	});
+	require(testedImage.colors[(side / 2) * side + side / 2] == std::array<std::uint8_t, 4>{255,0,0,255},
+		"Disabled writes lost analytic depth testing against the quad");
+	require(testedImage.depths == quadOnly.depths, "Disabled writes changed the existing depth buffer");
+
 	// Depth switches and straight alpha are independent of proxy geometry
 	sphere.color = {.8f,.4f,.2f,.5f};
 	assign(sphereData, sphere);
@@ -743,6 +756,12 @@ void textures (fcg::Device &device)
 /// Exercise per-sample analytic silhouettes and rendering without a depth attachment.
 void multisampling (fcg::Device &device)
 {
+	// A white texture lets both fragment shaders share the independent color and silhouette reference
+	auto sampled = texture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER);
+	const std::vector<std::array<std::uint8_t, 4>> white(side * side, {255,255,255,255});
+	check(sampled.upload(std::as_bytes(std::span(white))));
+	auto sampler = take(fcg::Sampler::create(device, SDL_GPUSamplerCreateInfo{}));
+	const fcg::DrawOptions textured{.texture = fcg::PrimitiveTexture{sampled.handle(), sampler.handle()}};
 	fcg::PrimitiveAttributes attributes(device);
 	fcg::RenderState state(device);
 	state.loadProjectionMatrix(glm::perspectiveRH_ZO(glm::radians(60.f), 1.f, .1f, 100.f));
@@ -751,26 +770,66 @@ void multisampling (fcg::Device &device)
 	assign(attributes, shape);
 	for (auto samples : {SDL_GPU_SAMPLECOUNT_1, SDL_GPU_SAMPLECOUNT_2, SDL_GPU_SAMPLECOUNT_4, SDL_GPU_SAMPLECOUNT_8})
 	{
-		if (!SDL_GPUTextureSupportsSampleCount(device.handle(), SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, samples)
-			|| !SDL_GPUTextureSupportsSampleCount(device.handle(), SDL_GPU_TEXTUREFORMAT_D32_FLOAT, samples))
+		if (!SDL_GPUTextureSupportsSampleCount(device.handle(), SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, samples))
 			continue;
-		Scene scene(device, samples);
-		auto renderer = take(fcg::EllipsoidRenderer::create(device, scene.target()));
-		auto image = scene.render([&] (auto *commands, auto *pass) {
-			check(renderer.draw(attributes, state, commands, pass));
-		});
-		std::size_t partial = 0;
-		for (const auto pixel : image.colors)
-			if (pixel[3] > 0 && pixel[3] < 255)
-				++partial;
-		require((samples == SDL_GPU_SAMPLECOUNT_1) == (partial == 0), "Analytic silhouette was not evaluated per sample");
+		std::optional<Image> baseline;
+		for (const bool withDepth : {true, false})
+		{
+			if (withDepth && !SDL_GPUTextureSupportsSampleCount(device.handle(), SDL_GPU_TEXTUREFORMAT_D32_FLOAT, samples))
+				continue;
+			Scene scene(device, samples, withDepth);
+			auto renderer = take(fcg::EllipsoidRenderer::create(device, scene.target()));
+			for (const auto &options : {fcg::DrawOptions{}, textured})
+			{
+				// Check every supported color-only sample count, even if the depth format lacks it
+				auto image = scene.render([&] (auto *commands, auto *pass) {
+					check(renderer.draw(attributes, state, commands, pass, options));
+				});
+				std::size_t partial = 0;
+				for (const auto pixel : image.colors)
+					if (pixel[3] > 0 && pixel[3] < 255)
+						++partial;
+				require((samples == SDL_GPU_SAMPLECOUNT_1) == (partial == 0),
+					"Analytic silhouette was not evaluated per sample");
+				if (samples == SDL_GPU_SAMPLECOUNT_1)
+					verify(image, shape, state, withDepth ? "target with depth" : "target without depth",
+						SDL_GPU_CULLMODE_BACK, options);
+
+				// Removing the depth attachment must preserve the resolved color and coverage
+				if (baseline)
+					for (std::size_t pixel = 0; pixel < image.colors.size(); ++pixel)
+						for (unsigned channel = 0; channel < 4; ++channel)
+							require(std::abs((int)image.colors[pixel][channel] - (int)baseline->colors[pixel][channel]) <= 1,
+								"Depth attachment or texture changed color or sample coverage");
+				else
+					baseline.emplace(std::move(image));
+			}
+		}
 	}
+
+	// Analytic clipping and exit-surface selection must also work without exporting depth
 	Scene noDepth(device, SDL_GPU_SAMPLECOUNT_1, false);
-	auto renderer = take(fcg::EllipsoidRenderer::create(device, noDepth.target()));
-	auto image = noDepth.render([&] (auto *commands, auto *pass) {
-		check(renderer.draw(attributes, state, commands, pass));
-	});
-	verify(image, shape, state, "target without depth");
+	auto renderer = take(fcg::EllipsoidRenderer::create(device, noDepth.target(), {.cullMode = SDL_GPU_CULLMODE_NONE}));
+	for (const auto &options : {fcg::DrawOptions{}, textured})
+	{
+		const auto draw = [&] (const char *label) {
+			assign(attributes, shape);
+			auto image = noDepth.render([&] (auto *commands, auto *pass) {
+				check(renderer.draw(attributes, state, commands, pass, options));
+			});
+			verify(image, shape, state, label, SDL_GPU_CULLMODE_NONE, options);
+		};
+		shape = {};
+		shape.extent = {1.1f,.65f,.9f};
+		state.loadProjectionMatrix(glm::orthoRH_ZO(-2.f,2.f,-2.f,2.f,3.8f,10.f));
+		draw("near-clipped exit without depth");
+		state.loadProjectionMatrix(glm::orthoRH_ZO(-2.f,2.f,-2.f,2.f,.1f,3.8f));
+		draw("far-clipped surface without depth");
+		shape = {};
+		shape.position = {0,0,0,1};
+		state.loadProjectionMatrix(glm::perspectiveRH_ZO(glm::radians(60.f), 1.f, .1f, 100.f));
+		draw("inside sphere exit without depth");
+	}
 }
 
 /// Measure completed frames at 1024 square pixels; enabled explicitly through the test environment.
