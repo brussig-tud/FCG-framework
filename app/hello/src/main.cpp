@@ -5,8 +5,10 @@
 //
 
 // C++ STL
+#include <algorithm>
 #include <cstddef>
 #include <memory>
+#include <optional>
 
 // Dear ImGui
 #include <imgui.h>
@@ -26,6 +28,7 @@
 #include <FCG/player.h>
 #include <FCG/applet.h>
 #include <FCG/applet/orbit_camera.h>
+#include <FCG/Render/ellipsoid_renderer.h>
 
 // Local includes
 #include <shapes/convex_poly.h>
@@ -44,6 +47,7 @@
 ///
 /// The shapes are drawn with Blinn-Phong lighting by the embedded \c simple_shapes shader, using the viewing
 /// transformation of the current \c fcg::RenderState (e.g. as set up by a camera applet running before this one).
+/// Optional spheres mark geometric corners, with their radius specified as a percentage of the shape's circumradius.
 class SimpleShapesApplet : public fcg::Applet
 {
 public:
@@ -75,17 +79,19 @@ public:
 		return name;
 	}
 
-	/// \brief Retain the device used for pipeline ownership.
+	/// \brief Retain the device used for pipeline ownership and create the corner attribute collection.
 	///
 	/// \param device The device to create the pipeline on. It must outlive the applet.
 	/// \param player The player providing the main render target's color format.
 	void init (fcg::Device &device, fcg::Player &player) override {
 		m_device = &device;
+		cornerAttributes = std::make_unique<fcg::PrimitiveAttributes>(device);
 	}
 
-	/// \brief Replace the scene pipeline for the player's effective target.
+	/// \brief Replace the mesh and corner sphere pipelines for the player's effective target.
 	///
-	/// Draws indexed triangle lists with depth testing and writing. Failures are logged and leave drawing disabled.
+	/// Draws indexed triangle lists and corner spheres with depth testing and writing. Failures are logged and
+	/// disable the affected drawing.
 	///
 	/// \param device The application's GPU device, which outlives the applet.
 	/// \param player The player providing the effective scene render target.
@@ -94,6 +100,14 @@ public:
 		if (m_pipeline)
 			SDL_ReleaseGPUGraphicsPipeline(m_device->handle(), m_pipeline);
 		m_pipeline = nullptr;
+
+		// Create the corner renderer for the effective scene target
+		cornerRenderer.reset();
+		auto renderer = fcg::EllipsoidRenderer::create(player);
+		if (renderer)
+			cornerRenderer.emplace(std::move(*renderer));
+		else
+			SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Creating corner renderer: %s", renderer.error().message.c_str());
 
 		// Load the embedded app shader stages.
 		auto shader = fcg::res::shader(res::shaders::FS, "simple_shapes");
@@ -179,7 +193,10 @@ public:
 		// Nothing to do.
 	}
 
-	/// Shows a window with a combo box for selecting the shape, followed by the selected shape's parameter widgets.
+	/// \brief Shows shape selection, shape-specific parameters, and corner sphere visibility, radius and color controls.
+	///
+	/// \param device The application's GPU device.
+	/// \param player The player supplying GUI layout and scaling information.
 	void gui (fcg::Device &device, fcg::Player &player) override
 	{
 		// Start our widget
@@ -211,17 +228,84 @@ public:
 		// GUI for the currently selected shape's parameters.
 		shapes[selectedShape]->gui();
 
+		// Configure corner markers independently of the selected shape's parameters
+		ImGui::Separator();
+		ImGui::Checkbox("Show corners", &showCorners);
+		ImGui::BeginDisabled(!showCorners);
+		ImGui::SetNextItemWidth(-ImGui::CalcTextSize("Corner radius (%)").x - ImGui::GetStyle().ItemInnerSpacing.x);
+		if (ImGui::SliderFloat("Corner radius (%)", &cornerRadiusPercent, .1f, 25.f, "%.1f%%",
+			ImGuiSliderFlags_AlwaysClamp))
+			cornerRadiusDirty = true;
+		ImGui::SetItemTooltip("Sphere radius as a percentage of the shape's circumradius.");
+		ImGui::SetNextItemWidth(-ImGui::CalcTextSize("Corner color").x - ImGui::GetStyle().ItemInnerSpacing.x);
+		if (ImGui::ColorEdit3("Corner color", &cornerColor.x))
+			cornerColorDirty = true;
+		ImGui::EndDisabled();
+
 		ImGui::End();
 	}
 
-	/// Regenerates and uploads the selected shape's geometry if its parameters have changed.
-	void update (fcg::Device &device, fcg::Player &player, float dt) override {
-		// Make sure our shape is up-to-date and ready to render
-		shapes[selectedShape]->update(device);
+	/// \brief Updates the selected mesh and refreshes visible corner attributes after successful geometry uploads.
+	///
+	/// \param device The device on which to upload mesh and corner data.
+	/// \param player The application's player.
+	/// \param dt The elapsed time since the preceding update, in seconds.
+	void update (fcg::Device &device, fcg::Player &player, float dt) override
+	{
+		// Invalidate cached corner markers when switching shapes or regenerating their geometry, including while hidden
+		auto &shape = *shapes[selectedShape];
+		if (cornerShape != &shape || shape.dirty()) {
+			cornerShape = &shape;
+			cornerPositionsDirty = true;
+			cornersReady = false;
+		}
+		shape.update(device);
+		if (!showCorners || shape.dirty() || !shape.numIndices() || !cornerAttributes)
+			return;
+		if (!cornerPositionsDirty && !cornerRadiusDirty && !cornerColorDirty)
+			return;
+
+		// Measure the generated corners only when their positions change
+		float circumradius = cornerCircumradius;
+		if (cornerPositionsDirty) {
+			circumradius = 0.f;
+			for (const auto &position : shape.corners())
+				circumradius = std::max(circumradius, glm::length(glm::vec3(position) / position.w));
+		}
+
+		// Upload positions on geometry changes and use shared constants for radius and color edits
+		auto result = cornerAttributes->setAttributes([&](fcg::PrimitiveAttributes::Update &attributes)
+		{
+			if (cornerPositionsDirty)
+				attributes.set<fcg::Attribute::Position>(shape.corners());
+			if (cornerPositionsDirty || cornerColorDirty)
+				attributes.set<fcg::Attribute::Color>(glm::vec4(cornerColor, 1.f));
+			if (cornerPositionsDirty || cornerRadiusDirty)
+				attributes.set<fcg::Attribute::Extent>(glm::vec3(cornerRadiusPercent / 100.f * circumradius));
+		});
+		if (!result) {
+			cornersReady = false;
+			SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Updating corner spheres: %s", result.error().message.c_str());
+			return;
+		}
+
+		// Publish marker state only after the complete attribute update succeeds
+		cornerCircumradius = circumradius;
+		cornerPositionsDirty = false;
+		cornerRadiusDirty = false;
+		cornerColorDirty = false;
+		cornersReady = true;
 	}
 
-	/// Draws the selected shape with the current viewing transformation. Draws nothing if pipeline creation failed or
-	/// the shape has no uploaded geometry.
+	/// \brief
+	/// 	Draws the selected shape and enabled corner spheres with the current viewing transformation; requires an
+	/// 	available mesh pipeline and uploaded geometry.
+	///
+	/// \param device The device shared by the pipelines and active render pass.
+	/// \param rs The current camera's viewing transformations.
+	/// \param renderPass The active scene pass compatible with the pipelines.
+	/// \param commandBuffer The command buffer containing the active render pass.
+	/// \param player The application's player.
 	void render (
 		fcg::Device &device, fcg::RenderState &rs, SDL_GPURenderPass *renderPass,
 		SDL_GPUCommandBuffer *commandBuffer, fcg::Player &player
@@ -242,7 +326,9 @@ public:
 
 		// Bind the shape's geometry buffers.
 		auto vertexBinding = shape.vertexBuffer()->bindVertex(renderPass);
-		auto indexBinding = shape.indexBuffer()->bindIndex(renderPass, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+		auto indexBinding = shape.indexBuffer()->bindIndex(
+			renderPass, SDL_GPU_INDEXELEMENTSIZE_32BIT
+		);
 		if (!vertexBinding || !indexBinding) {
 			const auto &error = !vertexBinding ? vertexBinding.error() : indexBinding.error();
 			SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Binding geometry: %s", error.message.c_str());
@@ -253,6 +339,20 @@ public:
 		SDL_DrawGPUIndexedPrimitives(
 			renderPass, shape.numIndices(), 1, 0, 0, 0
 		);
+
+		// Draw the corner spheres against the mesh's depth with the same camera transformation
+		if (showCorners && cornersReady && cornerRenderer)
+		{
+			fcg::DrawOptions options;
+			options.lighting.enabled = true;
+			options.lighting.direction = glm::vec3(1.f / 3.f, 1.f / 3.f, 1.f);
+			if (auto result = cornerRenderer->draw(
+			    	*cornerAttributes, rs, commandBuffer, renderPass, options
+			    );  !result)
+				SDL_LogError(
+					SDL_LOG_CATEGORY_APPLICATION, "Drawing corner spheres: %s", result.error().message.c_str()
+				);
+		}
 	}
 
 
@@ -272,6 +372,39 @@ protected:
 
 	/// The graphics pipeline used to render the simple shapes, or \c nullptr if its creation failed.
 	SDL_GPUGraphicsPipeline *m_pipeline = nullptr;
+
+	/// The corner sphere renderer for the effective scene target, empty if creation failed.
+	std::optional<fcg::EllipsoidRenderer> cornerRenderer;
+
+	/// Owned sphere positions and shared color and extent values on the applet's device.
+	std::unique_ptr<fcg::PrimitiveAttributes> cornerAttributes;
+
+	/// Whether the GUI enables drawing corner spheres.
+	bool showCorners = false;
+
+	/// The sphere radius as a percentage of the selected shape's circumradius.
+	float cornerRadiusPercent = 2.5f;
+
+	/// The shared RGB color of the opaque corner spheres.
+	glm::vec3 cornerColor{1.f, .65f, .1f};
+
+	/// The shape whose geometry is being tracked for marker updates.
+	const SimpleShape *cornerShape = nullptr;
+
+	/// Whether corner positions need uploading after a shape selection or geometry change.
+	bool cornerPositionsDirty = true;
+
+	/// Whether the shared sphere extent needs updating after a radius edit.
+	bool cornerRadiusDirty = true;
+
+	/// Whether the shared sphere color needs updating after a color edit.
+	bool cornerColorDirty = true;
+
+	/// Whether the marker attributes match the successfully uploaded selected mesh and requested radius and color.
+	bool cornersReady = false;
+
+	/// The object-space circumradius associated with the uploaded corner positions.
+	float cornerCircumradius = 0.f;
 };
 
 
