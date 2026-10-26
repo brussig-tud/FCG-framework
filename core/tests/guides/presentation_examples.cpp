@@ -65,6 +65,10 @@ public:
 		ImGui::SliderFloat ("Blue gamma", &correction.gamma.b, .1f, 4.f, "%.3f", ImGuiSliderFlags_AlwaysClamp);
 		if (ImGui::Button("Reset gamma and RGB bounds"))
 			correction = {.gamma = glm::vec3(1)};
+		// [scene_redraw]
+		if (ImGui::ColorEdit3("Background", &player.clearColor().r))
+			player.requireSceneRedraw();
+		// [scene_redraw]
 		ImGui::End();
 	}
 	// [builtin_gamma]

@@ -228,6 +228,7 @@ public:
 				break;
 			case 2:
 				observed.depth = player.scheduleDepthReadback();
+				player.requireSceneRedraw();
 				accept(player.setSceneFormat(other));
 				require(!player.setSceneFormat(SDL_GPU_TEXTUREFORMAT_D32_FLOAT), "Invalid request accepted after valid request");
 				require(player.mainRenderTargetInfo()->colorFormat == effective, "Update request applied during frame");
@@ -239,6 +240,7 @@ public:
 				break;
 			case 4:
 				require(observed.generations == 3, "Requesting effective format did not cancel pending change");
+				player.requireSceneRedraw();
 				accept(player.setSceneFormat(floating));
 				resize(player, 640, 360);
 				break;

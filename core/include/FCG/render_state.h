@@ -18,7 +18,7 @@
 /// until the stacks change. <tt>\ref fcg::ViewingUniforms "ViewingUniforms"</tt> is the uniform block that carries
 /// these matrices into shaders.
 ///
-/// In applications run by <tt>\ref fcg::run "run"</tt>, one render state is created per frame and passed to every
+/// In applications run by <tt>\ref fcg::run "run"</tt>, one render state is created per scene refresh and passed to every
 /// applet's <tt>\ref fcg::Applet::render "Applet::render"</tt> callback in applet order, so a camera applet can install
 /// its matrices for the applets that follow.
 ///
@@ -192,7 +192,7 @@ static_assert(sizeof(ViewingUniforms) == 6 * sizeof(glm::mat4) + 2 * sizeof(Std1
 /// return values that have already been computed. Their precondition is that the non-const overload has been called
 /// since the last change to the matrix stacks. A change is any load, multiplication or pop.
 ///
-/// The framework creates one render state per frame and passes it to \c Applet::render of every applet in turn.
+/// The framework creates one render state per scene refresh and passes it to \c Applet::render of every applet in turn.
 /// Camera applets typically load their view and projection matrices into it, and subsequent applets read the matrices
 /// or upload them to their shaders with <tt>\ref pushViewingUniforms</tt>.
 ///

@@ -42,14 +42,15 @@
 ///
 /// \section fcg_windows_workflows Common tasks
 /// \subsection fcg_windows_workflows_frame Recording a frame
-/// A displayed scene frame consists of a scene pass, explicit presentation, and an optional overlay pass. Start
+/// A displayed frame consists of an optional scene refresh, explicit presentation, and an optional overlay pass. Start
 /// the scene pass with <tt>\ref fcg::Frame::beginRenderPass "Frame::beginRenderPass"</tt>, which clears the scene color
 /// and depth, and end it with <tt>\ref fcg::Frame::endRenderPass "endRenderPass"</tt>. Call
 /// <tt>\ref fcg::Frame::present "present"</tt> with a recorder that writes the final window colors. After successful
 /// presentation, draw the GUI, or anything else that should appear on top of the presented image, in the depth-free
 /// overlay pass from <tt>\ref fcg::Frame::beginOverlayRenderPass "beginOverlayRenderPass"</tt>. Finish with
-/// <tt>\ref fcg::Window::endFrame "endFrame"</tt> to submit the recorded commands. Presenting without a completed
-/// scene pass leaves the presented contents undefined.
+/// <tt>\ref fcg::Window::endFrame "endFrame"</tt> to submit the recorded commands. Scene color and depth persist
+/// across frames, so later frames can skip the scene pass and present its retained contents. Render the scene
+/// before its first presentation and after a resize or scene-format change replaces its storage.
 ///
 /// \subsection fcg_windows_workflows_formats Querying formats
 /// <tt>\ref fcg::Window::renderTargetInfo "Window::renderTargetInfo"</tt> returns the color format, depth format and

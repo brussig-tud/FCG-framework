@@ -99,6 +99,16 @@ foreach(scenario normal startup window gui-context gui-platform gui-renderer gui
 		FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
 endforeach()
 
+# Conditional scene refresh, retained attachments and event-loop scheduling through narrow SDL substitutions.
+add_executable(scene-redraw-smoke lifecycle/scene_redraw.cpp)
+target_compile_definitions(scene-redraw-smoke PRIVATE FCG_FRAMEWORK_STATIC_DEFINE)
+target_link_libraries(scene-redraw-smoke PRIVATE Core)
+foreach(scenario requests caret unavailable attachments continuous cameras failure)
+	add_test(NAME scene-redraw-${scenario} COMMAND scene-redraw-smoke ${scenario})
+	set_tests_properties(scene-redraw-${scenario} PROPERTIES TIMEOUT 60
+		FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-;without a matching push")
+endforeach()
+
 # Real runtime presentation registration, failure handling and capture lifetimes.
 add_executable(presentation-smoke lifecycle/presentation.cpp)
 target_link_libraries(presentation-smoke PRIVATE Core)

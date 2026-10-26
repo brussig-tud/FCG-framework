@@ -215,8 +215,10 @@ public:
 		{
 			for (unsigned i=0; i<(unsigned)SS::NUM; ++i) {
 				const bool isSelected = (i == static_cast<std::size_t>(selectedShape));
-				if (ImGui::Selectable(shapes[i]->name(), isSelected))
+				if (ImGui::Selectable(shapes[i]->name(), isSelected)) {
 					selectedShape = static_cast<int>(i);
+					player.requireSceneRedraw();
+				}
 				if (isSelected)
 					ImGui::SetItemDefaultFocus();
 			}
@@ -230,7 +232,8 @@ public:
 
 		// Configure corner markers independently of the selected shape's parameters
 		ImGui::Separator();
-		ImGui::Checkbox("Show corners", &showCorners);
+		if (ImGui::Checkbox("Show corners", &showCorners))
+			player.requireSceneRedraw();
 		ImGui::BeginDisabled(!showCorners);
 		ImGui::SetNextItemWidth(-ImGui::CalcTextSize("Corner radius (%)").x - ImGui::GetStyle().ItemInnerSpacing.x);
 		if (ImGui::SliderFloat("Corner radius (%)", &cornerRadiusPercent, .1f, 25.f, "%.1f%%",
@@ -254,10 +257,12 @@ public:
 	{
 		// Invalidate cached corner markers when switching shapes or regenerating their geometry, including while hidden
 		auto &shape = *shapes[selectedShape];
-		if (cornerShape != &shape || shape.dirty()) {
+		if (cornerShape != &shape || shape.dirty())
+		{
 			cornerShape = &shape;
 			cornerPositionsDirty = true;
 			cornersReady = false;
+			player.requireSceneRedraw();
 		}
 		shape.update(device);
 		if (!showCorners || shape.dirty() || !shape.numIndices() || !cornerAttributes)
@@ -286,6 +291,7 @@ public:
 		if (!result) {
 			cornersReady = false;
 			SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Updating corner spheres: %s", result.error().message.c_str());
+			player.requireSceneRedraw();
 			return;
 		}
 
@@ -295,6 +301,7 @@ public:
 		cornerRadiusDirty = false;
 		cornerColorDirty = false;
 		cornersReady = true;
+		player.requireSceneRedraw();
 	}
 
 	/// \brief

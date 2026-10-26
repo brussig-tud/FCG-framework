@@ -40,7 +40,7 @@ namespace fcg {
 // Player
 
 Player::Player(Device &device, Window *mainWindow, std::span<std::unique_ptr<Applet>> applets)
-	: m_device(device), m_window(mainWindow), applets(applets)
+	: m_device(device), window(mainWindow), applets(applets)
 {}
 
 Player::~Player() {
@@ -50,36 +50,40 @@ Player::~Player() {
 }
 
 auto Player::guiUnitScale () const noexcept -> float {
-	return m_gui ? m_gui->unitScale() : 1.f;
+	return gui ? gui->unitScale() : 1.f;
 }
 
 void Player::setWindowTitle (const std::string &title)
 {
 	// A player that was not created by fcg::run has no main window to talk to
-	if (!m_window) {
+	if (!window) {
 		SDL_LogWarn(
 			SDL_LOG_CATEGORY_APPLICATION,
 			"fcg::Player::setWindowTitle() called on a player that is not connected to a main window"
 		);
 		return;
 	}
-	m_window->setTitle(title);
+	window->setTitle(title);
+}
+
+void Player::requireSceneRedraw () noexcept {
+	sceneRedrawRequired = true;
 }
 
 void Player::pushContinuousRedraw () {
-	if (m_numContinuousRedrawRequests == 0)
+	if (continuousRedrawRequests == 0)
 		SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: starting continuous redraw");
-	++m_numContinuousRedrawRequests;
+	++continuousRedrawRequests;
 }
 
 void Player::setPresentationRecorder (PresentationRecorder recorder) {
-	if (m_presenting)
+	if (presenting)
 		throw std::logic_error("Cannot replace presentation during recorder invocation");
 	m_presentationRecorder = std::move(recorder);
 }
 
 void Player::clearPresentationRecorder () {
-	if (m_presenting)
+	if (presenting)
 		throw std::logic_error("Cannot clear presentation during recorder invocation");
 	m_presentationRecorder = {};
 }
@@ -87,11 +91,11 @@ void Player::clearPresentationRecorder () {
 auto Player::initializePresentation () -> std::expected<void, FullscreenError>
 {
 	// No presentation without window
-	if (!m_window)
+	if (!window)
 		return std::unexpected(FullscreenError{FullscreenErrorCode::InvalidState, "No main window to present"});
 
 	// Create our canonical sRGB fullscreen pass
-	auto pass = FullscreenPass::linearToSRGB(m_device, m_window->swapchainFormat());
+	auto pass = FullscreenPass::linearToSRGB(m_device, window->swapchainFormat());
 	if (!pass)
 		return std::unexpected(pass.error());
 
@@ -117,13 +121,13 @@ auto Player::presentFrame () -> std::expected<void, FullscreenError>
 	if (!frame)
 		return std::unexpected(FullscreenError{FullscreenErrorCode::InvalidState, "No acquired frame to present"});
 	auto &recorder = m_presentationRecorder ? m_presentationRecorder : m_defaultPresentationRecorder;
-	m_presenting = true;
+	presenting = true;
 	try {
 		auto result = frame->present(recorder);
-		m_presenting = false;
+		presenting = false;
 		return result;
 	} catch (...) {
-		m_presenting = false;
+		presenting = false;
 		throw;
 	}
 }
@@ -131,36 +135,36 @@ auto Player::presentFrame () -> std::expected<void, FullscreenError>
 void Player::popContinuousRedraw ()
 {
 	// Clamp at zero – an unbalanced pop is a bug in the calling applet, but not fatal
-	if (m_numContinuousRedrawRequests < 1) {
+	if (continuousRedrawRequests < 1) {
 		SDL_LogWarn(
 			SDL_LOG_CATEGORY_APPLICATION,
 			"fcg::Player::popContinuousRedraw() called without a matching pushContinuousRedraw()"
 		);
 		return;
 	}
-	--m_numContinuousRedrawRequests;
-	if (m_numContinuousRedrawRequests == 0)
+	--continuousRedrawRequests;
+	if (continuousRedrawRequests == 0)
 		SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: stopping continuous redraw");
 }
 
 auto Player::continuousRedrawRequested () const -> bool {
-	return m_numContinuousRedrawRequests > 0;
+	return continuousRedrawRequests > 0;
 }
 
 void Player::requestClose ()
 {
 	m_closeRequested.store(true);
-	if (!m_window) {
+	if (!window) {
 		// A player without a window still records the request so callers can observe it via shouldClose().
 		return;
 	}
-	m_window->requestClose();
+	window->requestClose();
 }
 
 auto Player::shouldClose () const -> bool {
 	if (m_closeRequested.load())
 		return true;
-	return m_window && m_window->shouldClose();
+	return window && window->shouldClose();
 }
 
 auto Player::findCamera (std::string_view name) -> std::optional<Camera*> {
@@ -171,11 +175,11 @@ auto Player::findCamera (std::string_view name) -> std::optional<Camera*> {
 }
 
 auto Player::swapchainFormat () const -> SDL_GPUTextureFormat {
-	return m_window ? m_window->swapchainFormat() : SDL_GPU_TEXTUREFORMAT_INVALID;
+	return window ? window->swapchainFormat() : SDL_GPU_TEXTUREFORMAT_INVALID;
 }
 
 auto Player::mainRenderTargetInfo () const -> std::optional<RenderTargetInfo> {
-	return m_window ? m_window->renderTargetInfo() : std::nullopt;
+	return window ? window->renderTargetInfo() : std::nullopt;
 }
 
 auto Player::setSceneFormat (SDL_GPUTextureFormat format) -> std::expected<void, TextureError>
@@ -188,25 +192,25 @@ auto Player::setSceneFormat (SDL_GPUTextureFormat format) -> std::expected<void,
 	if (auto result = detail::validateSceneFormat(&m_device, format); !result)
 		return result;
 	if (format == target->colorFormat)
-		m_pendingSceneFormat.reset();
+		pendingSceneFormat.reset();
 	else
-		m_pendingSceneFormat = format;
+		pendingSceneFormat = format;
 	return {};
 }
 
 auto Player::applySceneFormat () -> bool
 {
-	if (!m_pendingSceneFormat)
+	if (!pendingSceneFormat)
 		return false;
 	const auto previous = mainRenderTargetInfo();
-	if (auto result = m_window->setSceneFormat(*m_pendingSceneFormat); !result)
+	if (auto result = window->setSceneFormat(*pendingSceneFormat); !result)
 		throw std::runtime_error("Applying scene format: " + result.error().message);
-	m_pendingSceneFormat.reset();
+	pendingSceneFormat.reset();
 	return previous->colorFormat != mainRenderTargetInfo()->colorFormat;
 }
 
 auto Player::viewportSize() const -> glm::uvec2 {
-	return m_window ? m_window->viewportSize() : glm::uvec2(0);
+	return window ? window->viewportSize() : glm::uvec2(0);
 }
 
 auto Player::scheduleDepthReadback () -> uint64_t

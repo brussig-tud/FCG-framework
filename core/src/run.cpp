@@ -183,7 +183,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 
 			// Claim the window for the GPU device, then create the framework GUI on top of it. The GUI instance is
 			// destroyed before releasing the window claim, including during exception unwinding.
-			std::unique_ptr<Gui> gui; auto detachGui = [](Player *owner) { owner->m_gui = nullptr; };
+			std::unique_ptr<Gui> gui; auto detachGui = [](Player *owner) { owner->gui = nullptr; };
 			std::unique_ptr<Player, decltype(detachGui)> guiBinding(&player, detachGui);
 			// - take ownership of the applets vector and install a guard to guarantee reverse destruction order. We
 			//   need to do this now to have the guarantee already active in case any step of window-device marriage or
@@ -228,7 +228,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 			// Initialize the applets
 			if (gui)
 			{
-				player.m_gui = gui.get();
+				player.gui = gui.get();
 				// Initialize all applets
 				for (auto &applet : applets) {
 					SDL_LogInfo(
@@ -255,13 +255,19 @@ FCG_FRAMEWORK_EXPORT auto run (
 			auto lastFrameTime = std::chrono::high_resolution_clock::now();
 			while (!player.shouldClose())
 			{
+				// Retain the last animation frame even if callbacks release continuous redraw during this iteration
+				if (player.continuousRedrawRequested())
+					player.requireSceneRedraw();
+
 				// Store un-refreshed viewport size for detecting size changes after the new frame has been acquired
 				const auto oldViewportSize = window->viewportSize();
 
 				// Requests made in callbacks are applied only between iterations, even without a drawable image.
 				const bool sceneFormatChanged = player.applySceneFormat();
-				if (sceneFormatChanged)
+				if (sceneFormatChanged) {
 					pendingRedraws = 2;
+					player.requireSceneRedraw();
+				}
 
 				// Begin the new rendering frame. We need it now because the applets might need to interact with the
 				// player in ways that require the current target textures during their update() or gui() hooks (like
@@ -306,8 +312,10 @@ FCG_FRAMEWORK_EXPORT auto run (
 					window->pollViewportSize(ignoredOldSize);
 				}
 				const bool resized = window->viewportSize() != oldViewportSize;
-				if (resized)
+				if (resized) {
 					player.invalidateReadbacks();
+					player.requireSceneRedraw();
+				}
 				if (sceneFormatChanged)
 					for (auto &applet : applets)
 						applet->recreatePipelines(device, player);
@@ -316,7 +324,8 @@ FCG_FRAMEWORK_EXPORT auto run (
 						applet->onViewportResize(device, oldViewportSize, player);
 
 				// Event handling
-				if (player.continuousRedrawRequested() || pendingRedraws > 0 || player.m_pendingSceneFormat)
+				if (   player.continuousRedrawRequested() || pendingRedraws > 0 || player.pendingSceneFormat
+					|| (player.frame && player.sceneRedrawRequired))
 				{
 					// Non-blocking mode: process all pending events without waiting. Any event could change GUI
 					// state, so schedule follow-up redraws to let the GUI fully manifest the results.
@@ -380,18 +389,24 @@ FCG_FRAMEWORK_EXPORT auto run (
 					applet->update(device, player, dt);
 				}
 
-				// Render a frame: all applets draw into the primary render pass (with depth buffer), then the GUI is
-				// rendered on top in a separate overlay pass without depth attachment.
+				// Finalize GUI uploads before scene rendering and presentation
 				gui->prepareRender(player.frame);
 				if (player.frame)
 				{
 					// Common logic to both scene render and overlay pass guards
 					auto endPass = [](Frame *frame) { frame->endRenderPass(); };
 
-					// Render the scene
-					auto rs = RenderState(device);
-					if (auto *renderPass = player.frame->beginRenderPass(player.clearColor())) {
+					// Refresh the retained scene only when requested or while animating
+					if (player.sceneRedrawRequired || player.continuousRedrawRequested())
+					{
+						auto rs = RenderState(device);
+						auto *renderPass = player.frame->beginRenderPass(player.clearColor());
+						if (!renderPass)
+							throw std::runtime_error("Beginning the scene render pass failed");
 						std::unique_ptr<Frame, decltype(endPass)> passGuard(player.frame, endPass);
+
+						// Consume before callbacks so requests made while drawing survive for the next frame
+						player.sceneRedrawRequired = false;
 						for (auto &applet : applets)
 							applet->render(device, rs, renderPass, player.frame->commandBuffer(), player);
 					}

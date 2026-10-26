@@ -80,10 +80,19 @@ auto Camera2D::name () const -> const std::string& {
 	return name;
 }
 
-void Camera2D::init (Device&, Player&) {}
+void Camera2D::init (Device&, Player &player) {
+	m_player = &player;
+	requireSceneRedraw();
+}
+
+void Camera2D::requireSceneRedraw () const noexcept {
+	if (m_player)
+		m_player->requireSceneRedraw();
+}
 
 void Camera2D::onViewportResize (Device&, const glm::uvec2&, Player&) {
 	projMatrix.reset();
+	requireSceneRedraw();
 	focusChange->resized();
 }
 
@@ -97,18 +106,21 @@ void Camera2D::setFovY (const CameraParameters::Intrinsics::FovY &fovY)
 	focusChange->cancel();
 	m_params.intrinsics.fovY = CameraParameters::Intrinsics::OrthoExtend{height};
 	projMatrix.reset();
+	requireSceneRedraw();
 }
 
 void Camera2D::setViewHeight (float height) {
 	setFovY(CameraParameters::Intrinsics::OrthoExtend{height});
 }
 
-void Camera2D::setFocalLength (float f) {
+void Camera2D::setFocalLength (float f)
+{
 	detail::requireFinite(f);
 	f = glm::max(f, .001f);
 	detail::requireEye(m_params.extrinsics.eye, m_params.extrinsics.dir, m_params.extrinsics.up, f);
 	focusChange->cancel();
 	m_params.intrinsics.f = f;
+	requireSceneRedraw();
 }
 
 void Camera2D::setNearPlane (float zNear)
@@ -120,6 +132,7 @@ void Camera2D::setNearPlane (float zNear)
 	m_params.intrinsics.zNear = zNear;
 	m_params.intrinsics.zFar = zFar;
 	projMatrix.reset();
+	requireSceneRedraw();
 }
 
 void Camera2D::setFarPlane (float zFar) {
@@ -127,6 +140,7 @@ void Camera2D::setFarPlane (float zFar) {
 	focusChange->cancel();
 	m_params.intrinsics.zFar = glm::max(zFar, detail::minimumFar(m_params.intrinsics.zNear));
 	projMatrix.reset();
+	requireSceneRedraw();
 }
 
 void Camera2D::setEye (const glm::vec3 &eye) {
@@ -134,6 +148,7 @@ void Camera2D::setEye (const glm::vec3 &eye) {
 	focusChange->cancel();
 	m_params.extrinsics.eye = eye;
 	viewMatrix.reset();
+	requireSceneRedraw();
 }
 
 void Camera2D::setEyeZ (float z) {
@@ -150,6 +165,7 @@ void Camera2D::setOrientationUnchecked (const glm::vec3 &dir, const glm::vec3 &u
 	focusChange->cancel();
 	m_params.extrinsics = pose;
 	viewMatrix.reset();
+	requireSceneRedraw();
 }
 
 void Camera2D::setRotation (float angle) {

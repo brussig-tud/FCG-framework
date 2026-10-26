@@ -94,7 +94,7 @@ public:
 			throw std::runtime_error(maybeSampler.error().message);
 
 		// Load initial placeholder image
-		loadImage(device, "assets/cgvlogo.png");
+		loadImage(device, "assets/cgvlogo.png", player);
 	}
 
 	/// \brief Replace the quad renderer for the effective scene format.
@@ -229,9 +229,10 @@ protected:
 	///
 	/// \param device The device to create the texture on.
 	/// \param filepath The path of the image file to load.
+	/// \param player The player whose scene is refreshed after uploading the image.
 	///
 	/// \throws std::runtime_error if uploading the image fails.
-	void loadImage (fcg::Device &device, const std::filesystem::path &filepath)
+	void loadImage (fcg::Device &device, const std::filesystem::path &filepath, fcg::Player &player)
 	{
 		// Load from file
 		auto maybeImage = fcg::ImageLoader::global().load(filepath);
@@ -247,6 +248,7 @@ protected:
 
 		// Upload
 		uploadImage(device);
+		player.requireSceneRedraw();
 	}
 
 	/// \brief
@@ -276,7 +278,7 @@ protected:
 
 		// Try to load the selected image if any
 		if (!selected->paths.empty() && !selected->paths.front().empty())
-			loadImage(player.device(), selected->paths.front());
+			loadImage(player.device(), selected->paths.front(), player);
 	}
 
 

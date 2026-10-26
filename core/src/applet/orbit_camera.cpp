@@ -82,10 +82,19 @@ auto OrbitCamera::name () const -> const std::string& {
 	return name;
 }
 
-void OrbitCamera::init (Device&, Player&) {}
+void OrbitCamera::init (Device&, Player &player) {
+	m_player = &player;
+	requireSceneRedraw();
+}
+
+void OrbitCamera::requireSceneRedraw () const noexcept {
+	if (m_player)
+		m_player->requireSceneRedraw();
+}
 
 void OrbitCamera::onViewportResize (Device&, const glm::uvec2&, Player&) {
 	projMatrix.reset();
+	requireSceneRedraw();
 	focusChange->resized();
 }
 
@@ -101,14 +110,17 @@ void OrbitCamera::setFovY (float fovY) {
 	focusChange->cancel();
 	m_params.intrinsics.fovY = CameraParameters::Intrinsics::PerspectiveFov{glm::clamp(fovY, 1.f, 179.f)};
 	projMatrix.reset();
+	requireSceneRedraw();
 }
 
-void OrbitCamera::setFocalLength (float f) {
+void OrbitCamera::setFocalLength (float f)
+{
 	detail::requireFinite(f);
 	f = glm::max(f, .001f);
 	detail::requireEye(m_params.extrinsics.eye, m_params.extrinsics.dir, m_params.extrinsics.up, f);
 	focusChange->cancel();
 	m_params.intrinsics.f = f;
+	requireSceneRedraw();
 }
 
 void OrbitCamera::setNearPlane (float zNear)
@@ -120,6 +132,7 @@ void OrbitCamera::setNearPlane (float zNear)
 	m_params.intrinsics.zNear = zNear;
 	m_params.intrinsics.zFar = zFar;
 	projMatrix.reset();
+	requireSceneRedraw();
 }
 
 void OrbitCamera::setFarPlane (float zFar) {
@@ -127,6 +140,7 @@ void OrbitCamera::setFarPlane (float zFar) {
 	focusChange->cancel();
 	m_params.intrinsics.zFar = glm::max(zFar, detail::minimumFar(m_params.intrinsics.zNear));
 	projMatrix.reset();
+	requireSceneRedraw();
 }
 
 void OrbitCamera::setEye (const glm::vec3 &eye) {
@@ -134,6 +148,7 @@ void OrbitCamera::setEye (const glm::vec3 &eye) {
 	focusChange->cancel();
 	m_params.extrinsics.eye = eye;
 	viewMatrix.reset();
+	requireSceneRedraw();
 }
 
 void OrbitCamera::setOrientationUnchecked (const glm::vec3 &dir, const glm::vec3 &up) {
@@ -141,6 +156,7 @@ void OrbitCamera::setOrientationUnchecked (const glm::vec3 &dir, const glm::vec3
 	focusChange->cancel();
 	m_params.extrinsics = pose;
 	viewMatrix.reset();
+	requireSceneRedraw();
 }
 
 void OrbitCamera::setFocalPoint (const glm::vec3 &focalPoint)
@@ -164,6 +180,7 @@ void OrbitCamera::setFocalPoint (const glm::vec3 &focalPoint)
 	m_params.extrinsics.dir = glm::normalize(dir);
 	m_params.extrinsics.up = up;
 	viewMatrix.reset();
+	requireSceneRedraw();
 }
 
 void OrbitCamera::translateToFocalPoint (const glm::vec3 &focalPoint) {
@@ -180,6 +197,7 @@ void OrbitCamera::resetRotation ()
 	focusChange->cancel();
 	m_params.extrinsics = {.eye=eye, .dir={0, 0, -1}, .up={0, 1, 0}};
 	viewMatrix.reset();
+	requireSceneRedraw();
 }
 
 void OrbitCamera::resetFocus () {
@@ -250,6 +268,7 @@ void OrbitCamera::onEvent (const Event &event, EventContext &context, Player &pl
 				focusChange->cancel();
 				m_params.extrinsics = {.eye=focus - f * newDir, .dir=newDir, .up=newUp};
 				viewMatrix.reset();
+				requireSceneRedraw();
 			}
 		}
 		else if (activeDragButton == MouseButton::Right)

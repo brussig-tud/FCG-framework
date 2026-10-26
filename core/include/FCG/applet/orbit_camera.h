@@ -145,12 +145,15 @@ public:
 	/// \return <tt>"Orbit Camera"</tt>.
 	[[nodiscard]] auto name () const -> const std::string& override;
 
-	/// \brief Does nothing; the camera is fully usable from construction on.
+	/// \brief Connect camera changes to scene refreshes in the player.
 	///
-	/// \param device
-	/// 	Unused.
-	/// \param player
-	/// 	Unused.
+	/// Camera setters are usable before initialization. After initialization, changes request a scene refresh
+	/// from \c player, including changes made through a camera pointer from another applet.
+	///
+	/// \pre The player outlives this camera.
+	///
+	/// \param device Unused.
+	/// \param player The player running this camera, borrowed until camera destruction.
 	void init (Device &device, Player &player) override;
 
 	/// \brief No pipelines are needed by this camera.
@@ -398,7 +401,17 @@ public:
 private:
 
 	////
+	// Methods
+
+	/// Request a scene refresh from the player bound during initialization, if any.
+	void requireSceneRedraw () const noexcept;
+
+
+	////
 	// Fields
+
+	/// The player running this camera, borrowed from initialization until applet destruction.
+	Player *m_player = nullptr;
 
 	/// The current camera parameters, as returned by \c params.
 	CameraParameters m_params;

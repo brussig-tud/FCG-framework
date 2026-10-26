@@ -43,6 +43,8 @@
 /// - query and change the scene clear color (<tt>\ref fcg::Player::clearColor "clearColor"</tt>);
 /// - adjust built-in scene gamma correction and RGB bounds
 ///   (<tt>\ref fcg::Player::gammaCorrection "gammaCorrection"</tt>);
+/// - request a scene refresh after changing content
+///   (<tt>\ref fcg::Player::requireSceneRedraw "requireSceneRedraw"</tt>);
 /// - request continuous redraws while animating
 ///   (<tt>\ref fcg::Player::pushContinuousRedraw "pushContinuousRedraw"</tt>);
 /// - look up a camera applet by name (<tt>\ref fcg::Player::findCamera "findCamera"</tt>);
@@ -55,6 +57,18 @@
 ///   focus picking as done by <tt>\ref fcg::CameraFocus "CameraFocus"</tt>;
 /// - replace the main window's scene presentation
 ///   (<tt>\ref fcg::Player::setPresentationRecorder "setPresentationRecorder"</tt>).
+///
+/// \subsection fcg_runtime_workflows_redraw Refreshing the scene
+/// Call <tt>\ref fcg::Player::requireSceneRedraw "Player::requireSceneRedraw"</tt> after changing scene content,
+/// including <tt>\ref fcg::Player::clearColor "Player::clearColor"</tt>. Requests made in input, GUI or update
+/// callbacks refresh the current drawable frame; requests made during scene rendering or presentation refresh the
+/// next drawable frame. Repeated requests coalesce and remain pending while minimized. Startup, viewport changes and
+/// scene-format changes refresh the scene automatically. Continuous redraw requests refresh it on every drawable
+/// iteration, including the iteration that releases the request.
+/// \snippet presentation_examples.cpp scene_redraw
+/// GUI-only iterations still run every applet's <tt>\ref fcg::Applet::gui "gui"</tt> and
+/// <tt>\ref fcg::Applet::update "update"</tt>, present the retained scene and draw the GUI overlay. Changes to
+/// gamma or presentation parameters take effect at presentation without requiring a scene refresh.
 ///
 /// \subsection fcg_runtime_workflows_gamma Adjusting built-in gamma correction
 /// Built-in scene presentation converts linear colors to sRGB, applies gamma correction, then clamps RGB. Use
@@ -77,9 +91,10 @@
 /// To replace built-in presentation, install one application-wide
 /// <tt>\ref fcg::PresentationRecorder "PresentationRecorder"</tt> through
 /// <tt>\ref fcg::Player::setPresentationRecorder "Player::setPresentationRecorder"</tt> whose job it is to record the
-/// rendering commands for presenting the scene image. Each rendered frame runs all
-/// <tt>\ref fcg::Applet::render "Applet::render"</tt> scene contributions, then the registered presentation recorder,
-/// then Dear ImGui rendering. Presentation is skipped when no window image has been acquired.
+/// rendering commands for presenting the scene image. Every drawable iteration runs the registered presentation
+/// recorder, then Dear ImGui rendering. When a scene refresh is required, all
+/// <tt>\ref fcg::Applet::render "Applet::render"</tt> scene contributions run before presentation; otherwise, the
+/// recorder samples the retained scene. Presentation is skipped when no window image has been acquired.
 ///
 /// This example uses <tt>\ref fcg::FullscreenPass::gammaCorrection "FullscreenPass::gammaCorrection"</tt> to present
 /// the scene with an adjustable gamma curve per channel. It samples linear RGB, applies <tt>pow(rgb, 1/gamma)</tt>
@@ -267,7 +282,7 @@ struct PlayerSettings
 /// 	SDL log. Initialization failures invoke no applet callbacks; event-wait failures can occur after callbacks have run.
 ///
 /// \throws std::runtime_error
-/// 	If acquiring a frame from the main window or presenting it fails at the GPU level.
+/// 	If acquiring or submitting a frame, beginning a required scene pass, or presenting the scene fails.
 FCG_FRAMEWORK_EXPORT int run (
 	std::vector<std::unique_ptr<Applet>> applets, PlayerSettings &&settings = PlayerSettings()
 );

@@ -75,7 +75,7 @@ auto Frame::present (PresentationRecorder &recorder) -> std::expected<void, Full
 	if (!m_commandBuffer || !presentationColorTarget || renderPass ||
 		presentationState != PresentationState::Pending)
 		return std::unexpected(FullscreenError{FullscreenErrorCode::InvalidState,
-			"Presentation requires a completed scene pass and cannot be repeated"});
+			"Presentation requires an unfinished frame without an active pass and cannot be repeated"});
 	if (!recorder)
 		return std::unexpected(FullscreenError{FullscreenErrorCode::InvalidArgument,
 			"Presentation requires a non-empty recorder"});

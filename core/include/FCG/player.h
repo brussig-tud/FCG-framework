@@ -71,9 +71,10 @@ namespace fcg {
 /// \brief The application-wide state of the <tt>\ref fcg::run</tt> main loop, shared by all running applets.
 ///
 /// \c fcg::run creates one player and passes it to every callback of every running <tt>\ref Applet</tt>. Through it,
-/// applets can change the main window title, request continuous redrawing (e.g. while animating), ask the application
-/// to close, look up cameras provided by other applets, query the main window's render-target formats and viewport
-/// size, adjust gamma correction or replace scene presentation with a presentation recorder, and read back the
+/// applets can change the main window title, request scene refreshes or continuous redrawing (e.g. while animating),
+/// ask the application to close, look up cameras provided by other applets, query the main window's render-target
+/// formats and viewport size, adjust gamma correction or replace scene presentation with a presentation recorder,
+/// and read back the
 /// depth buffer of the main viewport.
 ///
 /// All callbacks run on the main thread, so the player is meant to be used from there.
@@ -124,8 +125,8 @@ public:
 
 	/// \brief Read-write reference to the linear RGBA clear color of the scene.
 	///
-	/// In every frame, \c fcg::run clears the scene texture to this color right before calling \c Applet::render, so
-	/// changes made in \c Applet::gui or \c Applet::update affect the same frame. Defaults to a dark blue.
+	/// When rendering the scene, \c fcg::run clears its texture to this color before calling \c Applet::render.
+	/// Call \c requireSceneRedraw after changing the color. Defaults to a dark blue.
 	///
 	/// \return A reference to the clear color, valid for the lifetime of the player.
 	[[nodiscard]] auto clearColor () -> glm::fvec4& {
@@ -181,7 +182,7 @@ public:
 	///
 	/// \return The main window, or \c nullptr if the player has no window. The window outlives the player.
 	[[nodiscard]] auto mainWindow () const -> Window* {
-		return m_window;
+		return window;
 	}
 
 	/// \brief Describe the color and depth attachments that \c Applet::render draws into.
@@ -315,10 +316,24 @@ public:
 	/// \throws std::logic_error If clearing is attempted during recorder invocation.
 	void clearPresentationRecorder ();
 
+	/// \brief Request one refresh of the complete scene view.
+	///
+	/// Call after changing scene content, including the clear color, in an applet callback. Repeated requests before
+	/// scene rendering are combined into one refresh. Requests before rendering affect the current drawable frame;
+	/// requests during scene rendering, presentation or GUI overlay drawing affect the next drawable frame. Requests
+	/// remain pending while no window image is available, for example while minimized.
+	///
+	/// The GUI and presentation run on every drawable iteration, reusing the scene until a refresh is required.
+	/// Continuous redraw requests through \c pushContinuousRedraw also refresh the scene every iteration.
+	///
+	/// \pre Call on the main thread.
+	void requireSceneRedraw () noexcept;
+
 	/// \brief Add a continuous redraw request.
 	///
 	/// While at least one request is active, the main loop starts the next frame as soon as possible instead of
-	/// waiting for events. Use this e.g. while an applet is animating. Balance every call with a call to
+	/// waiting for events, and refreshes the scene on every drawable iteration. Use this e.g. while an applet is
+	/// animating. Balance every call with a call to
 	/// <tt>\ref popContinuousRedraw</tt> when continuous redrawing is not needed anymore.
 	void pushContinuousRedraw ();
 
@@ -347,7 +362,7 @@ public:
 
 	/// \brief Request a readback of the main viewport's depth buffer, i.e. a download of its contents to the CPU.
 	///
-	/// The readback captures the depth buffer as rendered by the most recently submitted frame. Commands recorded in
+	/// The readback captures the depth buffer from the most recently submitted scene refresh. Commands recorded in
 	/// the current frame are not included. Calling this again within the same frame returns the same token, so
 	/// several applets can share one readback.
 	///
@@ -439,23 +454,26 @@ private:
 	PresentationRecorder m_presentationRecorder;
 
 	/// Whether the recorder is currently invoked; prevents destruction of its executing callable.
-	bool m_presenting = false;
+	bool presenting = false;
 
 	/// The main rendering device.
 	Device &m_device;
 
 	/// The main window that applets can interact with through the player. Non-owning – the window is owned by whoever
 	/// created the \c fcg::Player, (e.g., <tt>\ref fcg::run</tt>) and must outlive the player.
-	Window *m_window = nullptr;
+	Window *window = nullptr;
 
 	/// Borrowed GUI, attached by the runtime and detached before its destruction, including on unwinding.
-	Gui *m_gui = nullptr;
+	Gui *gui = nullptr;
 
 	/// The currently ongoing frame. Non-owning reference, managed externally.
 	Frame *frame = nullptr;
 
 	/// Latest validated request, owned by the player until the window accepts its immediate configuration change.
-	std::optional<SDL_GPUTextureFormat> m_pendingSceneFormat;
+	std::optional<SDL_GPUTextureFormat> pendingSceneFormat;
+
+	/// Whether the complete scene must be rendered at the next drawable opportunity.
+	bool sceneRedrawRequired = true;
 
 	/// The current clear color of the main window viewport, in linear RGBA space.
 	glm::fvec4 m_clearColor = {0.0097f, 0.0331f, 0.1329f, 1.0f};
@@ -464,7 +482,7 @@ private:
 	GammaUniforms m_gammaCorrection{.gamma = glm::vec3(1)};
 
 	/// The number of currently active continuous redraw requests.
-	std::atomic<unsigned> m_numContinuousRedrawRequests{0};
+	std::atomic<unsigned> continuousRedrawRequests{0};
 
 	/// Whether closing the application was requested on this player itself.
 	std::atomic<bool> m_closeRequested{false};

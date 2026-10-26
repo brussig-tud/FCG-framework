@@ -105,7 +105,8 @@ using PresentationRecorder = MoveOnlyFunction<std::expected<void, FullscreenErro
 /// - the window image (<tt>\ref presentationTarget</tt>), which is shown in the window.
 ///
 /// A frame is typically recorded in this order:
-/// 1. Render the scene in a pass begun with <tt>\ref beginRenderPass</tt> and ended with <tt>\ref endRenderPass</tt>.
+/// 1. When the scene needs refreshing, render it in a pass begun with <tt>\ref beginRenderPass</tt> and ended with
+///    <tt>\ref endRenderPass</tt>. Otherwise, reuse the retained scene contents.
 /// 2. Call <tt>\ref present</tt> with a recorder that writes display-encoded colors into the window image.
 /// 3. Optionally draw overlays such as the GUI on top of the window image in a pass begun with
 ///    <tt>\ref beginOverlayRenderPass</tt> and ended with <tt>\ref endRenderPass</tt>.
@@ -113,7 +114,9 @@ using PresentationRecorder = MoveOnlyFunction<std::expected<void, FullscreenErro
 ///
 /// Overlays require successful presentation. Frame completion submits the recorded commands; without successful
 /// presentation, the displayed contents are unspecified. A failed recorder permits only frame completion.
-/// When using \c fcg::run, the main loop performs all these steps, and \c Applet::render records into the scene pass.
+/// Initialize the scene before its first presentation and after its storage is replaced by a resize or format
+/// change. When using \c fcg::run, the main loop performs these steps, and \c Applet::render records into the scene
+/// pass whenever a scene refresh is required.
 class FCG_FRAMEWORK_EXPORT Frame
 {
 	////
@@ -253,7 +256,8 @@ public:
 	/// The recorder and context are borrowed only during this call. Obtain fresh scene and target resources each
 	/// invocation, including after resize.
 	///
-	/// Presenting without a completed scene pass in this frame leaves the presented contents undefined.
+	/// The scene may have been rendered in this frame or retained from an earlier submitted frame. Its contents
+	/// must be initialized before presentation, including after a resize or scene-format change replaces storage.
 	///
 	/// \pre
 	/// 	The frame is unfinished, no render pass is active, presentation has not begun, and \p recorder is non-empty.

@@ -70,6 +70,12 @@
 ///   <tt>\ref fcg::RenderState "RenderState"</tt> in the same order. A camera applet placed before a scene applet
 ///   installs its viewing matrices for the scene to draw with.
 ///
+/// \subsection fcg_applets_workflows_scene Refreshing the scene
+/// After changing scene content, call <tt>\ref fcg::Player::requireSceneRedraw "Player::requireSceneRedraw"</tt>.
+/// The next scene pass draws every applet in registration order. GUI-only frames reuse the scene while still
+/// updating widgets and presentation. For example, changing the clear color from a GUI control requires a refresh:
+/// \snippet presentation_examples.cpp scene_redraw
+///
 /// \subsection fcg_applets_workflows_redraw Continuous redraw
 /// By default, the player waits for input before it starts the next main-loop iteration. Applets that animate
 /// something request continuous iterations with
@@ -196,8 +202,7 @@ namespace fcg {
 /// 	- <tt>\ref onViewportResize "onViewportResize"</tt> if the size of the main viewport has changed;
 /// 	- <tt>\ref onEvent "onEvent"</tt> for eligible input events of the main window;
 /// 	- <tt>\ref gui "gui"</tt> followed by <tt>\ref update "update"</tt>, applet by applet;
-/// 	- <tt>\ref render "render"</tt>, but only if a frame could be started (for example, not while the window is
-/// 	  minimized).
+/// 	- <tt>\ref render "render"</tt> when a drawable frame needs a scene refresh.
 /// 4. After the main loop has ended, the applets are destroyed in reverse order. The device and the player are still
 /// 	valid in the destructors.
 ///
@@ -316,7 +321,7 @@ public:
 	virtual void update (Device &device, Player &player, float dt) = 0;
 
 	/// \brief
-	/// 	Called once per frame, after all applets had their <tt>\ref gui "gui"</tt> and
+	/// 	Called when the scene needs refreshing, after all applets had their <tt>\ref gui "gui"</tt> and
 	/// 	<tt>\ref update "update"</tt> turn, to record the applet's draw calls.
 	///
 	/// The render pass targets the frame's scene texture, not the window's swapchain image. Before the first applet
@@ -325,8 +330,10 @@ public:
 	/// <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt>. After all applets have
 	/// rendered, the framework presents the scene to the window and draws the GUI on top.
 	///
-	/// Not called for main-loop iterations in which no frame could be started, for example while the window is
-	/// minimized.
+	/// Call \c Player::requireSceneRedraw after changing scene content. Scene refreshes also occur at startup, after
+	/// viewport or scene-format changes, and while continuous redraw is requested. GUI-only iterations reuse the
+	/// rendered scene without invoking this callback. Rendering is skipped while no window image is available,
+	/// for example while minimized.
 	///
 	/// \param device The GPU device used for rendering.
 	/// \param renderState
