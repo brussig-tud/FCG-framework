@@ -164,7 +164,71 @@ Always use `#define`-based include guards. Infer the appropriate guard macro nam
 
 
 
-## C++ coding style conventions
+## Shader files style conventions
+
+The C++ conventions for banner layout, general commenting and doc comments apply with the shader-specific adaptations below.
+
+
+### File preamble and include guards
+
+Compiled shader stages use a `.<stage>.glsl` suffix, with `<stage>` one of `vert`, `frag` or `comp`. They start with `#version 450` on the first line, immediately followed by any required `#extension` directives, one per line. A stage that uses `#include` requires `#extension GL_GOOGLE_include_directive : require`. Separate the preamble from the first section with 2 blank lines.
+
+Shared GLSL code goes into plain `*.glsl` files without a stage suffix. Such files must not contain `#version` or `#extension` directives and must be protected by a `#define`-based include guard. Start the file with a blank line, then `#ifndef` and `#define` a guard macro derived from the path relative to the shader directory, uppercased and with non-alphanumeric characters replaced by underscores, suffixed with `_GLSL`; for example, `fullscreen/gamma.glsl` uses `FCG_FULLSCREEN_GAMMA_GLSL`. Separate the guard from the first section with 2 blank lines, and close the file with `#endif // <guard>` after 2 blank lines.
+
+
+### Sections
+
+Use the same section banner form as C++:
+
+```glsl
+//////
+//
+// $Section
+//
+```
+
+The permitted sections are the following, normally in this order:
+* `Includes`: the `#include` directives, each introduced by a short `//` comment naming the functionality it provides.
+* `Uniforms`: all descriptor-bound resources, i.e. uniform blocks, samplers, images and storage buffers. Supporting struct declarations used only by these resources belong here as well.
+* `Streams`: the stage interface, always split into `Inputs` and `Outputs` subsections. Supporting struct declarations used only by the stream interface belong here as well.
+* `Constants`: file-scope `const` declarations.
+* `Structs`: data structure definitions other than the supporting declarations kept in `Uniforms` and `Streams`, typically types used only by `Functions`.
+* `Functions`: function definitions and prototypes, including the shader entry point.
+
+GLSL requires declaration before use, so a struct is always declared in the section that first uses it.
+
+Avoid sections other than these unless there is a good reason.
+
+Graphics stages always contain the `Uniforms`, `Streams` and `Functions` sections, even when a section is empty, so the shader's external interface is visible at a glance. Write `/* none */` as the sole content of an empty section or subsection. Omit `Includes`, `Constants` and/or `Structs` if they would be empty. A compute shader has no stream interface and omits `Streams`. Shared GLSL files can also omit `Functions` if they do not define any functions.
+
+The first section is separated from the preamble or include guard by 2 blank lines. All following top-level sections are separated by 3 blank lines after the last content of the preceding section. A section banner is always followed by one blank line before its content.
+
+Split a section only where it naturally divides, using two-line subsection banners. `Streams` always uses an `Inputs` subsection followed by an `Outputs` subsection:
+
+```glsl
+////
+// Inputs
+```
+
+Separate a subsection banner from preceding content by 2 blank lines, and leave one blank line after it before the content.
+
+
+### Doc comments
+
+Document every declared resource, struct and struct member, stream variable, constant and function with a preceding `///` doc comment. A doc comment consists of one sentence ending in a period that states what the declaration represents, including the coordinate space, units or valid range where these are not evident from the type. Do not merely restate the declaration's layout qualifiers. When a uniform block mirrors a C++ type, mention that type, e.g. `/// Gamma and final RGB bounds; matches the C++ GammaUniforms layout.`
+
+Always document the entry point with exactly `/// The shader entry point.` Document members of uniform, storage and stream interface blocks individually, tab-indented with the member, with one blank line between documented members, following the class `Fields` rules. Separate all other documented declarations by at least one blank line.
+
+Shader doc comments are aimed at shader authors rather than at users of the framework. They are not processed by Doxygen, so do not use Doxygen paragraph-level commands or Markdown backticks inside them; refer to GLSL identifiers by name.
+
+Use ordinary `//` comments for explanations inside function bodies, following the *General commenting* rules. Reserve `///` for declaration documentation.
+
+
+
+## Coding style conventions
+
+This section applies to code in all programming languages, even though instructions assume C/C++-like syntax. If a language does not have C/C++-adjecent syntax, then reasonable equivalents should be chosen.
+
 
 ### Formatting function signatures
 
@@ -218,6 +282,9 @@ Whether the opening brace is on the same line as the struct name depends on how 
 
 
 ## Documenting the code
+
+This section applies to code in all programming languages, even though instructions use C/C++-like comment syntax. If a language does not have them, then reasonable equivalents should be chosen.
+
 
 ### General commenting
 

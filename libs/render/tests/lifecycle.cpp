@@ -21,6 +21,7 @@
 #include <FCG/run.h>
 #include <FCG/Render/quad_renderer.h>
 #include <FCG/Render/box_renderer.h>
+#include <FCG/Render/ellipsoid_renderer.h>
 
 
 
@@ -82,6 +83,7 @@ public:
 		quadCulled.reset();
 		box.reset();
 		boxTwoSided.reset();
+		ellipsoid.reset();
 		target = player.mainRenderTargetInfo();
 		if (!target)
 			throw std::runtime_error("Main target missing during initialization");
@@ -89,6 +91,7 @@ public:
 		quadCulled.emplace(take(fcg::QuadRenderer::create(player, {.cullMode = SDL_GPU_CULLMODE_BACK})));
 		box.emplace(take(fcg::BoxRenderer::create(player)));
 		boxTwoSided.emplace(take(fcg::BoxRenderer::create(player, {.cullMode = SDL_GPU_CULLMODE_NONE})));
+		ellipsoid.emplace(take(fcg::EllipsoidRenderer::create(player)));
 		++recreations;
 	}
 
@@ -143,7 +146,7 @@ public:
 		}
 	}
 
-	/// Draw all four factory configurations into the actual main pass, including its depth attachment.
+	/// Draw all factory configurations into the actual main pass, including its depth attachment.
 	void render (
 		fcg::Device&, fcg::RenderState &state, SDL_GPURenderPass *pass,
 		SDL_GPUCommandBuffer *commands, fcg::Player&
@@ -152,6 +155,7 @@ public:
 		check(quadCulled->draw(*attributes, state, commands, pass, {}, {.first = 1}));
 		check(box->draw(*attributes, state, commands, pass));
 		check(boxTwoSided->draw(*attributes, state, commands, pass));
+		check(ellipsoid->draw(*attributes, state, commands, pass));
 		++draws;
 	}
 
@@ -178,6 +182,9 @@ private:
 
 	/// Explicitly two-sided box pipeline.
 	std::optional<fcg::BoxRenderer> boxTwoSided;
+
+	/// Ellipsoid pipeline recreated with the effective scene format.
+	std::optional<fcg::EllipsoidRenderer> ellipsoid;
 
 	/// Shared instance sources.
 	std::unique_ptr<fcg::PrimitiveAttributes> attributes;

@@ -33,14 +33,34 @@ namespace detail {
 
 //////
 //
+// Structs and enums
+//
+
+/// Geometry and shader family used by a primitive renderer.
+enum class PrimitiveKind
+{
+	/// Two-sided planar rectangles.
+	Quad,
+
+	/// Indexed cuboids.
+	Box,
+
+	/// Analytic ellipsoid surfaces covered by a quad.
+	Ellipsoid
+};
+
+
+
+//////
+//
 // Classes
 //
 
 /// \brief
-/// 	GPU resources and draw implementation shared by \c BoxRenderer and <tt>QuadRenderer</tt>.
+/// 	GPU resources and draw implementation shared by the instanced primitive renderers.
 ///
 /// Boxes use an indexed triangle list of 24 vertices and 36 indices. Quads use an unindexed triangle strip of 4
-/// vertices and shade both sides.
+/// vertices; ellipsoids use the same strip as a surface proxy.
 struct PrimitiveResources
 {
 	////
@@ -55,14 +75,19 @@ struct PrimitiveResources
 	/// \param vertices
 	/// 	The uploaded vertex buffer.
 	/// \param indices
-	/// 	The uploaded index buffer for boxes, or empty for quads.
+	/// 	The uploaded index buffer for boxes, or empty for quad-based geometry.
 	/// \param dummy
 	/// 	Zero-initialized storage buffer bound to storage slots of attributes without a buffer source.
-	/// \param quad
-	/// 	Whether the geometry is a quad strip, which selects two-sided lighting.
-	PrimitiveResources(Device &device, Buffer vertices, std::optional<Buffer> indices, Buffer dummy, bool quad)
+	/// \param kind
+	/// 	Geometry and shader family.
+	/// \param cull
+	/// 	Surface culling mode, evaluated analytically for ellipsoids.
+	PrimitiveResources(
+		Device &device, Buffer vertices, std::optional<Buffer> indices, Buffer dummy,
+		PrimitiveKind kind, SDL_GPUCullMode cull
+	)
 		: device(device), vertices(std::move(vertices)), indices(std::move(indices)),
-		dummy(std::move(dummy)), quad(quad)
+		dummy(std::move(dummy)), kind(kind), cull(cull)
 	{}
 
 	/// Releases the pipelines without waiting for the GPU.
@@ -89,18 +114,18 @@ struct PrimitiveResources
 	/// 	Attachment formats and sample count of compatible render passes.
 	/// \param options
 	/// 	Depth, culling and blending settings.
-	/// \param quad
-	/// 	Whether to create quad geometry instead of box geometry.
+	/// \param kind
+	/// 	Geometry and shader family.
 	///
 	/// \return The created resources, or the error described for <tt>BoxRenderer::create</tt>.
 	[[nodiscard]] static auto create (
-		Device &device, const RenderTargetInfo &target, const RendererOptions &options, bool quad
+		Device &device, const RenderTargetInfo &target, const RendererOptions &options, PrimitiveKind kind
 	) -> std::expected<std::unique_ptr<PrimitiveResources>, RenderError>;
 
 	/// \brief
 	/// 	Validates the used attribute sources and the draw options, then records one instanced draw.
 	///
-	/// Implements \c PrimitiveRenderer::draw for both renderers; nothing is recorded on error.
+	/// Implements \c PrimitiveRenderer::draw for the primitive renderers; nothing is recorded on error.
 	///
 	/// \param attributes
 	/// 	The instance attributes.
@@ -140,8 +165,11 @@ struct PrimitiveResources
 	/// The untextured pipeline at index 0 and the textured pipeline at index 1.
 	std::array<SDL_GPUGraphicsPipeline*, 2> pipelines{};
 
-	/// Whether the geometry is a quad strip with two-sided lighting.
-	bool quad;
+	/// Geometry and shader family.
+	PrimitiveKind kind;
+
+	/// Requested surface culling, evaluated in the fragment shader for ellipsoids.
+	SDL_GPUCullMode cull;
 };
 
 

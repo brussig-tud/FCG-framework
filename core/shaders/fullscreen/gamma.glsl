@@ -10,10 +10,10 @@
 
 /// Gamma and final RGB bounds; matches the C++ GammaUniforms layout.
 layout(std140, set=3, binding=0) uniform GammaUniforms {
-	/// Per-channel gamma values
+	/// The per-channel gamma values.
 	vec3 gamma;
 
-	/// Common channel clamp range
+	/// The common channel clamp range.
 	vec2 clampRange;
 } gammaUniforms;
 

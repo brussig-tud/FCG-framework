@@ -12,3 +12,10 @@ target_link_libraries(render-lifecycle PRIVATE Render)
 add_test(NAME render-lifecycle COMMAND render-lifecycle)
 set_tests_properties(render-lifecycle PROPERTIES TIMEOUT 60
 	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
+
+# Set FCG_ELLIPSOID_BENCHMARK=1 when running render-ellipsoid to report optional 1024x1024 completion timings.
+add_executable(render-ellipsoid ellipsoid.cpp)
+target_link_libraries(render-ellipsoid PRIVATE Render)
+add_test(NAME render-ellipsoid COMMAND render-ellipsoid)
+set_tests_properties(render-ellipsoid PROPERTIES TIMEOUT 90
+	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")

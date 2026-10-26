@@ -117,9 +117,35 @@ struct alignas(16) LightUniforms
 };
 static_assert(sizeof(LightUniforms) == 3 * 16);
 
+/// Projection and surface culling used by the ellipsoid fragment shader.
+struct alignas(16) RaycastUniforms
+{
+	/// Eye-to-clip transformation, including the actual depth mapping.
+	glm::mat4 projection;
+
+	/// Clip-to-eye transformation for general viewing rays.
+	glm::mat4 invProjection;
+
+	/// Surface culling mode in X; other components are reserved.
+	glm::uvec4 flags{};
+};
+static_assert(sizeof(RaycastUniforms) == 9 * 16);
+static_assert(offsetof(RaycastUniforms, invProjection) == 4 * 16);
+static_assert(offsetof(RaycastUniforms, flags) == 8 * 16);
+static_assert(SDL_GPU_CULLMODE_NONE == 0 && SDL_GPU_CULLMODE_FRONT == 1 && SDL_GPU_CULLMODE_BACK == 2);
+
 /// Returns whether all components of \p value are finite.
 auto finite (const glm::vec3 &value) -> bool {
 	return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+}
+
+/// Returns whether all matrix components are finite, including the homogeneous row.
+auto finite (const glm::mat4 &value) -> bool {
+	for (int column = 0; column < 4; ++column)
+		for (int row = 0; row < 4; ++row)
+			if (!std::isfinite(value[column][row]))
+				return false;
+	return true;
 }
 
 /// Validates the source of one used attribute for the instances before \p end and writes its storage binding and
@@ -194,10 +220,13 @@ detail::PrimitiveResources::~PrimitiveResources() {
 }
 
 auto detail::PrimitiveResources::create (
-	Device &device, const RenderTargetInfo &target, const RendererOptions &options, bool quad
+	Device &device, const RenderTargetInfo &target, const RendererOptions &options, PrimitiveKind kind
 ) -> std::expected<std::unique_ptr<PrimitiveResources>, RenderError>
 {
-	const auto cull = options.cullMode.value_or(quad ? SDL_GPU_CULLMODE_NONE : SDL_GPU_CULLMODE_BACK);
+	const bool quad = kind != PrimitiveKind::Box;
+	const bool ellipsoid = kind == PrimitiveKind::Ellipsoid;
+	const auto cull = options.cullMode.value_or(kind == PrimitiveKind::Quad
+		? SDL_GPU_CULLMODE_NONE : SDL_GPU_CULLMODE_BACK);
 	if (!device.handle())
 		return failure(RenderErrorCode::InvalidState, "Renderer requires a live device");
 	if (target.colorFormat == SDL_GPU_TEXTUREFORMAT_INVALID
@@ -265,7 +294,7 @@ auto detail::PrimitiveResources::create (
 	if (!uploaded)
 		return bufferFailure(uploaded.error());
 	auto resources = std::make_unique<PrimitiveResources>(
-		device, std::move(*vertex), std::move(index), std::move(*dummy), quad
+		device, std::move(*vertex), std::move(index), std::move(*dummy), kind, cull
 	);
 
 	const SDL_GPUVertexBufferDescription vertexBuffer{0, sizeof(Vertex), SDL_GPU_VERTEXINPUTRATE_VERTEX, 0};
@@ -280,7 +309,8 @@ auto detail::PrimitiveResources::create (
 	using ShaderOwner = std::unique_ptr<SDL_GPUShader, decltype(releaseShader)>;
 	for (std::size_t textured = 0; textured < 2; ++textured)
 	{
-		const auto shader = res::shader(render::embedded::FS, textured ? "textured" : "primitive");
+		const auto shader = res::shader(render::embedded::FS, ellipsoid
+			? (textured ? "ellipsoid_textured" : "ellipsoid") : (textured ? "textured" : "primitive"));
 		if (!shader)
 			return failure(RenderErrorCode::InvalidState, "Embedded primitive shader is missing");
 		const auto vert = shader->stage(ShaderStage::VERTEX);
@@ -292,7 +322,7 @@ auto detail::PrimitiveResources::create (
 		if (!vs)
 			return sdlFailure("Creating primitive vertex shader");
 		ShaderOwner fs(device.createShader(ShaderStage::FRAGMENT, frag->spirv,
-			ShaderResources{.uniformBuffers = 1, .samplers = (unsigned)textured}), releaseShader);
+			ShaderResources{.uniformBuffers = ellipsoid ? 2u : 1u, .samplers = (unsigned)textured}), releaseShader);
 		if (!fs)
 			return sdlFailure("Creating primitive fragment shader");
 		SDL_GPUColorTargetDescription color{};
@@ -307,10 +337,11 @@ auto detail::PrimitiveResources::create (
 		SDL_GPUGraphicsPipelineCreateInfo info{};
 		info.vertex_shader = vs.get();
 		info.fragment_shader = fs.get();
-		info.vertex_input_state = {&vertexBuffer, 1, vertexAttributes.data(), (Uint32)vertexAttributes.size()};
+		info.vertex_input_state = {&vertexBuffer, 1, vertexAttributes.data(),
+			ellipsoid ? 1u : (Uint32)vertexAttributes.size()};
 		info.primitive_type = quad ? SDL_GPU_PRIMITIVETYPE_TRIANGLESTRIP : SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
 		info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
-		info.rasterizer_state.cull_mode = cull;
+		info.rasterizer_state.cull_mode = ellipsoid ? SDL_GPU_CULLMODE_NONE : cull;
 		info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
 		info.rasterizer_state.enable_depth_clip = true;
 		info.multisample_state.sample_count = target.sampleCount;
@@ -370,13 +401,29 @@ auto detail::PrimitiveResources::draw (
 	LightUniforms lighting;
 	if (light.enabled)
 		lighting.direction = {glm::normalize(light.direction / scale), 1.f};
-	lighting.ambient = {light.ambient, quad ? 1.f : 0.f};
+	lighting.ambient = {light.ambient, kind == PrimitiveKind::Quad ? 1.f : 0.f};
 	lighting.diffuse = {light.diffuse, 0.f};
+
+	// Reject invalid viewing transforms before any uniforms or bindings are recorded
+	std::optional<RaycastUniforms> raycast;
+	if (kind == PrimitiveKind::Ellipsoid)
+	{
+		const auto &modelview = state.modelviewMatrix();
+		const auto &projection = state.projectionMatrix();
+		if (!finite(modelview) || !finite(projection) || modelview[0][3] != 0.f || modelview[1][3] != 0.f
+			|| modelview[2][3] != 0.f || modelview[3][3] != 1.f
+			|| !finite(state.invModelviewMatrix()) || !finite(state.invProjectionMatrix()))
+			return failure(RenderErrorCode::InvalidArgument,
+				"Ellipsoids require finite invertible viewing matrices and an affine modelview");
+		raycast.emplace(projection, state.invProjectionMatrix(), glm::uvec4((Uint32)cull, 0, 0, 0));
+	}
 
 	// All validation precedes recording. Draw never creates resources or uploads arrays.
 	state.pushViewingUniforms(command, ShaderStage::VERTEX, 0);
 	SDL_PushGPUVertexUniformData(command, 1, &uniforms, sizeof(uniforms));
 	SDL_PushGPUFragmentUniformData(command, 0, &lighting, sizeof(lighting));
+	if (raycast)
+		SDL_PushGPUFragmentUniformData(command, 1, &*raycast, sizeof(*raycast));
 	SDL_BindGPUGraphicsPipeline(pass, pipelines[options.texture.has_value()]);
 	const SDL_GPUBufferBinding vertex{vertices.handle(), 0};
 	SDL_BindGPUVertexBuffers(pass, 0, &vertex, 1);

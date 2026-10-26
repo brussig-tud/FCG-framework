@@ -69,7 +69,7 @@ auto QuadRenderer::operator= (QuadRenderer&&) noexcept -> QuadRenderer& = defaul
 auto QuadRenderer::create (Device &device, const RenderTargetInfo &target, const RendererOptions &options)
 	-> std::expected<QuadRenderer, RenderError>
 {
-	auto resources = detail::PrimitiveResources::create(device, target, options, true);
+	auto resources = detail::PrimitiveResources::create(device, target, options, detail::PrimitiveKind::Quad);
 	if (!resources)
 		return std::unexpected(std::move(resources.error()));
 	return QuadRenderer(std::move(*resources));

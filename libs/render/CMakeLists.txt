@@ -15,6 +15,7 @@ target_sources(Render PRIVATE
 	src/primitive_renderer.cpp
 	src/quad_renderer.cpp
 	src/box_renderer.cpp
+	src/ellipsoid_renderer.cpp
 	src/primitive_resources.cpp
 	src/primitive_resources.h
 )
@@ -24,10 +25,13 @@ target_sources(Render PRIVATE
 	include/FCG/Render/primitive_renderer.h
 	include/FCG/Render/quad_renderer.h
 	include/FCG/Render/box_renderer.h
+	include/FCG/Render/ellipsoid_renderer.h
 )
 
 fcg_add_shader(primitive SOURCES shaders/primitive.vert.glsl shaders/primitive.frag.glsl)
 fcg_add_shader(textured SOURCES shaders/primitive.vert.glsl shaders/textured.frag.glsl)
+fcg_add_shader(ellipsoid SOURCES shaders/ellipsoid.vert.glsl shaders/ellipsoid.frag.glsl)
+fcg_add_shader(ellipsoid_textured SOURCES shaders/ellipsoid.vert.glsl shaders/ellipsoid_textured.frag.glsl)
 fcg_finalize_shaders(TARGET fcg-render-shaders NAMESPACE fcg::render::embedded)
 target_link_libraries(Render PRIVATE fcg-render-shaders)
 # Generated and vendor headers belong only to the build interface of the private archive.

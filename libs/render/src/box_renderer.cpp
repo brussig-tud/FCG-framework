@@ -69,7 +69,7 @@ auto BoxRenderer::operator= (BoxRenderer&&) noexcept -> BoxRenderer& = default;
 auto BoxRenderer::create (Device &device, const RenderTargetInfo &target, const RendererOptions &options)
 	-> std::expected<BoxRenderer, RenderError>
 {
-	auto resources = detail::PrimitiveResources::create(device, target, options, false);
+	auto resources = detail::PrimitiveResources::create(device, target, options, detail::PrimitiveKind::Box);
 	if (!resources)
 		return std::unexpected(std::move(resources.error()));
 	return BoxRenderer(std::move(*resources));

@@ -10,17 +10,16 @@
 
 /// \page fcg_render_overview Render library overview
 ///
-/// The Render library draws instanced primitives – currently just (optionally textured) quads and boxes – from
-/// user-definable attributes on the GPU; the quickest way to put many simple objects on the screen without writing your
-/// own pipelines and shaders.
+/// The Render library draws instanced quads, boxes, and smooth ellipsoids from user-definable attributes on the GPU;
+/// the quickest way to put many simple objects on the screen without writing your own pipelines and shaders.
 ///
 /// Link your application against \verbatim FCG-Framework::Render \endverbatim and include the renderer headers under
 /// \c FCG/Render/:
 /// \snippet render_examples.cpp includes
 ///
 /// \section fcg_render_start Where to start
-/// Start with the \ref fcg_primitives guide: it explains the shared attribute collection, the two supplied
-/// renderers, and how to create, update, and draw them.
+/// Start with the \ref fcg_primitives guide: it explains the shared attribute collection, the supplied
+/// renderers, and how to create, update, and draw them. For spheres and ellipsoids, see \ref fcg_ellipsoids.
 
 
 
@@ -37,9 +36,10 @@
 /// A <tt>\ref fcg::PrimitiveAttributes "PrimitiveAttributes"</tt> collection holds the per-instance data — position,
 /// extent, orientation, and color — on the GPU, and also offers optional normal and radius sources, which the
 /// supplied renderers do not use. The renderers <tt>\ref fcg::QuadRenderer "QuadRenderer"</tt> and
-/// <tt>\ref fcg::BoxRenderer "BoxRenderer"</tt> draw the collection with one instanced draw call each: quads are
-/// textured or shaded rectangles, boxes are lit 3D cuboids. Missing optional attributes fall back to sensible
-/// defaults (unit extent, identity orientation, opaque white); position determines the instance count.
+/// <tt>\ref fcg::BoxRenderer "BoxRenderer"</tt> draw rectangles and cuboids.
+/// <tt>\ref fcg::EllipsoidRenderer "EllipsoidRenderer"</tt> draws smooth ellipsoids. Each renderer uses one instanced
+/// draw call. Missing optional attributes fall back to sensible defaults (unit extent, identity orientation, opaque
+/// white); position determines the instance count.
 /// \snippet render_examples.cpp attributes
 ///
 /// \section fcg_primitives_usage Getting started
@@ -65,15 +65,15 @@
 /// borrowed <tt>\ref fcg::Device "Device"</tt> and <tt>\ref fcg::RenderTargetInfo "RenderTargetInfo"</tt>, e.g. for
 /// off-screen targets. A renderer keeps no reference to the player, so it keeps working while the window is
 /// minimized. Pipeline settings such as culling, blending, and depth behavior are fixed at creation via
-/// <tt>\ref fcg::RendererOptions "RendererOptions"</tt>; recreate the renderer to change them. Resizing needs no
-/// recreation; a change of the render target's formats or sample count does.
+/// <tt>\ref fcg::RendererOptions "RendererOptions"</tt>; recreate the renderer to change them. Resizing the attribute data needs no recreation.
 ///
 /// \subsection fcg_primitives_workflows_drawing Drawing and appearance
 /// <tt>\ref fcg::DrawOptions "DrawOptions"</tt> optionally binds one caller-created 2D texture and sampler; its RGBA
-/// values multiply the instance colors. Both renderers apply one directional light in eye space; boxes shade with
-/// their flat face normals, quads shade with their plane normal and flip it on the back side. The light direction,
-/// ambient, and diffuse strengths are configurable. <tt>\ref fcg::InstanceRange "InstanceRange"</tt> selects a
-/// contiguous subrange of the instances; an empty range draws nothing.
+/// values multiply the instance colors. The renderers apply one directional light in eye space; boxes shade with
+/// their flat face normals, quads shade with their plane normal and flip it on the back side, and ellipsoids use
+/// their outward surface normals. The light direction, ambient, and diffuse strengths are configurable.
+/// <tt>\ref fcg::InstanceRange "InstanceRange"</tt> selects a contiguous subrange of the instances;
+/// an empty range draws nothing.
 ///
 /// \section fcg_primitives_lifetime Ownership and lifetime
 /// The device must outlive the attribute collection and the renderers. The collection is not thread-safe; use it from
@@ -143,8 +143,8 @@ struct RendererOptions
 	/// \brief
 	/// 	The face culling mode.
 	///
-	/// If empty, \c BoxRenderer culls back faces and \c QuadRenderer culls nothing. The outward sides of boxes and the
-	/// +Z sides of quads are their front faces.
+	/// If empty, \c BoxRenderer and \c EllipsoidRenderer cull back faces and \c QuadRenderer culls nothing.
+	/// The outward sides of boxes and ellipsoids and the +Z sides of quads are their front faces.
 	std::optional<SDL_GPUCullMode> cullMode;
 
 	/// \brief
@@ -152,7 +152,7 @@ struct RendererOptions
 	///
 	/// When enabled, the output RGB is <tt>src.rgb * src.a + dst.rgb * (1 - src.a)</tt> and the output alpha is
 	/// <tt>src.a + dst.a * (1 - src.a)</tt>. Instances are drawn in the order of the collection and are not sorted by
-	/// depth.
+	/// depth. Ellipsoids contribute at most one surface per instance at each sample.
 	bool alphaBlending = false;
 };
 
@@ -177,7 +177,8 @@ struct PrimitiveTexture
 /// With lighting enabled, the RGB part of each fragment color is multiplied by
 /// <tt>ambient + diffuse * max(dot(n, l), 0)</tt>, where \c n is the unit normal of the surface in eye space and
 /// \c l is the normalized <tt>direction</tt>. The alpha is unchanged. Boxes use the flat outward normal of each face.
-/// Quads use their +Z normal on the front side and the flipped normal on the back side.
+/// Quads use their +Z normal on the front side and the flipped normal on the back side. Ellipsoids use their
+/// outward surface normal.
 struct DirectionalLight
 {
 	/// Whether lighting is applied. If <tt>false</tt>, the other fields are ignored and colors are drawn unlit.
@@ -222,7 +223,7 @@ struct InstanceRange
 //
 
 /// \brief
-/// 	Common interface of the instanced primitive renderers \c QuadRenderer and <tt>BoxRenderer</tt>.
+/// 	Common interface of the instanced primitive renderers \c QuadRenderer, \c BoxRenderer and <tt>EllipsoidRenderer</tt>.
 ///
 /// A renderer draws one primitive per instance of a \c PrimitiveAttributes collection, using the attributes listed by
 /// <tt>supportedAttributes</tt>. It draws into render passes whose attachments match the target it was created for,

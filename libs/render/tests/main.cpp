@@ -11,6 +11,7 @@
 #include <limits>
 #include <memory>
 #include <stdexcept>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -27,6 +28,7 @@
 #include <FCG/res.h>
 #include <FCG/Render/quad_renderer.h>
 #include <FCG/Render/box_renderer.h>
+#include <FCG/Render/ellipsoid_renderer.h>
 #include <fcg-render-shaders.h>
 
 
@@ -731,8 +733,10 @@ void pixels (fcg::Device &device)
 void shaders ()
 {
 	require(SDL_ShaderCross_Init(), SDL_GetError());
-	for (const auto name : {"primitive", "textured"})
+	for (const auto name : {"primitive", "textured", "ellipsoid", "ellipsoid_textured"})
 	{
+		const bool ellipsoid = std::string_view(name).starts_with("ellipsoid");
+		const bool textured = std::string_view(name).ends_with("textured");
 		const auto shader = fcg::res::shader(fcg::render::embedded::FS, name);
 		require(shader.has_value(), "Missing Render shader archive");
 		for (const auto stage : {fcg::ShaderStage::VERTEX, fcg::ShaderStage::FRAGMENT})
@@ -748,12 +752,21 @@ void shaders ()
 			const auto resources = metadata->resource_info;
 			SDL_free(metadata);
 			require(resources.num_storage_buffers == (stage == fcg::ShaderStage::VERTEX ? 4u : 0u)
-				&& resources.num_uniform_buffers == (stage == fcg::ShaderStage::VERTEX ? 2u : 1u), "Wrong shader resources");
-			auto *msl = SDL_ShaderCross_TranspileMSLFromSPIRV(&info);
+				&& resources.num_uniform_buffers == (stage == fcg::ShaderStage::VERTEX
+				|| ellipsoid ? 2u : 1u)
+				&& resources.num_samplers == (stage == fcg::ShaderStage::FRAGMENT && textured ? 1u : 0u),
+				"Wrong shader resources");
+			auto *msl = (char*)SDL_ShaderCross_TranspileMSLFromSPIRV(&info);
 			require(msl, SDL_GetError());
+			if (ellipsoid && stage == fcg::ShaderStage::FRAGMENT)
+				require(std::strstr(msl, "depth(any)") && std::strstr(msl, "sample_perspective")
+					&& std::strstr(msl, "sample_no_perspective"), "MSL lost analytic depth or sample interpolation");
 			SDL_free(msl);
-			auto *hlsl = SDL_ShaderCross_TranspileHLSLFromSPIRV(&info);
+			auto *hlsl = (char*)SDL_ShaderCross_TranspileHLSLFromSPIRV(&info);
 			require(hlsl, SDL_GetError());
+			if (ellipsoid && stage == fcg::ShaderStage::FRAGMENT)
+				require(std::strstr(hlsl, "SV_Depth") && std::strstr(hlsl, "sample "),
+					"HLSL lost analytic depth or sample interpolation");
 			SDL_free(hlsl);
 		}
 	}

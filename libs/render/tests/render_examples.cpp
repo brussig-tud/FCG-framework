@@ -11,6 +11,7 @@
 /// [includes]
 #include <FCG/Render/quad_renderer.h>
 #include <FCG/Render/box_renderer.h>
+#include <FCG/Render/ellipsoid_renderer.h>
 #include <FCG/player.h>
 /// [includes]
 
@@ -83,3 +84,49 @@
 	return boxes.draw(attributes, state, commands, pass, options);
 }
 /// [draw]
+
+
+/// \brief Create ellipsoids for the effective main target in \c Applet::recreatePipelines.
+///
+/// \param player The player supplying the device and main target.
+///
+/// \return The renderer, or its creation error.
+/// [ellipsoid_factory]
+[[nodiscard]] auto createEllipsoids (fcg::Player &player)
+	-> std::expected<fcg::EllipsoidRenderer, fcg::RenderError> {
+	return fcg::EllipsoidRenderer::create(player);
+}
+/// [ellipsoid_factory]
+
+/// \brief Upload and draw ellipsoids using the current perspective or orthographic camera.
+///
+/// \param ellipsoids The renderer compatible with the active pass.
+/// \param attributes The collection receiving the instance data.
+/// \param centers The instance centers, borrowed until this call returns.
+/// \param state The current camera matrices.
+/// \param commands The command buffer owning the active pass.
+/// \param pass The active render pass.
+///
+/// \return Success, or the upload or draw error.
+/// [ellipsoids]
+[[nodiscard]] auto drawEllipsoids (
+	const fcg::EllipsoidRenderer &ellipsoids, fcg::PrimitiveAttributes &attributes,
+	std::span<const glm::vec4> centers, fcg::RenderState &state,
+	SDL_GPUCommandBuffer *commands, SDL_GPURenderPass *pass
+) -> std::expected<void, fcg::RenderError>
+{
+	// Supply centers and local semi-axis lengths
+	auto result = attributes.setAttributes([&] (fcg::PrimitiveAttributes::Update &update) {
+		update.set<fcg::Attribute::Position>(centers);
+		update.set<fcg::Attribute::Extent>(glm::vec3(.5f, 1.f, .25f));
+		update.set<fcg::Attribute::Color>(glm::vec4(.2f, .6f, 1.f, 1.f));
+	});
+	if (!result)
+		return result;
+
+	// Draw with outward surface lighting
+	fcg::DrawOptions options;
+	options.lighting.enabled = true;
+	return ellipsoids.draw(attributes, state, commands, pass, options);
+}
+/// [ellipsoids]

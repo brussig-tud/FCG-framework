@@ -7,7 +7,9 @@
 // Includes
 //
 
+// Common gamma correction code
 #include "gamma.glsl"
+
 
 
 //////
@@ -28,14 +30,14 @@ layout(set=2, binding=0) uniform sampler2D sourceTex;
 ////
 // Inputs
 
-// The fragment uv coordinates.
+/// The fragment uv coordinates.
 layout(location=0) in vec2 uv;
 
 
 ////
 // Outputs
 
-// The shaded fragment color.
+/// The shaded fragment color.
 layout(location=0) out vec4 color;
 
 
@@ -45,8 +47,8 @@ layout(location=0) out vec4 color;
 // Functions
 //
 
-// The shader entry point.
-void main()
+/// The shader entry point.
+void main ()
 {
 	// Fetch color and alpha
 	vec4 linear = texture(sourceTex, uv);
