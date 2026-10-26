@@ -184,7 +184,7 @@ auto ImageFormatHandler::resolveMetadata (
 
 auto ImageLoader::global () -> ImageLoader& {
 	// Intentionally process-lifetime: static registrars and teardown code must not observe a destroyed registry.
-	static auto *loader = new ImageLoader;
+	static ImageLoader loader;
 	// Initialize storage before touching the anchor: deferred TU initialization may itself call global().
 	detail::linkSDLImageHandler();
 	detail::linkRadianceHDRHandler();
@@ -192,7 +192,7 @@ auto ImageLoader::global () -> ImageLoader& {
 #if FCG_IMAGE_HAS_OPENEXR
 	detail::linkOpenEXRImageHandler();
 #endif
-	return *loader;
+	return loader;
 }
 
 auto ImageLoader::registerHandler (std::string id, std::unique_ptr<ImageFormatHandler> handler, int priority)
