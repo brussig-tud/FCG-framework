@@ -35,7 +35,9 @@ namespace fcg {
 ////
 // RenderState
 
-RenderState::RenderState(Device& /* currently unused */) {}
+RenderState::RenderState(Device&) {}
+
+RenderState::RenderState(Device&, glm::uvec2 viewportSize) : m_viewportSize(viewportSize) {}
 
 RenderState::~RenderState() = default;
 

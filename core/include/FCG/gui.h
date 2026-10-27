@@ -51,6 +51,7 @@
 /// This conversion follows display scaling. To also follow user font enlargement, express widget sizes and
 /// positions relative to font or style dimensions:
 /// \snippet gui_examples.cpp gui_relative_size
+/// <tt>\ref fcg::Player::fromGuiUnits "Player::fromGuiUnits"</tt> converts ImGui dimensions back to authoring units.
 /// Sizes and positions explicitly supplied by an applet take precedence over automatic window scaling. Temporary
 /// style overrides must be balanced before the end of the frame.
 ///

@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <span>
 #include <optional>
+#include <vector>
 
 // SDL3 library
 #include <SDL3/SDL.h>
@@ -30,7 +31,7 @@
 // Forward declarations
 //
 
-// FCG Framework
+// Framework types
 namespace fcg {
 	class Player;
 }
@@ -137,6 +138,14 @@ public:
 	/// 	destruction of the shape. The view is empty before the first regeneration.
 	[[nodiscard]] virtual auto corners () const -> std::span<const glm::vec4> = 0;
 
+	/// \brief Returns unique geometric edge pairs indexing \c corners.
+	///
+	/// Each consecutive pair contains the indices of one undirected edge, with the smaller index first.
+	///
+	/// \return A borrowed view valid until the next regeneration or destruction of the shape.
+	[[nodiscard]] virtual auto edges () const -> std::span<const std::uint32_t> = 0;
+
+
 	/// \brief Reports whether the shape's parameters have changed since its geometry was last uploaded.
 	///
 	/// \return \c true if the next call to \c update will regenerate and upload the geometry.
@@ -184,6 +193,16 @@ public:
 	/// Regenerates the CPU-side geometry returned by \c vertices, \c indices and \c corners from the current parameters.
 	/// Normally called by \c update rather than directly.
 	virtual void regenerate () = 0;
+
+	/// \brief Construct unique edge pairs from the generated triangle-list mesh.
+	///
+	/// Mesh vertices are mapped to their exact geometric corners, including copies with different face normals.
+	/// Each undirected edge occurs once, with the smaller corner index first.
+	///
+	/// \pre The generated mesh is a triangle list and every vertex position equals one of \c corners.
+	///
+	/// \return Owned, consecutive corner-index pairs describing the mesh's actual triangle edges.
+	[[nodiscard]] auto triangulatedEdges () const -> std::vector<std::uint32_t>;
 
 	/// \brief Regenerates and uploads the geometry if the shape is \c dirty, and does nothing otherwise.
 	///

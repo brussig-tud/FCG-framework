@@ -110,13 +110,13 @@ struct PrimitiveAttributes::State
 
 	/// Collection-owned buffers for arrays, one per attribute. Kept for reuse even while the attribute has another
 	/// source.
-	std::array<std::unique_ptr<Buffer>, (std::size_t)Attribute::Count> buffers;
+	std::array<std::unique_ptr<Buffer>, (std::size_t)Attribute::_Count> buffers;
 
 	/// Committed sources; their \c bytes spans are always empty.
-	std::array<Descriptor, (std::size_t)Attribute::Count> sources;
+	std::array<Descriptor, (std::size_t)Attribute::_Count> sources;
 
 	/// Per attribute, whether the committed source can be drawn; cleared after a failed automatic submission.
-	std::array<bool, (std::size_t)Attribute::Count> usable;
+	std::array<bool, (std::size_t)Attribute::_Count> usable;
 
 	/// Upload batch whose staging memory is reused across updates.
 	UploadBatch uploads;
@@ -227,7 +227,7 @@ auto PrimitiveAttributes::finishUpdate (SDL_GPUCopyPass *pass, const Update &upd
 	}
 
 	// Prepare growth in separate owners. Existing source pointers stay stable on any pre-recording failure.
-	std::array<std::unique_ptr<Buffer>, (std::size_t)Attribute::Count> replacements;
+	std::array<std::unique_ptr<Buffer>, (std::size_t)Attribute::_Count> replacements;
 	for (std::size_t i = 0; i < layouts.size(); ++i)
 	{
 		const auto &pending = update.descriptors[i];

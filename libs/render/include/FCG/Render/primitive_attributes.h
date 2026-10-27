@@ -51,42 +51,37 @@ namespace fcg {
 // Structs and enums
 //
 
-/// \brief
-/// 	Per-instance attributes stored in a \c PrimitiveAttributes collection.
+/// \brief Per-instance attributes stored in a \c PrimitiveAttributes collection.
 ///
 /// A renderer uses only the attributes listed by its \c PrimitiveRenderer::supportedAttributes and ignores all others.
 enum class Attribute
 {
-	/// \brief
-	/// 	Center of the instance as a homogeneous point (x, y, z, w). The drawn center is (x, y, z) / w.
+	/// \brief Node position as a homogeneous point (x, y, z, w).
 	///
 	/// All components must be finite and w must be nonzero. Positions can only be supplied as an array or a buffer
 	/// view, never as a constant. The number of positions determines the instance count of the collection. Without a
 	/// position source, the collection has zero instances.
 	Position,
 
-	/// Per-instance normal. The renderers of this library do not use it.
+	/// Per-instance normal.
 	Normal,
 
-	/// Per-instance radius. The renderers of this library do not use it.
+	/// \brief Radius of a node; its units and exact semantics depend on the consuming renderer.
 	Radius,
 
-	/// \brief
-	/// 	Half size of the instance along its local X, Y and Z axes.
+	/// \brief Half size of the instance along its local X, Y and Z axes.
 	///
 	/// All components must be finite and nonnegative. Zero is allowed and collapses the instance along that axis.
 	/// Without an extent source, every instance has the extent (1, 1, 1).
 	Extent,
 
-	/// \brief
-	/// 	Rotation of the instance, given as a quaternion.
+	/// \brief Rotation of the instance, given as a quaternion.
 	///
 	/// All components must be finite and not all zero. Renderers normalize the quaternion before use, so its length
 	/// does not matter. Without an orientation source, instances are not rotated.
 	Orientation,
 
-	/// \brief
-	/// 	Color of the instance as RGBA.
+	/// \brief Color of the instance as RGBA.
 	///
 	/// When drawing with a texture, the color is multiplied by the texture color. When lighting is enabled, its RGB
 	/// part is scaled by the lighting and its alpha is kept. Without a color source, instances are opaque white
@@ -94,11 +89,10 @@ enum class Attribute
 	Color,
 
 	/// The number of attributes. Not an attribute itself.
-	Count
+	_Count
 };
 
-/// \brief
-/// 	Value type and memory layout of an <tt>Attribute</tt>.
+/// \brief Value type and memory layout of an <tt>Attribute</tt>.
 ///
 /// \tparam A The attribute.
 template <Attribute A> struct AttributeTraits;
@@ -220,8 +214,7 @@ template <Attribute A> struct AttributeBufferView
 	std::size_t count = 0;
 };
 
-/// \brief
-/// 	The source of an attribute, as returned by <tt>PrimitiveAttributes::source</tt>.
+/// \brief The source of an attribute, as returned by <tt>PrimitiveAttributes::source</tt>.
 ///
 /// Holds \c std::monostate if the attribute is absent, the value if it is a constant, or an \c AttributeBufferView if
 /// it is an array.
@@ -237,8 +230,7 @@ using AttributeSource = std::variant<std::monostate, typename AttributeTraits<A>
 // Classes
 //
 
-/// \brief
-/// 	A collection of per-instance attributes in GPU memory that any number of primitive renderers can draw.
+/// \brief A collection of per-instance attributes in GPU memory that any number of primitive renderers can draw.
 ///
 /// Each \c Attribute is either absent, a constant shared by all instances, an array copied from CPU memory, or an
 /// array in a GPU buffer that you manage. The number of positions determines the number of instances. Change the
@@ -312,8 +304,7 @@ public:
 	////
 	// Types
 
-	/// \brief
-	/// 	Records changes to the attribute sources of a \c PrimitiveAttributes collection.
+	/// \brief Records changes to the attribute sources of a \c PrimitiveAttributes collection.
 	///
 	/// You receive an \c Update in the callback passed to <tt>PrimitiveAttributes::setAttributes</tt> and cannot
 	/// create one yourself. Each call replaces the pending source of one attribute; if an attribute is assigned
@@ -344,25 +335,18 @@ public:
 		////
 		// Methods
 
-		/// \brief
-		/// 	Sets the attribute to an array of per-instance values in CPU memory.
+		/// \brief Sets the attribute to an array of per-instance values in CPU memory.
 		///
 		/// The values are copied to GPU memory when the enclosing \c setAttributes call completes. Values of
 		/// <tt>Attribute::Position</tt>, \c Attribute::Extent and \c Attribute::Orientation are checked against the
 		/// requirements of the respective attribute at that point.
 		///
-		/// \pre
-		/// 	\p values must remain valid and unchanged until the enclosing \c setAttributes call returns.
+		/// \pre \p values must remain valid and unchanged until the enclosing \c setAttributes call returns.
 		///
-		/// \tparam A
-		/// 	The attribute to set.
-		/// \tparam T
-		/// 	The element type. Must be <tt>AttributeTraits<A>::Value</tt>, optionally \c const qualified.
-		/// \tparam N
-		/// 	The extent of the span.
-		///
-		/// \param values
-		/// 	The values, one per instance.
+		/// \tparam A The attribute to set.
+		/// \tparam T The element type. Must be <tt>AttributeTraits<A>::Value</tt>, optionally \c const qualified.
+		/// \tparam N The extent of the span.
+		/// \param values The values, one per instance.
 		template <Attribute A, class T, std::size_t N>
 			requires std::same_as<std::remove_cv_t<T>, typename AttributeTraits<A>::Value>
 		void set (std::span<T, N> values)
@@ -377,18 +361,14 @@ public:
 				pending.bytes = std::as_bytes(values);
 		}
 
-		/// \brief
-		/// 	Sets the attribute to a constant shared by all instances.
+		/// \brief Sets the attribute to a constant shared by all instances.
 		///
 		/// Not available for <tt>Attribute::Position</tt>. Constants of \c Attribute::Extent and
 		/// \c Attribute::Orientation are checked against the requirements of the respective attribute when the
 		/// enclosing \c setAttributes call completes.
 		///
-		/// \tparam A
-		/// 	The attribute to set.
-		///
-		/// \param value
-		/// 	The constant. It is copied.
+		/// \tparam A The attribute to set.
+		/// \param value The constant. It is copied.
 		template <Attribute A> requires AttributeTraits<A>::constantSupported
 		void set (const typename AttributeTraits<A>::Value &value)
 		{
@@ -400,8 +380,7 @@ public:
 				std::memcpy(&pending.constant[(int)i], bytes + AttributeTraits<A>::componentOffsets[i], sizeof(float));
 		}
 
-		/// \brief
-		/// 	Sets the attribute to an array in a GPU buffer that you manage, without copying it.
+		/// \brief Sets the attribute to an array in a GPU buffer that you manage, without copying it.
 		///
 		/// The view must meet the requirements described for <tt>AttributeBufferView</tt>; this is checked when the
 		/// enclosing \c setAttributes call completes. Every subsequent draw reads the current buffer contents, which
@@ -411,11 +390,8 @@ public:
 		/// 	The \c Buffer referenced by \p view must not be moved or destroyed until the attribute is assigned
 		/// 	another source or the collection is destroyed.
 		///
-		/// \tparam A
-		/// 	The attribute to set.
-		///
-		/// \param view
-		/// 	The buffer and the layout of the values within it.
+		/// \tparam A The attribute to set.
+		/// \param view The buffer and the layout of the values within it.
 		template <Attribute A> void bind (AttributeBufferView<A> view) {
 			descriptors[(std::size_t)A] = {
 				.kind = Kind::View, .buffer = view.buffer, .offset = view.offset,
@@ -427,8 +403,7 @@ public:
 		/// 	Removes the source of the attribute. Renderers then use the default value described for the respective
 		/// 	<tt>Attribute</tt>.
 		///
-		/// \tparam A
-		/// 	The attribute to remove.
+		/// \tparam A The attribute to remove.
 		template <Attribute A> void clear () {
 			descriptors[(std::size_t)A] = {.kind = Kind::Absent};
 		}
@@ -447,18 +422,16 @@ public:
 		// Fields
 
 		/// Last assignment per attribute; attributes left at \c Kind::Unchanged keep their committed source.
-		std::array<Descriptor, (std::size_t)Attribute::Count> descriptors{};
+		std::array<Descriptor, (std::size_t)Attribute::_Count> descriptors{};
 	};
 
 
 	////
 	// Object construction/destruction
 
-	/// \brief
-	/// 	Creates an empty collection: all attributes are absent and the instance count is zero.
+	/// \brief Creates an empty collection: all attributes are absent and the instance count is zero.
 	///
-	/// \param device
-	/// 	The device on which GPU memory is allocated. It must outlive the collection.
+	/// \param device The device on which GPU memory is allocated. It must outlive the collection.
 	explicit PrimitiveAttributes(Device &device);
 
 	/// Destroys the collection and its GPU memory without waiting for the GPU. Draws that were already submitted still
@@ -484,19 +457,17 @@ public:
 	/// Returns the device the collection was created on.
 	[[nodiscard]] auto device () const -> Device&;
 
-	/// Returns the number of instances: the element count of the position source, or zero if position is absent.
+	/// Number of nodes: the position count, or zero if absent; unconnected renderers draw one instance per node.
 	[[nodiscard]] auto instanceCount () const -> std::size_t;
 
-	/// \brief
-	/// 	Returns the current source of an attribute.
+	/// \brief Returns the current source of an attribute.
 	///
 	/// A constant is returned as its value. Both arrays set with \c Update::set and buffers bound with \c Update::bind
 	/// are returned as an <tt>AttributeBufferView</tt>. For an array set with <tt>Update::set</tt>, the view refers to
 	/// a buffer owned by the collection; for an empty array, its \c buffer may be null. Such a view stays valid until
 	/// the next successful \c setAttributes call that changes the attribute, or until the collection is destroyed.
 	///
-	/// \tparam A
-	/// 	The attribute to query.
+	/// \tparam A The attribute to query.
 	///
 	/// \return The source of the attribute.
 	template <Attribute A> [[nodiscard]] auto source () const -> AttributeSource<A>
@@ -513,16 +484,14 @@ public:
 		return value;
 	}
 
-	/// \brief
-	/// 	Returns whether renderers can draw the current source of an attribute.
+	/// \brief Returns whether renderers can draw the current source of an attribute.
 	///
 	/// An attribute becomes unusable when \c setAttributes without a copy pass fails to submit an array assigned to
 	/// it. The GPU contents of the attribute are undefined then, and drawing with a renderer that uses the attribute
 	/// fails with <tt>RenderErrorCode::InvalidState</tt>. The next successful assignment of any source to the
 	/// attribute, including <tt>Update::clear</tt>, makes it usable again.
 	///
-	/// \tparam A
-	/// 	The attribute to query.
+	/// \tparam A The attribute to query.
 	///
 	/// \return Whether the attribute can be drawn.
 	template <Attribute A> [[nodiscard]] auto usable () const -> bool { return isUsable(A); }
@@ -531,8 +500,7 @@ public:
 	////
 	// Methods
 
-	/// \brief
-	/// 	Changes attribute sources and uploads new arrays to the GPU in a single submission.
+	/// \brief Changes attribute sources and uploads new arrays to the GPU in a single submission.
 	///
 	/// Calls \p fn once with an \c Update on which it records the changes. Then all changes are checked, and the
 	/// arrays assigned with \c Update::set are uploaded and submitted to the GPU in one command buffer. If no arrays
@@ -544,8 +512,7 @@ public:
 	/// unchanged, and the attributes that were assigned arrays become unusable (see <tt>usable</tt>) until they are
 	/// assigned again. If \p fn throws, the exception propagates, all sources stay unchanged and nothing is uploaded.
 	///
-	/// \tparam Fn
-	/// 	A callable that accepts a <tt>PrimitiveAttributes::Update&</tt>.
+	/// \tparam Fn A callable that accepts a <tt>PrimitiveAttributes::Update&</tt>.
 	///
 	/// \param fn
 	/// 	Records the changes. CPU arrays passed to \c Update::set must remain valid and unchanged until this call
@@ -560,8 +527,7 @@ public:
 		return performUpdate(nullptr, std::forward<Fn>(fn));
 	}
 
-	/// \brief
-	/// 	Changes attribute sources and records the uploads of new arrays into a copy pass that you provide.
+	/// \brief Changes attribute sources and records the uploads of new arrays into a copy pass that you provide.
 	///
 	/// Works like the overload without a copy pass, but records the uploads into \p copyPass instead of submitting
 	/// them, and never makes attributes unusable. On success, the new sources are in effect immediately. Draws that use
@@ -569,18 +535,15 @@ public:
 	/// is submitted later. The uploads reach the GPU only when the command buffer containing \p copyPass is submitted.
 	/// The call does not wait for the GPU.
 	///
-	/// \pre
-	/// 	\p copyPass is active and belongs to a command buffer on the device of the collection.
+	/// \pre \p copyPass is active and belongs to a command buffer on the device of the collection.
 	///
 	/// \note
 	/// 	If that command buffer is canceled or its submission fails, or if this call fails after recording some
 	/// 	uploads, the GPU contents of the affected arrays are undefined. Assign these arrays again before drawing.
 	///
-	/// \tparam Fn
-	/// 	A callable that accepts a <tt>PrimitiveAttributes::Update&</tt>.
+	/// \tparam Fn A callable that accepts a <tt>PrimitiveAttributes::Update&</tt>.
 	///
-	/// \param copyPass
-	/// 	The active copy pass to record the uploads into. Must not be null.
+	/// \param copyPass The active copy pass to record the uploads into. Must not be null.
 	/// \param fn
 	/// 	Records the changes. CPU arrays passed to \c Update::set must remain valid and unchanged until this call
 	/// 	returns.

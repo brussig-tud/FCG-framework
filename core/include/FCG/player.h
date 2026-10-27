@@ -242,6 +242,35 @@ public:
 			return value * scale;
 	}
 
+	/// \brief Convert ImGui coordinates into a distance or position authored at 100% display scale.
+	///
+	/// This is the inverse of \c toGuiUnits up to floating-point rounding. Both origins are the main window's
+	/// top-left corner. The result is measured in authored units, rather than framebuffer pixels. Font enlargement
+	/// and temporary style overrides do not affect it. A player without an attached GUI uses a scale of one.
+	///
+	/// \pre With an attached GUI, call from \c Applet::gui, \c Applet::update or \c Applet::render on the main thread.
+	///
+	/// \tparam T
+	/// 	The value type, with the same supported types and multiplication requirements as \c toGuiUnits.
+	/// \param value The ImGui distance or position; zero and negative components are allowed.
+	///
+	/// \return The converted value, preserving its type and double-precision components.
+	///
+	/// \throws ... Exceptions from user-defined multiplication or result conversion propagate to the caller.
+	template <class T>
+	requires
+		   (!std::integral<T>)
+		&& (   std::same_as<T, ImVec2> || std::same_as<T, glm::dvec2>
+		    || requires (T value, float scale){{value*scale} -> std::convertible_to<T>;})
+	[[nodiscard]] auto fromGuiUnits (T value) const -> T
+	{
+		const float scale = 1.f / guiUnitScale();
+		if constexpr (std::same_as<T, ImVec2> || std::same_as<T, glm::dvec2>)
+			return T{value.x * scale, value.y * scale};
+		else
+			return value * scale;
+	}
+
 	/// \brief Check whether at least one continuous redraw request is active.
 	///
 	/// \return \c true if the main loop currently runs continuously, \c false if it waits for events.

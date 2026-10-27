@@ -14,6 +14,8 @@
 #include <array>
 #include <cmath>
 #include <vector>
+#include <set>
+#include <utility>
 
 // Dear ImGui
 #include <imgui.h>
@@ -182,6 +184,7 @@ public:
 		m_vertices.clear();
 		m_indices.clear();
 		m_corners.clear();
+		m_edges.clear();
 
 		const SolidData &data = solidData((Solid)solid);
 
@@ -200,9 +203,16 @@ public:
 		for (const auto &position : data.vertices)
 			m_corners.emplace_back(position * scale, 1.f);
 
-		// Emit each face as its own set of vertices (flat shading via duplication), fan-triangulated.
+		// Emit face boundaries once and retain the mesh's flat-shaded fan triangulation
+		std::set<std::pair<std::uint32_t, std::uint32_t>> uniqueEdges;
 		for (const auto &face : data.faces)
 		{
+			// Collect canonical face boundaries before duplicating the corners
+			for (std::size_t i = 0; i < face.size(); ++i) {
+				const auto a = face[i], b = face[(i + 1) % face.size()];
+				uniqueEdges.emplace(std::min(a, b), std::max(a, b));
+			}
+
 			// Scaled corner positions.
 			std::vector<glm::vec3> corners;
 			corners.reserve(face.size());
@@ -235,6 +245,13 @@ public:
 				m_indices.push_back(baseIndex+i+1);
 			}
 		}
+
+		// Flatten unique geometric edges for the connected line renderer
+		m_edges.reserve(2 * uniqueEdges.size());
+		for (const auto &[a, b] : uniqueEdges) {
+			m_edges.push_back(a);
+			m_edges.push_back(b);
+		}
 	}
 
 	/// \brief Returns the primitive type of the solid's index data.
@@ -263,6 +280,13 @@ public:
 	/// \return A borrowed view valid until the next regeneration or destruction of the shape.
 	[[nodiscard]] auto corners () const -> std::span<const glm::vec4> override {
 		return m_corners;
+	}
+
+	/// \brief Returns unique polyhedron edge pairs indexing \c corners.
+	///
+	/// \return A borrowed view valid until the next regeneration or destruction.
+	[[nodiscard]] auto edges () const -> std::span<const std::uint32_t> override {
+		return m_edges;
 	}
 
 
@@ -425,6 +449,9 @@ private:
 
 	/// One homogeneous object-space position per canonical corner, scaled to the configured size.
 	std::vector<glm::vec4> m_corners;
+
+	/// Normalized corner-index pairs for the geometric face boundaries.
+	std::vector<std::uint32_t> m_edges;
 };
 
 

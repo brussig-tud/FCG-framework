@@ -60,8 +60,8 @@ namespace fcg {
 /// corner (+1,+1). Both sides are drawn unless \c RendererOptions::cullMode specifies otherwise. With lighting
 /// enabled, the front side uses the normal +Z and the back side the flipped normal.
 ///
-/// Create or replace the renderer in <tt>Applet::recreatePipelines</tt>, and call \c draw inside an active render pass. A
-/// moved-from renderer is empty: only assignment and destruction are valid, and \c draw returns
+/// Create or replace the renderer in <tt>\ref Applet::recreatePipelines</tt>, and call \c draw inside an active render
+/// pass. A moved-from renderer is empty: only assignment and destruction are valid, and \c draw returns
 /// <tt>RenderErrorCode::InvalidState</tt>.
 class FCG_RENDER_EXPORT QuadRenderer final : public PrimitiveRenderer
 {

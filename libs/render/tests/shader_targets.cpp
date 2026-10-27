@@ -34,6 +34,9 @@ namespace {
 /// Last source produced by the real MSL translator.
 std::string translated;
 
+/// Last source produced by the real HLSL translator.
+std::string translatedHlsl;
+
 /// Properties borrowed by the last shader compilation.
 SDL_PropertiesID borrowedProperties = 0;
 
@@ -71,6 +74,10 @@ auto compileShader (
 		(char*)SDL_ShaderCross_TranspileMSLFromSPIRV(info), SDL_free);
 	require(msl != nullptr, SDL_GetError());
 	translated = msl.get();
+	const std::unique_ptr<char, decltype(&SDL_free)> hlsl(
+		(char*)SDL_ShaderCross_TranspileHLSLFromSPIRV(info), SDL_free);
+	require(hlsl != nullptr, SDL_GetError());
+	translatedHlsl = hlsl.get();
 
 	// Return genuine backend shaders except when testing the production failure cleanup
 	if (failCompilation) {
@@ -123,6 +130,7 @@ void exercise (fcg::Device &device, std::string_view name)
 	const auto shader = fcg::res::shader(fcg::render::embedded::FS, name);
 	require(shader.has_value(), "Missing embedded shader");
 	const bool ellipsoid = name.starts_with("ellipsoid");
+	const bool line = name == "line";
 	const bool textured = name.ends_with("textured");
 	const fcg::RenderTargetInfo withDepth{
 		SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREFORMAT_D32_FLOAT};
@@ -155,6 +163,15 @@ void exercise (fcg::Device &device, std::string_view name)
 			require((translated.find("[[depth(") != std::string::npos) == !suppressed, "Wrong fragment-depth interface");
 			require(translated.find("sample_perspective") != std::string::npos
 				&& translated.find("sample_no_perspective") != std::string::npos, "Sample interpolation changed");
+		}
+		if (line && fragment) {
+			require((translated.find("[[depth(") != std::string::npos) == !suppressed,
+				"Line shader has the wrong fragment-depth interface");
+			require(translated.find("no_perspective") != std::string::npos,
+				"Line shader lost its screen-linear interpolation");
+			require(translatedHlsl.find("noperspective") != std::string::npos
+				&& translatedHlsl.find("SV_Depth") != std::string::npos,
+				"Line HLSL lost its interpolation or depth interface");
 		}
 		require(translated.find(fragment ? "[[color(0)]]" : "[[position]]") != std::string::npos,
 			"Shader lost its color or position output");
@@ -191,7 +208,7 @@ auto main () -> int
 	try {
 		auto device = fcg::Device::create();
 		require(device.has_value(), SDL_GetError());
-		for (const auto name : {"primitive", "textured", "ellipsoid", "ellipsoid_textured"})
+		for (const auto name : {"primitive", "textured", "ellipsoid", "ellipsoid_textured", "line"})
 			exercise(*device, name);
 	} catch (const std::exception &error) {
 		std::cerr << error.what() << '\n';

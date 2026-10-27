@@ -102,6 +102,7 @@ public:
 template <class T>
 concept Convertible = requires (const fcg::Player &player, T value) {
 	{ player.toGuiUnits(value) } -> std::same_as<T>;
+	{ player.fromGuiUnits(value) } -> std::same_as<T>;
 };
 
 static_assert(Convertible<float> && Convertible<double> && Convertible<long double>);
@@ -111,6 +112,7 @@ static_assert(Convertible<ThrowingConversion>);
 static_assert(!Convertible<int> && !Convertible<unsigned> && !Convertible<bool>);
 static_assert(!Convertible<NoProduct> && !Convertible<InvalidProduct>);
 static_assert(!noexcept(std::declval<const fcg::Player&>().toGuiUnits(ThrowingProduct{})));
+static_assert(!noexcept(std::declval<const fcg::Player&>().fromGuiUnits(ThrowingProduct{})));
 
 /// Fail a probe without depending on assertions being enabled.
 void check (bool condition) {
@@ -132,6 +134,19 @@ void checkValues (const fcg::Player &player, float scale)
 	check(player.toGuiUnits(glm::dvec2(precise, -precise)) == glm::dvec2(precise * scale, -precise * scale));
 	check(player.toGuiUnits(Distance{precise}).value == precise * scale);
 	check(player.toGuiUnits(ConvertedDistance(precise)).value == precise * scale);
+	const float inverse = 1.f / scale;
+	check(player.fromGuiUnits(400.f) == 400.f * inverse);
+	check(player.fromGuiUnits(precise) == precise * inverse);
+	check(player.fromGuiUnits(0.f) == 0.f);
+	check(player.fromGuiUnits(-20.f) == -20.f * inverse);
+	const auto restored = player.fromGuiUnits(ImVec2(400.f, -20.f));
+	check(restored.x == 400.f * inverse && restored.y == -20.f * inverse);
+	check(player.fromGuiUnits(glm::dvec2(precise, -precise))
+		== glm::dvec2(precise * inverse, -precise * inverse));
+	check(player.fromGuiUnits(glm::vec2(400.f, -20.f)) == glm::vec2(400.f * inverse, -20.f * inverse));
+	check(player.fromGuiUnits(Distance{precise}).value == precise * inverse);
+	check(player.fromGuiUnits(ConvertedDistance(precise)).value == precise * inverse);
+	check(std::abs(player.fromGuiUnits(player.toGuiUnits(precise)) / precise - 1.0) < 2e-7);
 	bool threw = false;
 	try {
 		(void)player.toGuiUnits(ThrowingProduct{});
@@ -142,6 +157,20 @@ void checkValues (const fcg::Player &player, float scale)
 	threw = false;
 	try {
 		(void)player.toGuiUnits(ThrowingConversion{});
+	} catch (const std::runtime_error &error) {
+		threw = std::string(error.what()) == "custom conversion";
+	}
+	check(threw);
+	threw = false;
+	try {
+		(void)player.fromGuiUnits(ThrowingProduct{});
+	} catch (const std::runtime_error &error) {
+		threw = std::string(error.what()) == "custom multiplication";
+	}
+	check(threw);
+	threw = false;
+	try {
+		(void)player.fromGuiUnits(ThrowingConversion{});
 	} catch (const std::runtime_error &error) {
 		threw = std::string(error.what()) == "custom conversion";
 	}

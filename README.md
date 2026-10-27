@@ -60,7 +60,7 @@ Framework functionality is grouped by purpose into four libraries that applicati
 | --- | --- |
 | [Core](https://brussig-tud.github.io/FCG-framework/fcg_core_overview.html) | The foundation: application lifecycle (applets driven by `fcg::run`), main window and GPU device, input events, GPU resources such as buffers, textures and fullscreen passes, render state shared between applets, ready-made camera controls, and an integrated Dear ImGui GUI. |
 | [Image](https://brussig-tud.github.io/FCG-framework/fcg_image_overview.html) | Decodes common image formats through SDL_image, plus Radiance HDR, Portable Float Map and optional OpenEXR, into CPU pixels for inspection, processing or configurable GPU upload. Loading requires no GPU device or applet. |
-| [Render](https://brussig-tud.github.io/FCG-framework/fcg_render_overview.html) | Draws instanced primitives – currently just (optionally textured) quads and boxes – from user-definable attributes on the GPU; the quickest way to put many simple objects on the screen without writing your own pipelines and shaders. |
+| [Render](https://brussig-tud.github.io/FCG-framework/fcg_render_overview.html) | Provides convenient renderers to quickly draw a large number of simple primitives (boxes, lines, etc.) without having to deal with shaders and pipeline setup. |
 | [Extras](https://brussig-tud.github.io/FCG-framework/fcg_extras_overview.html) | Optional desktop conveniences on top of Core that only some platforms or applications need, currently just native file/folder dialogs. |
 
 

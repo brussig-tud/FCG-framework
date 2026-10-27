@@ -10,16 +10,18 @@
 
 /// \page fcg_render_overview Render library overview
 ///
-/// The Render library draws instanced quads, boxes, and smooth ellipsoids from user-definable attributes on the GPU;
-/// the quickest way to put many simple objects on the screen without writing your own pipelines and shaders.
+/// The Render library draws instanced quads, boxes, smooth ellipsoids and (optionally anti-aliased) lines from
+/// user-definable GPU attributes; the quickest way to put many simple objects on the screen without writing your own
+/// pipelines and shaders.
 ///
 /// Link your application against \verbatim FCG-Framework::Render \endverbatim and include the renderer headers under
 /// \c FCG/Render/:
 /// \snippet render_examples.cpp includes
 ///
 /// \section fcg_render_start Where to start
-/// Start with the \ref fcg_primitives guide: it explains the shared attribute collection, the supplied
-/// renderers, and how to create, update, and draw them. For spheres and ellipsoids, see \ref fcg_ellipsoids.
+/// Start with the \ref fcg_primitives guide: it explains the shared attribute collection, the supplied renderers, and
+/// how to create, update, and draw them. For spheres and ellipsoids, see \ref fcg_ellipsoids. For pixel-width line
+/// segments between shared nodes, see \ref fcg_lines and \ref fcg_connected_primitives.
 
 
 
@@ -34,12 +36,13 @@
 /// 	Drawing many geometric primitives of the same type at once according to provided per-instance attribute values.
 ///
 /// A <tt>\ref fcg::PrimitiveAttributes "PrimitiveAttributes"</tt> collection holds the per-instance data — position,
-/// extent, orientation, and color — on the GPU, and also offers optional normal and radius sources, which the
-/// supplied renderers do not use. The renderers <tt>\ref fcg::QuadRenderer "QuadRenderer"</tt> and
+/// extent, orientation, and color — on the GPU, and also offers optional normal and radius sources.
+/// <tt>\ref fcg::LineRenderer "LineRenderer"</tt> uses node radii for pixel widths.
+/// The renderers <tt>\ref fcg::QuadRenderer "QuadRenderer"</tt> and
 /// <tt>\ref fcg::BoxRenderer "BoxRenderer"</tt> draw rectangles and cuboids.
 /// <tt>\ref fcg::EllipsoidRenderer "EllipsoidRenderer"</tt> draws smooth ellipsoids. Each renderer uses one instanced
 /// draw call. Missing optional attributes fall back to sensible defaults (unit extent, identity orientation, opaque
-/// white); position determines the instance count.
+/// white); positions are always mandatory and thus determine actual the instance count.
 /// \snippet render_examples.cpp attributes
 ///
 /// \section fcg_primitives_usage Getting started
@@ -125,8 +128,7 @@ namespace fcg {
 // Structs and enums
 //
 
-/// \brief
-/// 	Pipeline settings of a primitive renderer.
+/// \brief Pipeline settings of a primitive renderer.
 ///
 /// The settings are fixed when the renderer is created. To change them, create a new renderer.
 struct RendererOptions
@@ -140,24 +142,21 @@ struct RendererOptions
 	/// The comparison used for depth testing.
 	SDL_GPUCompareOp depthCompare = SDL_GPU_COMPAREOP_LESS;
 
-	/// \brief
-	/// 	The face culling mode.
+	/// \brief The face culling mode.
 	///
-	/// If empty, \c BoxRenderer and \c EllipsoidRenderer cull back faces and \c QuadRenderer culls nothing.
-	/// The outward sides of boxes and ellipsoids and the +Z sides of quads are their front faces.
+	/// If empty, \c BoxRenderer and \c EllipsoidRenderer cull back faces; \c QuadRenderer and \c LineRenderer cull
+	/// nothing. The outward sides of boxes and ellipsoids and the +Z sides of quads are their front faces.
 	std::optional<SDL_GPUCullMode> cullMode;
 
-	/// \brief
-	/// 	Whether colors are blended using straight (not premultiplied) alpha.
+	/// \brief Whether colors are blended using straight (not premultiplied) alpha.
 	///
 	/// When enabled, the output RGB is <tt>src.rgb * src.a + dst.rgb * (1 - src.a)</tt> and the output alpha is
 	/// <tt>src.a + dst.a * (1 - src.a)</tt>. Instances are drawn in the order of the collection and are not sorted by
-	/// depth. Ellipsoids contribute at most one surface per instance at each sample.
+	/// depth. Ellipsoids contribute at most one surface point per instance at each sample.
 	bool alphaBlending = false;
 };
 
-/// \brief
-/// 	A texture and a sampler for drawing primitives textured, set via <tt>DrawOptions::texture</tt>.
+/// \brief A texture and a sampler for drawing primitives textured, set via <tt>DrawOptions::texture</tt>.
 ///
 /// You create both resources, and they must stay alive at least until the command buffer containing the draw has
 /// been submitted.
@@ -171,8 +170,7 @@ struct PrimitiveTexture
 	SDL_GPUSampler *sampler = nullptr;
 };
 
-/// \brief
-/// 	A directional light for simple diffuse lighting of primitives, set via <tt>DrawOptions::lighting</tt>.
+/// \brief A directional light for simple diffuse lighting of primitives, set via <tt>DrawOptions::lighting</tt>.
 ///
 /// With lighting enabled, the RGB part of each fragment color is multiplied by
 /// <tt>ambient + diffuse * max(dot(n, l), 0)</tt>, where \c n is the unit normal of the surface in eye space and
@@ -195,9 +193,8 @@ struct DirectionalLight
 	glm::vec3 diffuse{.8f};
 };
 
-/// Texture and lighting settings for a single <tt>PrimitiveRenderer::draw</tt> call.
-struct DrawOptions
-{
+/// \brief Texture and lighting settings for a single <tt>PrimitiveRenderer::draw</tt> call.
+struct DrawOptions {
 	/// Optional texture. If set, the instance color is multiplied by the texture color.
 	std::optional<PrimitiveTexture> texture;
 
@@ -205,9 +202,8 @@ struct DrawOptions
 	DirectionalLight lighting;
 };
 
-/// A contiguous range of instances to draw.
-struct InstanceRange
-{
+/// \brief A contiguous range of instances to draw.
+struct InstanceRange {
 	/// Index of the first instance to draw.
 	std::size_t first = 0;
 
@@ -222,17 +218,18 @@ struct InstanceRange
 // Classes
 //
 
-/// \brief
-/// 	Common interface of the instanced primitive renderers \c QuadRenderer, \c BoxRenderer and <tt>EllipsoidRenderer</tt>.
+/// \brief Common interface of instanced primitive renderers and the connected renderer specialization.
 ///
-/// A renderer draws one primitive per instance of a \c PrimitiveAttributes collection, using the attributes listed by
-/// <tt>supportedAttributes</tt>. It draws into render passes whose attachments match the target it was created for,
-/// at any size. When the formats or the sample count of the target change, you must create a new renderer.
+/// A renderer draws one primitive per instance of a <tt>\ref PrimitiveAttributes</tt> collection, using the attributes
+/// listed by <tt>\ref PrimitiveRenderer::supportedAttributes "supportedAttributes"</tt>. It draws into render passes
+/// whose attachments match the target it was created for, at any size. When the formats or the sample count of the
+/// target change, you must create a new renderer. <tt>\ref ConnectedPrimitiveRenderer</tt> adds explicit node
+/// connectivity and requires its connected draw overload be used instead.
 ///
 /// The device must outlive the renderer. Every buffer bound to a drawn collection with
-/// <tt>PrimitiveAttributes::Update::bind</tt> must stay alive while it is bound. Renderers are not thread-safe: calls
-/// must not run concurrently with each other or with updates of the drawn collection. Drawing never waits for the
-/// GPU.
+/// <tt>\ref PrimitiveAttributes::Update::bind</tt> must stay alive while it is bound. Renderers are not thread-safe:
+/// calls must not run concurrently with each other or with updates of the drawn collection. Drawing never waits for the
+/// GPU to process the draw commands.
 class FCG_RENDER_EXPORT PrimitiveRenderer
 {
 public:
@@ -247,19 +244,16 @@ public:
 	////
 	// Accessors
 
-	/// \brief
-	/// 	Returns the attributes this renderer uses when drawing.
+	/// \brief Returns the attributes this renderer uses when drawing.
 	///
 	/// The sources of all other attributes in a drawn collection are ignored and need not cover the drawn range.
 	///
 	/// \return The used attributes.
 	[[nodiscard]] virtual auto supportedAttributes () const -> std::span<const Attribute> = 0;
 
-	/// \brief
-	/// 	Returns whether this renderer uses an attribute when drawing.
+	/// \brief Returns whether this renderer uses an attribute when drawing.
 	///
-	/// \param attribute
-	/// 	The attribute to query.
+	/// \param attribute The attribute to query.
 	///
 	/// \return Whether \p attribute is one of the attributes returned by <tt>supportedAttributes</tt>.
 	[[nodiscard]] auto supports (Attribute attribute) const -> bool;
@@ -268,8 +262,7 @@ public:
 	////
 	// Methods
 
-	/// \brief
-	/// 	Draws one primitive for each instance in \p range into an active render pass.
+	/// \brief Draws one primitive for each instance in \p range into an active render pass.
 	///
 	/// Records a single instanced draw into \p renderPass. The renderer binds its own pipeline, vertex buffer, storage
 	/// buffers and, when texturing, sampler on \p renderPass, and pushes its own vertex and fragment uniform data to
@@ -281,18 +274,12 @@ public:
 	/// 	attachments match the target the renderer was created for. Values in buffers bound to used attributes with
 	/// 	<tt>PrimitiveAttributes::Update::bind</tt> meet the requirements of the respective <tt>Attribute</tt>.
 	///
-	/// \param attributes
-	/// 	The instance attributes. Must belong to the renderer's device.
-	/// \param state
-	/// 	Supplies the current viewing matrices.
-	/// \param commandBuffer
-	/// 	The command buffer that contains \p renderPass.
-	/// \param renderPass
-	/// 	The active render pass to draw into.
-	/// \param options
-	/// 	Texture and lighting settings for this draw.
-	/// \param range
-	/// 	The instances to draw. The default draws all instances.
+	/// \param attributes The instance attributes. Must belong to the renderer's device.
+	/// \param state Supplies the current viewing matrices.
+	/// \param commandBuffer The command buffer that contains \p renderPass.
+	/// \param renderPass The active render pass to draw into.
+	/// \param options Texture and lighting settings for this draw.
+	/// \param range The instances to draw. The default draws all instances.
 	///
 	/// \return
 	/// 	Success, or an error. The error is <tt>RenderErrorCode::InvalidArgument</tt> if \p attributes belongs to

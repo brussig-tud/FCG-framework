@@ -5,7 +5,9 @@
 //
 
 // C++ STL
-/* nothing here yet */
+#include <algorithm>
+#include <set>
+#include <utility>
 
 // Local includes
 #include "shapes.h"
@@ -21,6 +23,37 @@
 // SimpleShape
 
 SimpleShape::~SimpleShape() = default;
+
+auto SimpleShape::triangulatedEdges () const -> std::vector<std::uint32_t>
+{
+	// Map the flat-shaded mesh vertices back to their exact, shared geometric corners
+	const auto nodes = corners();
+	std::vector<std::uint32_t> cornerForVertex;
+	cornerForVertex.reserve(vertices().size());
+	for (const auto &vertex : vertices())
+		cornerForVertex.push_back((std::uint32_t)(
+			std::find(nodes.begin(), nodes.end(), vertex.position) - nodes.begin()
+		));
+
+	// Read the same triangle list supplied to the mesh uploader, deduplicating shared edges
+	std::set<std::pair<std::uint32_t, std::uint32_t>> unique;
+	const auto triangles = indices();
+	for (std::size_t i = 0; i < triangles.size(); i += 3)
+		for (std::size_t side = 0; side < 3; ++side) {
+			const auto a = cornerForVertex[triangles[i + side]];
+			const auto b = cornerForVertex[triangles[i + (side + 1) % 3]];
+			unique.emplace(std::min(a, b), std::max(a, b));
+		}
+
+	// Flatten pairs into the connectivity renderer's contiguous 32-bit representation
+	std::vector<std::uint32_t> result;
+	result.reserve(unique.size() * 2);
+	for (const auto &[a, b] : unique) {
+		result.push_back(a);
+		result.push_back(b);
+	}
+	return result;
+}
 
 auto SimpleShape::uploadGeometry (
 	fcg::Device &device, std::span<const Vertex> vertices, std::span<const std::uint32_t> indices

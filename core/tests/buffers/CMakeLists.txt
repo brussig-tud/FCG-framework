@@ -13,14 +13,3 @@ set_tests_properties(buffer-smoke PROPERTIES
 	TIMEOUT 60
 	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-"
 )
-
-if (TARGET hello)
-	add_executable(shape-buffer-smoke shape_smoke.cpp ${PROJECT_SOURCE_DIR}/app/hello/src/shapes.cpp)
-	target_include_directories(shape-buffer-smoke PRIVATE ${PROJECT_SOURCE_DIR}/app/hello/src)
-	target_link_libraries(shape-buffer-smoke PRIVATE Core)
-	add_test(NAME shape-buffer-smoke COMMAND shape-buffer-smoke)
-	set_tests_properties(shape-buffer-smoke PROPERTIES
-		TIMEOUT 60
-		FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-"
-	)
-endif()

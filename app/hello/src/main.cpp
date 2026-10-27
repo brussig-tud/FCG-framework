@@ -29,6 +29,7 @@
 #include <FCG/applet.h>
 #include <FCG/applet/orbit_camera.h>
 #include <FCG/Render/ellipsoid_renderer.h>
+#include <FCG/Render/line_renderer.h>
 
 // Local includes
 #include <shapes/convex_poly.h>
@@ -48,9 +49,27 @@
 /// The shapes are drawn with Blinn-Phong lighting by the embedded \c simple_shapes shader, using the viewing
 /// transformation of the current \c fcg::RenderState (e.g. as set up by a camera applet running before this one).
 /// Optional spheres mark geometric corners, with their radius specified as a percentage of the shape's circumradius.
+/// Geometric and triangulated wireframes show independent pixel-width segments with optional filtered edges.
 class SimpleShapesApplet : public fcg::Applet
 {
 public:
+
+	////
+	// Types
+
+	/// Representation selected independently of the shape and corner markers.
+	enum class DisplayMode
+	{
+		/// The filled, lit triangle mesh.
+		Solid,
+
+		/// Unique geometric face boundaries.
+		Wireframe,
+
+		/// Unique edges of the uploaded triangle mesh.
+		TriangulatedWireframe
+	};
+
 
 	////
 	// Object construction/destruction
@@ -79,16 +98,19 @@ public:
 		return name;
 	}
 
-	/// \brief Retain the device used for pipeline ownership and create the corner attribute collection.
+	/// \brief Retain the device and create the corner and wireframe collections.
 	///
 	/// \param device The device to create the pipeline on. It must outlive the applet.
 	/// \param player The player providing the main render target's color format.
 	void init (fcg::Device &device, fcg::Player &player) override {
 		m_device = &device;
 		cornerAttributes = std::make_unique<fcg::PrimitiveAttributes>(device);
+		wireAttributes = std::make_unique<fcg::PrimitiveAttributes>(device);
+		wireEdges = std::make_unique<fcg::PrimitiveConnectivity>(device);
+		triangleEdges = std::make_unique<fcg::PrimitiveConnectivity>(device);
 	}
 
-	/// \brief Replace the mesh and corner sphere pipelines for the player's effective target.
+	/// \brief Replace mesh, corner and line pipelines for the player's effective target.
 	///
 	/// Draws indexed triangle lists and corner spheres with depth testing and writing. Failures are logged and
 	/// disable the affected drawing.
@@ -108,6 +130,16 @@ public:
 			cornerRenderer.emplace(std::move(*renderer));
 		else
 			SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Creating corner renderer: %s", renderer.error().message.c_str());
+
+		// Blend filtered lines against the scene without making rear edges occlude one another
+		lineRenderer.reset();
+		auto lines = fcg::LineRenderer::create(player, {.depthWrite = false, .alphaBlending = true});
+		if (lines) {
+			lineRenderer.emplace(std::move(*lines));
+			applyLineStyle();
+		}
+		else
+			SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Creating wireframe renderer: %s", lines.error().message.c_str());
 
 		// Load the embedded app shader stages.
 		auto shader = fcg::res::shader(res::shaders::FS, "simple_shapes");
@@ -193,7 +225,7 @@ public:
 		// Nothing to do.
 	}
 
-	/// \brief Shows shape selection, shape-specific parameters, and corner sphere visibility, radius and color controls.
+	/// \brief Shows shape, display mode, line appearance and corner sphere controls.
 	///
 	/// \param device The application's GPU device.
 	/// \param player The player supplying GUI layout and scaling information.
@@ -230,6 +262,35 @@ public:
 		// GUI for the currently selected shape's parameters.
 		shapes[selectedShape]->gui();
 
+		// Choose the representation without changing the underlying shape geometry
+		ImGui::Separator();
+		constexpr const char *displayNames[]{"Solid", "Wireframe", "Triangulated wireframe"};
+		ImGui::SetNextItemWidth(-ImGui::CalcTextSize("Display").x - ImGui::GetStyle().ItemInnerSpacing.x);
+		if (ImGui::BeginCombo("Display", displayNames[(std::size_t)displayMode]))
+		{
+			for (unsigned i = 0; i < 3; ++i) {
+				const bool selected = i == (unsigned)displayMode;
+				if (ImGui::Selectable(displayNames[i], selected)) {
+					displayMode = (DisplayMode)i;
+					player.requireSceneRedraw();
+				}
+				if (selected)
+					ImGui::SetItemDefaultFocus();
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::BeginDisabled(displayMode == DisplayMode::Solid);
+		ImGui::SetNextItemWidth(-ImGui::CalcTextSize("Line width (px)").x - ImGui::GetStyle().ItemInnerSpacing.x);
+		bool lineStyleChanged = ImGui::SliderFloat("Line width (px)", &lineWidth, 1.f, 10.f, "%.1f",
+			ImGuiSliderFlags_AlwaysClamp);
+		ImGui::SetItemTooltip("Full line width in physical framebuffer pixels.");
+		lineStyleChanged |= ImGui::Checkbox("Anti-aliasing", &lineAntialiasing);
+		ImGui::EndDisabled();
+		if (lineStyleChanged) {
+			applyLineStyle();
+			player.requireSceneRedraw();
+		}
+
 		// Configure corner markers independently of the selected shape's parameters
 		ImGui::Separator();
 		if (ImGui::Checkbox("Show corners", &showCorners))
@@ -248,28 +309,126 @@ public:
 		ImGui::End();
 	}
 
-	/// \brief Updates the selected mesh and refreshes visible corner attributes after successful geometry uploads.
+	/// \brief Update the mesh and independently refresh enabled corner and wireframe data.
 	///
 	/// \param device The device on which to upload mesh and corner data.
 	/// \param player The application's player.
 	/// \param dt The elapsed time since the preceding update, in seconds.
 	void update (fcg::Device &device, fcg::Player &player, float dt) override
 	{
-		// Invalidate cached corner markers when switching shapes or regenerating their geometry, including while hidden
+		// Invalidate both visualization caches, including when their display modes are hidden
 		auto &shape = *shapes[selectedShape];
-		if (cornerShape != &shape || shape.dirty())
+		if (cachedShape != &shape || shape.dirty())
 		{
-			cornerShape = &shape;
+			cachedShape = &shape;
 			cornerPositionsDirty = true;
 			cornersReady = false;
+			wireGeometryDirty = true;
+			wireReady = false;
 			player.requireSceneRedraw();
 		}
 		shape.update(device);
-		if (!showCorners || shape.dirty() || !shape.numIndices() || !cornerAttributes)
-			return;
-		if (!cornerPositionsDirty && !cornerRadiusDirty && !cornerColorDirty)
+		if (shape.dirty() || !shape.numIndices())
 			return;
 
+		// Refresh each visualization independently after the mesh's upload succeeds
+		if (displayMode != DisplayMode::Solid && wireGeometryDirty)
+			updateWireframe(shape, player);
+		if (showCorners && (cornerPositionsDirty || cornerRadiusDirty || cornerColorDirty))
+			updateCorners(shape, player);
+	}
+
+	/// \brief
+	/// 	Draw the selected representation and enabled corner spheres with the current camera.
+	///
+	/// \param device The device shared by the pipelines and active render pass.
+	/// \param rs The current camera's viewing transformations.
+	/// \param renderPass The active scene pass compatible with the pipelines.
+	/// \param commandBuffer The command buffer containing the active render pass.
+	/// \param player The application's player.
+	void render (
+		fcg::Device &device, fcg::RenderState &rs, SDL_GPURenderPass *renderPass,
+		SDL_GPUCommandBuffer *commandBuffer, fcg::Player &player
+	) override
+	{
+		const auto &shape = *shapes[selectedShape];
+		if (!shape.numIndices())
+			return;
+
+		// The solid representation contributes surface depth before drawing its markers
+		if (displayMode == DisplayMode::Solid && m_pipeline)
+			drawMesh(shape, rs, renderPass, commandBuffer);
+
+		// Corner spheres occlude wire segments behind them in either wireframe representation
+		if (showCorners && cornersReady && cornerRenderer)
+		{
+			fcg::DrawOptions options;
+			options.lighting.enabled = true;
+			options.lighting.direction = glm::vec3(1.f / 3.f, 1.f / 3.f, 1.f);
+			if (auto result = cornerRenderer->draw(
+				*cornerAttributes, rs, commandBuffer, renderPass, options
+			); !result)
+				SDL_LogError(
+					SDL_LOG_CATEGORY_APPLICATION, "Drawing corner spheres: %s", result.error().message.c_str()
+				);
+		}
+
+		// Draw an open edge graph without filling the faces or writing line depth
+		if (displayMode != DisplayMode::Solid && wireReady && lineRenderer)
+		{
+			const auto &connectivity = displayMode == DisplayMode::Wireframe ? *wireEdges : *triangleEdges;
+			if (auto result = lineRenderer->draw(*wireAttributes, connectivity, rs, commandBuffer, renderPass); !result)
+				SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Drawing wireframe: %s", result.error().message.c_str());
+		}
+	}
+
+
+protected:
+
+	////
+	// Methods
+
+	/// Copy the current pixel width and filtering choice to the available line renderer.
+	void applyLineStyle () {
+		if (lineRenderer)
+			lineRenderer->setStyle({.defaultWidth = lineWidth, .filter = lineAntialiasing
+				? fcg::LineFilter::Smoothstep : fcg::LineFilter::None});
+	}
+
+	/// \brief Refresh node positions and both edge sets after a successful mesh upload.
+	///
+	/// \param shape The selected, successfully uploaded shape.
+	/// \param player The player whose scene is refreshed after updates or failures.
+	void updateWireframe (const SimpleShape &shape, fcg::Player &player)
+	{
+		// Upload positions once for both representations, using the line renderer's white color default
+		const auto triangles = shape.triangulatedEdges();
+		auto result = wireAttributes->setAttributes([&] (fcg::PrimitiveAttributes::Update &attributes) {
+			attributes.set<fcg::Attribute::Position>(shape.corners());
+		});
+		if (result)
+			result = wireEdges->setIndices(shape.edges());
+		if (result)
+			result = triangleEdges->setIndices(triangles);
+		if (!result) {
+			wireReady = false;
+			SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Updating wireframe: %s", result.error().message.c_str());
+			player.requireSceneRedraw();
+			return;
+		}
+
+		// Make both representations drawable only after every upload succeeds
+		wireGeometryDirty = false;
+		wireReady = true;
+		player.requireSceneRedraw();
+	}
+
+	/// \brief Refresh visible corner markers independently of wireframe readiness.
+	///
+	/// \param shape The selected, successfully uploaded shape.
+	/// \param player The player whose scene is refreshed after updates or failures.
+	void updateCorners (const SimpleShape &shape, fcg::Player &player)
+	{
 		// Measure the generated corners only when their positions change
 		float circumradius = cornerCircumradius;
 		if (cornerPositionsDirty) {
@@ -278,8 +437,8 @@ public:
 				circumradius = std::max(circumradius, glm::length(glm::vec3(position) / position.w));
 		}
 
-		// Upload positions on geometry changes and use shared constants for radius and color edits
-		auto result = cornerAttributes->setAttributes([&](fcg::PrimitiveAttributes::Update &attributes)
+		// Use shared constants for corner size and color edits
+		auto result = cornerAttributes->setAttributes([&] (fcg::PrimitiveAttributes::Update &attributes)
 		{
 			if (cornerPositionsDirty)
 				attributes.set<fcg::Attribute::Position>(shape.corners());
@@ -295,7 +454,7 @@ public:
 			return;
 		}
 
-		// Publish marker state only after the complete attribute update succeeds
+		// Publish marker state after the complete attribute update succeeds
 		cornerCircumradius = circumradius;
 		cornerPositionsDirty = false;
 		cornerRadiusDirty = false;
@@ -304,66 +463,29 @@ public:
 		player.requireSceneRedraw();
 	}
 
-	/// \brief
-	/// 	Draws the selected shape and enabled corner spheres with the current viewing transformation; requires an
-	/// 	available mesh pipeline and uploaded geometry.
+	/// \brief Draw the filled mesh using its successfully uploaded vertex and index buffers.
 	///
-	/// \param device The device shared by the pipelines and active render pass.
-	/// \param rs The current camera's viewing transformations.
-	/// \param renderPass The active scene pass compatible with the pipelines.
-	/// \param commandBuffer The command buffer containing the active render pass.
-	/// \param player The application's player.
-	void render (
-		fcg::Device &device, fcg::RenderState &rs, SDL_GPURenderPass *renderPass,
-		SDL_GPUCommandBuffer *commandBuffer, fcg::Player &player
-	) override
+	/// \param shape The shape whose GPU geometry is available.
+	/// \param state The current viewing transformation.
+	/// \param pass The active scene render pass.
+	/// \param command The command buffer containing the pass.
+	void drawMesh (
+		const SimpleShape &shape, fcg::RenderState &state, SDL_GPURenderPass *pass, SDL_GPUCommandBuffer *command
+	)
 	{
-		if (!m_pipeline)
-			return;
-
-		const auto &shape = *shapes[selectedShape];
-		if (!shape.numIndices())
-			return;
-
-		// Bind the pipeline.
-		SDL_BindGPUGraphicsPipeline(renderPass, m_pipeline);
-
-		// Push the viewing uniforms so the shader can transform vertices.
-		rs.pushViewingUniforms(commandBuffer, fcg::ShaderStage::VERTEX, 0);
-
-		// Bind the shape's geometry buffers.
-		auto vertexBinding = shape.vertexBuffer()->bindVertex(renderPass);
-		auto indexBinding = shape.indexBuffer()->bindIndex(
-			renderPass, SDL_GPU_INDEXELEMENTSIZE_32BIT
-		);
-		if (!vertexBinding || !indexBinding) {
-			const auto &error = !vertexBinding ? vertexBinding.error() : indexBinding.error();
+		// Install the mesh pipeline and its viewing transformation
+		SDL_BindGPUGraphicsPipeline(pass, m_pipeline);
+		state.pushViewingUniforms(command, fcg::ShaderStage::VERTEX, 0);
+		auto vertex = shape.vertexBuffer()->bindVertex(pass);
+		auto index = shape.indexBuffer()->bindIndex(pass, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+		if (!vertex || !index) {
+			const auto &error = !vertex ? vertex.error() : index.error();
 			SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Binding geometry: %s", error.message.c_str());
 			return;
 		}
-
-		// Draw the indexed triangle list.
-		SDL_DrawGPUIndexedPrimitives(
-			renderPass, shape.numIndices(), 1, 0, 0, 0
-		);
-
-		// Draw the corner spheres against the mesh's depth with the same camera transformation
-		if (showCorners && cornersReady && cornerRenderer)
-		{
-			fcg::DrawOptions options;
-			options.lighting.enabled = true;
-			options.lighting.direction = glm::vec3(1.f / 3.f, 1.f / 3.f, 1.f);
-			if (auto result = cornerRenderer->draw(
-			    	*cornerAttributes, rs, commandBuffer, renderPass, options
-			    );  !result)
-				SDL_LogError(
-					SDL_LOG_CATEGORY_APPLICATION, "Drawing corner spheres: %s", result.error().message.c_str()
-				);
-		}
+		SDL_DrawGPUIndexedPrimitives(pass, shape.numIndices(), 1, 0, 0, 0);
 	}
 
-
-protected:
 
 	////
 	// Fields
@@ -386,6 +508,33 @@ protected:
 	/// Owned sphere positions and shared color and extent values on the applet's device.
 	std::unique_ptr<fcg::PrimitiveAttributes> cornerAttributes;
 
+	/// The wireframe renderer for the current scene format, empty if creation failed.
+	std::optional<fcg::LineRenderer> lineRenderer;
+
+	/// Shared wireframe positions; color and radius use the renderer's defaults.
+	std::unique_ptr<fcg::PrimitiveAttributes> wireAttributes;
+
+	/// Unique geometric edge pairs referencing the shared positions.
+	std::unique_ptr<fcg::PrimitiveConnectivity> wireEdges;
+
+	/// Unique edges of the uploaded mesh's triangle list.
+	std::unique_ptr<fcg::PrimitiveConnectivity> triangleEdges;
+
+	/// The selected shape representation.
+	DisplayMode displayMode = DisplayMode::Solid;
+
+	/// Full line width in physical framebuffer pixels.
+	float lineWidth = 2.f;
+
+	/// Whether line boundaries use smooth filtering.
+	bool lineAntialiasing = true;
+
+	/// Whether the selected shape's wireframe data needs uploading.
+	bool wireGeometryDirty = true;
+
+	/// Whether positions and both edge collections match the selected uploaded mesh.
+	bool wireReady = false;
+
 	/// Whether the GUI enables drawing corner spheres.
 	bool showCorners = false;
 
@@ -395,8 +544,8 @@ protected:
 	/// The shared RGB color of the opaque corner spheres.
 	glm::vec3 cornerColor{1.f, .65f, .1f};
 
-	/// The shape whose geometry is being tracked for marker updates.
-	const SimpleShape *cornerShape = nullptr;
+	/// The shape whose geometry is being tracked for corner and wireframe updates.
+	const SimpleShape *cachedShape = nullptr;
 
 	/// Whether corner positions need uploading after a shape selection or geometry change.
 	bool cornerPositionsDirty = true;

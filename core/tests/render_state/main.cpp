@@ -100,6 +100,13 @@ void matrices (fcg::RenderState &state, const glm::mat4 &modelview, const glm::m
 void renderState (fcg::Device &device)
 {
 	fcg::RenderState state(device);
+	require(state.viewportSize() == glm::uvec2(0), "Default viewport must be unspecified");
+	state.setViewportSize({320, 200});
+	state.pushModelviewMatrix();
+	state.popModelviewMatrix();
+	require(state.viewportSize() == glm::uvec2(320, 200), "Matrix operations changed viewport metadata");
+	fcg::RenderState captured(device, {800, 600});
+	require(captured.viewportSize() == glm::uvec2(800, 600), "Viewport constructor lost dimensions");
 	glm::mat4 modelview(1.f);
 	modelview[0][0] = 2.f;
 	modelview[1][1] = 3.f;

@@ -87,8 +87,7 @@ namespace fcg {
 // Classes
 //
 
-/// \brief
-/// 	Draws smooth, filled ellipsoids from a \c PrimitiveAttributes collection.
+/// \brief Draws smooth, filled ellipsoids from a \c PrimitiveAttributes collection.
 ///
 /// Each ellipsoid is centered at \c Attribute::Position and has local semi-axis lengths given by
 /// <tt>Attribute::Extent</tt>, rotated by <tt>Attribute::Orientation</tt>. A missing extent produces a unit sphere.
@@ -102,7 +101,7 @@ namespace fcg {
 /// Each ellipsoid contributes its nearest surface surviving clipping and culling, including when alpha blending
 /// is enabled. Clipping leaves open surfaces; no cap is drawn. Surface depth is used for depth testing and writing.
 ///
-/// Create or replace the renderer in <tt>Applet::recreatePipelines</tt> and call \c draw inside an active render
+/// Create or replace the renderer in <tt>\ref Applet::recreatePipelines</tt> and call \c draw inside an active render
 /// pass. A moved-from renderer is empty; \c draw returns <tt>RenderErrorCode::InvalidState</tt>.
 class FCG_RENDER_EXPORT EllipsoidRenderer final : public PrimitiveRenderer
 {
@@ -111,20 +110,17 @@ public:
 	////
 	// Object construction/destruction
 
-	/// \brief
-	/// 	Creates an ellipsoid renderer for render passes with the given attachment formats and sample count.
+	/// \brief Creates an ellipsoid renderer for render passes with the given attachment formats and sample count.
 	///
 	/// The renderer can draw into any render pass whose attachments match \p target, regardless of the pass size. To
 	/// draw into passes with other formats or another sample count, create another renderer.
 	///
-	/// \param device
-	/// 	The device to create the renderer on. It must outlive the renderer.
+	/// \param device The device to create the renderer on. It must outlive the renderer.
 	/// \param target
 	/// 	Color format, depth format and sample count of the render passes to draw into. A depth format of
 	/// 	\c SDL_GPU_TEXTUREFORMAT_INVALID means the passes have no depth attachment, which disables depth testing and
 	/// 	depth writes.
-	/// \param options
-	/// 	Depth, culling and blending settings.
+	/// \param options Depth, culling and blending settings.
 	///
 	/// \return
 	/// 	The renderer, or an error. The error is <tt>RenderErrorCode::InvalidArgument</tt> if the device does not
@@ -135,17 +131,14 @@ public:
 		Device &device, const RenderTargetInfo &target, const RendererOptions &options={}
 	) -> std::expected<EllipsoidRenderer, RenderError>;
 
-	/// \brief
-	/// 	Creates an ellipsoid renderer for the main render pass of \p player.
+	/// \brief Creates an ellipsoid renderer for the main render pass of \p player.
 	///
 	/// Uses the device of \p player and the target described by <tt>Player::mainRenderTargetInfo</tt>. Call it from
-	/// \c Applet::recreatePipelines; it also succeeds while the main window is minimized. The renderer keeps no reference
-	/// to \p player. If the formats of the main render target change, create a new renderer.
+	/// \c Applet::recreatePipelines; it also succeeds while the main window is minimized. The renderer keeps no
+	/// reference to \p player. If the formats of the main render target change, create a new renderer.
 	///
-	/// \param player
-	/// 	The player whose device and main render target are used. Its device must outlive the renderer.
-	/// \param options
-	/// 	Depth, culling and blending settings.
+	/// \param player The player whose device and main render target are used. Its device must outlive the renderer.
+	/// \param options Depth, culling and blending settings.
 	///
 	/// \return
 	/// 	The renderer, or an error. The error is <tt>RenderErrorCode::InvalidState</tt> if \p player has no main
@@ -163,18 +156,14 @@ public:
 	/// Not copy-assignable.
 	auto operator= (const EllipsoidRenderer&) -> EllipsoidRenderer& = delete;
 
-	/// \brief
-	/// 	Moves the renderer, leaving \p other empty.
+	/// \brief Moves the renderer, leaving \p other empty.
 	///
-	/// \param other
-	/// 	The renderer to move from.
+	/// \param other The renderer to move from.
 	EllipsoidRenderer(EllipsoidRenderer &&other) noexcept;
 
-	/// \brief
-	/// 	Releases the resources of this renderer and moves \p other into this renderer, leaving \p other empty.
+	/// \brief Releases the resources of this renderer and moves \p other into this renderer, leaving \p other empty.
 	///
-	/// \param other
-	/// 	The renderer to move from.
+	/// \param other The renderer to move from.
 	///
 	/// \return This renderer.
 	auto operator= (EllipsoidRenderer &&other) noexcept -> EllipsoidRenderer&;
@@ -187,22 +176,16 @@ public:
 	/// \c Attribute::Orientation and <tt>Attribute::Color</tt>.
 	[[nodiscard]] auto supportedAttributes () const -> std::span<const Attribute> override;
 
-	/// \brief
-	/// 	Draws the ellipsoids of the selected instances; see \c PrimitiveRenderer::draw for the full contract.
+	/// \brief Draws the ellipsoids of the selected instances; see \c PrimitiveRenderer::draw for the full contract.
 	///
-	/// \param attributes
-	/// 	The instance attributes. Must belong to the renderer's device.
+	/// \param attributes The instance attributes. Must belong to the renderer's device.
 	/// \param state
 	/// 	Supplies finite, invertible viewing matrices: an affine modelview and a conventional perspective or
 	/// 	orthographic projection with zero-to-one depth. The viewport depth bounds must be 0 and 1.
-	/// \param commandBuffer
-	/// 	The command buffer that contains \p renderPass.
-	/// \param renderPass
-	/// 	The active render pass to draw into.
-	/// \param options
-	/// 	Texture and lighting settings for this draw.
-	/// \param range
-	/// 	The instances to draw. The default draws all instances.
+	/// \param commandBuffer The command buffer that contains \p renderPass.
+	/// \param renderPass The active render pass to draw into.
+	/// \param options Texture and lighting settings for this draw.
+	/// \param range The instances to draw. The default draws all instances.
 	///
 	/// \return
 	/// 	Success, or an error as described for <tt>PrimitiveRenderer::draw</tt>. Additionally returns
@@ -218,11 +201,9 @@ private:
 	////
 	// Object construction/destruction
 
-	/// \brief
-	/// 	Takes ownership of completely created resources; used by <tt>create</tt>.
+	/// \brief Takes ownership of completely created resources; used by <tt>create</tt>.
 	///
-	/// \param resources
-	/// 	The created geometry and pipelines.
+	/// \param resources The created geometry and pipelines.
 	explicit EllipsoidRenderer(std::unique_ptr<detail::PrimitiveResources> resources) noexcept;
 
 

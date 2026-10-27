@@ -422,6 +422,9 @@ private:
 	/// The cached projection, absent when invalidated by an optical or viewport change.
 	std::optional<glm::mat4> projMatrix;
 
+	/// Viewport dimensions used for the cached projection.
+	glm::uvec2 projectionViewport{0};
+
 	/// The controller for double-click depth picking and the resulting smooth focus transitions.
 	std::unique_ptr<CameraFocus> focusChange;
 

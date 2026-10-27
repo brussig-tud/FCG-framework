@@ -399,11 +399,11 @@ FCG_FRAMEWORK_EXPORT auto run (
 					// Refresh the retained scene only when requested or while animating
 					if (player.sceneRedrawRequired || player.continuousRedrawRequested())
 					{
-						auto rs = RenderState(device);
 						auto *renderPass = player.frame->beginRenderPass(player.clearColor());
 						if (!renderPass)
 							throw std::runtime_error("Beginning the scene render pass failed");
 						std::unique_ptr<Frame, decltype(endPass)> passGuard(player.frame, endPass);
+						auto rs = RenderState(device, player.frame->extent());
 
 						// Consume before callbacks so requests made while drawing survive for the next frame
 						player.sceneRedrawRequired = false;

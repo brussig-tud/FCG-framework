@@ -513,6 +513,19 @@ public:
 		fcg::Device &device, fcg::RenderState &state, SDL_GPURenderPass *pass,
 		SDL_GPUCommandBuffer *command, fcg::Player &player
 	) override {
+		// Verify custom viewport projections before restoring the runtime's captured dimensions
+		const auto fullViewport = state.viewportSize();
+		const glm::uvec2 customViewport(123, 77);
+		state.setViewportSize(customViewport);
+		orbit.render(device, state, pass, command, player);
+		const auto expectedOrbit = orbit.projectionMatrix(customViewport);
+		require(std::abs(state.projectionMatrix()[0][0] - expectedOrbit[0][0]) < 1e-5f,
+			"Orbit projection ignored render-state viewport");
+		camera.render(device, state, pass, command, player);
+		const auto expectedPlanar = camera.projectionMatrix(customViewport);
+		require(std::abs(state.projectionMatrix()[0][0] - expectedPlanar[0][0]) < 1e-5f,
+			"Planar projection ignored render-state viewport");
+		state.setViewportSize(fullViewport);
 		orbit.render(device, state, pass, command, player);
 		lastOrbitInverse = glm::inverse(state.projectionMatrix() * state.modelviewMatrix());
 		camera.render(device, state, pass, command, player);

@@ -59,8 +59,8 @@ namespace fcg {
 /// +X face, +Z and +Y on the -X face, +X and -Z on the +Y face, +X and +Z on the -Y face, +X and +Y on the +Z face,
 /// and -X and +Y on the -Z face. Back faces are culled unless \c RendererOptions::cullMode specifies otherwise.
 ///
-/// Create or replace the renderer in <tt>Applet::recreatePipelines</tt>, and call \c draw inside an active render pass. A
-/// moved-from renderer is empty: only assignment and destruction are valid, and \c draw returns
+/// Create or replace the renderer in <tt>\ref Applet::recreatePipelines</tt>, and call \c draw inside an active render
+/// pass. A moved-from renderer is empty: only assignment and destruction are valid, and \c draw returns
 /// <tt>RenderErrorCode::InvalidState</tt>.
 class FCG_RENDER_EXPORT BoxRenderer final : public PrimitiveRenderer
 {

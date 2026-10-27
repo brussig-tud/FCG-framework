@@ -368,21 +368,27 @@ void OrbitCamera::update (Device&, Player &player, float dt)
 	if (!viewMatrix)
 		viewMatrix = m_params.extrinsics.modelviewMatrix();
 	const auto viewport = player.viewportSize();
-	if (!projMatrix && viewport.x && viewport.y)
+	if ((!projMatrix || projectionViewport != viewport) && viewport.x && viewport.y) {
 		projMatrix = m_params.intrinsics.projectionMatrix(viewport);
+		projectionViewport = viewport;
+	}
 }
 
 void OrbitCamera::render (
 	Device&, RenderState &renderState, SDL_GPURenderPass*, SDL_GPUCommandBuffer*, Player &player
 )
 {
-	const auto viewport = player.viewportSize();
+	auto viewport = renderState.viewportSize();
+	if (!viewport.x || !viewport.y)
+		viewport = player.viewportSize();
 	if (!viewport.x || !viewport.y)
 		return;
 	if (!viewMatrix)
 		viewMatrix = m_params.extrinsics.modelviewMatrix();
-	if (!projMatrix)
+	if (!projMatrix || projectionViewport != viewport) {
 		projMatrix = m_params.intrinsics.projectionMatrix(viewport);
+		projectionViewport = viewport;
+	}
 	renderState.loadModelviewMatrix(*viewMatrix);
 	renderState.loadProjectionMatrix(*projMatrix);
 	focusChange->rendered(*viewMatrix, *projMatrix, viewport);

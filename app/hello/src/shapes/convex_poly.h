@@ -9,6 +9,7 @@
 //
 
 // C++ STL
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -89,9 +90,11 @@ public:
 		m_vertices.clear();
 		m_indices.clear();
 		m_corners.clear();
+		m_edges.clear();
 		const auto n = size_t(numVertices);
 		m_vertices.reserve(n);
 		m_corners.reserve(n);
+		m_edges.reserve(2 * n);
 
 		// Generate each perimeter corner once and use it for the corresponding mesh vertex
 		constexpr float twoPi = 2*3.14159265358979f;
@@ -103,6 +106,9 @@ public:
 				.position = m_corners.back(),
 				.normal = glm::vec4(.0f, .0f, 1.f, .0f)
 			});
+			const auto next = (i + 1) % n;
+			m_edges.push_back((uint32_t)std::min(i, next));
+			m_edges.push_back((uint32_t)std::max(i, next));
 		}
 
 		// Generate triangle list indices in a fan-like pattern: (0, i, i+1) for i = 1..n-2. SDL GPU has no triangle fan
@@ -142,6 +148,13 @@ public:
 		return m_corners;
 	}
 
+	/// \brief Returns consecutive perimeter edge pairs indexing \c corners.
+	///
+	/// \return A borrowed view valid until the next regeneration or destruction.
+	[[nodiscard]] auto edges () const -> std::span<const std::uint32_t> override {
+		return m_edges;
+	}
+
 
 private:
 
@@ -172,6 +185,9 @@ private:
 
 	/// One homogeneous object-space position per perimeter corner.
 	std::vector<glm::vec4> m_corners;
+
+	/// One normalized corner-index pair per geometric perimeter edge.
+	std::vector<std::uint32_t> m_edges;
 };
 
 

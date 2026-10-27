@@ -169,8 +169,11 @@ public:
 
 	/// The framework's empty render pass suffices for this runtime probe.
 	void render (
-		fcg::Device&, fcg::RenderState&, SDL_GPURenderPass*, SDL_GPUCommandBuffer*, fcg::Player&
-	) override {}
+		fcg::Device&, fcg::RenderState &state, SDL_GPURenderPass*, SDL_GPUCommandBuffer*, fcg::Player &player
+	) override {
+		if (state.viewportSize() != player.viewportSize())
+			throw std::runtime_error("Scene render state has stale viewport dimensions");
+	}
 
 
 private:

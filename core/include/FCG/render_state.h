@@ -18,9 +18,9 @@
 /// until the stacks change. <tt>\ref fcg::ViewingUniforms "ViewingUniforms"</tt> is the uniform block that carries
 /// these matrices into shaders.
 ///
-/// In applications run by <tt>\ref fcg::run "run"</tt>, one render state is created per scene refresh and passed to every
-/// applet's <tt>\ref fcg::Applet::render "Applet::render"</tt> callback in applet order, so a camera applet can install
-/// its matrices for the applets that follow.
+/// In applications run by <tt>\ref fcg::run "run"</tt>, one render state is created per scene refresh and passed to
+/// every applet's <tt>\ref fcg::Applet::render "Applet::render"</tt> callback in applet order, so a camera applet can
+/// install its matrices for the applets that follow.
 ///
 /// \section fcg_render_state_usage Getting started
 /// Load the matrices for the frame, compose transforms by right-multiplication, and push the uniform block to the
@@ -109,8 +109,7 @@ namespace fcg {
 // Structs and enums
 //
 
-/// \brief
-/// 	A 3x3 matrix laid out as required by the \c std140 rules, where each column occupies a full \c vec4 slot.
+/// \brief A 3x3 matrix laid out as required by the \c std140 rules, where each column occupies a full \c vec4 slot.
 ///
 /// Use it wherever a \c mat3 has to be stored in a \c std140 uniform block, e.g. in
 /// <tt>\ref fcg::ViewingUniforms "ViewingUniforms"</tt>.
@@ -123,17 +122,12 @@ struct alignas(16) Std140Mat3
 	///
 	/// \param matrix The matrix to convert.
 	Std140Mat3(const glm::mat3 &matrix)
-		: columns{
-			{matrix[0], 0.f},
-			{matrix[1], 0.f},
-			{matrix[2], 0.f}
-		}
+		: columns{{matrix[0], 0.f}, {matrix[1], 0.f}, {matrix[2], 0.f}}
 	{}
 };
 static_assert(sizeof(Std140Mat3) == 3 * sizeof(glm::vec4));
 
-/// \brief
-/// 	The viewing matrices of a <tt>\ref fcg::RenderState "RenderState"</tt>, laid out as a \c std140 uniform block.
+/// \brief The viewing matrices of a <tt>\ref fcg::RenderState "RenderState"</tt>, laid out as a \c std140 uniform block.
 ///
 /// <tt>\ref fcg::RenderState::pushViewingUniforms "RenderState::pushViewingUniforms"</tt> uploads this block to a
 /// shader. The uniform block declared in the shader must contain the same members in the same order: six \c mat4
@@ -159,7 +153,8 @@ struct ViewingUniforms
 	glm::mat4 invModelviewProjection;
 
 	/// \brief
-	/// 	The object-to-eye normal matrix, i.e. the inverse transpose of the upper-left 3x3 part of the modelview matrix.
+	/// 	The object-to-eye normal matrix, i.e. the inverse transpose of the upper-left 3x3 part of the modelview
+	/// 	matrix.
 	///
 	/// The modelview matrix must be affine and invertible.
 	Std140Mat3 normal;
@@ -178,23 +173,23 @@ static_assert(sizeof(ViewingUniforms) == 6 * sizeof(glm::mat4) + 2 * sizeof(Std1
 // Classes
 //
 
-/// \brief
-/// 	Holds the viewing transformations used while rendering a frame.
+/// \brief Holds the viewing transformations used while rendering a frame.
 ///
 /// A render state maintains two matrix stacks, one for the modelview matrix and one for the projection matrix, in the
 /// style of classic OpenGL. Both stacks start out with a single identity matrix. The top entry of each stack is the
-/// current matrix; it can be replaced (\c load…), right-multiplied (\c mul…), saved (\c push…) and restored
-/// (\c pop…).
+/// current matrix; it can be replaced (\c load…), right-multiplied (\c mul…), saved (\c push…) and restored (\c pop…).
 ///
 /// The derived matrices (inverses, the normal matrix and the combined modelview-projection matrix) as well as the
 /// complete <tt>\ref fcg::ViewingUniforms "ViewingUniforms"</tt> block are computed on demand by the non-const
-/// accessors and then reused until the matrix stacks change. The \c const overloads of these accessors can only
-/// return values that have already been computed. Their precondition is that the non-const overload has been called
-/// since the last change to the matrix stacks. A change is any load, multiplication or pop.
+/// accessors and then reused until the matrix stacks change. The \c const overloads of these accessors can only return
+/// values that have already been computed. Their precondition is that the non-const overload has been called since the
+/// last change to the matrix stacks. A change is any load, multiplication or pop.
 ///
 /// The framework creates one render state per scene refresh and passes it to \c Applet::render of every applet in turn.
 /// Camera applets typically load their view and projection matrices into it, and subsequent applets read the matrices
-/// or upload them to their shaders with <tt>\ref pushViewingUniforms</tt>.
+/// or upload them to their shaders with <tt>\ref pushViewingUniforms</tt>. The runtime also captures the scene viewport
+/// dimensions at the beginning of the render pass. Custom passes can record their viewport dimensions with
+/// <tt>\ref setViewportSize</tt>.
 ///
 /// Normal matrices and complete viewing uniforms require an invertible affine modelview matrix.
 ///
@@ -209,8 +204,14 @@ public:
 
 	/// Construct a render state with identity modelview and projection matrices.
 	///
-	/// \param device The device that is used for rendering.
+	/// \param device The device used for rendering.
 	RenderState(Device &device);
+
+	/// \brief Construct a render state with identity matrices and a viewport size.
+	///
+	/// \param device The device used for rendering.
+	/// \param viewportSize The current viewport dimensions in physical framebuffer pixels; zero means unspecified.
+	RenderState(Device &device, glm::uvec2 viewportSize);
 
 	/// The destructor.
 	~RenderState();
@@ -224,6 +225,20 @@ public:
 
 	////
 	// Accessors
+
+	/// The current viewport dimensions in physical framebuffer pixels, or zero when unspecified.
+	[[nodiscard]] auto viewportSize () const -> glm::uvec2 {
+		return m_viewportSize;
+	}
+
+	/// \brief Record the dimensions of the viewport used by subsequent draws.
+	///
+	/// Update this value when changing the GPU viewport. The GPU viewport itself is set separately.
+	///
+	/// \param size The viewport dimensions in physical framebuffer pixels; zero means unspecified.
+	void setViewportSize (glm::uvec2 size) {
+		m_viewportSize = size;
+	}
 
 	/// \brief The current modelview matrix, i.e. the top of the modelview matrix stack.
 	[[nodiscard]] auto modelviewMatrix () const -> const glm::mat4& {
@@ -524,6 +539,9 @@ private:
 
 	////
 	// Fields
+
+	/// Dimensions of the current viewport, independent of the matrix stacks.
+	glm::uvec2 m_viewportSize{0};
 
 	/// The modelview matrix stack.
 	std::stack<glm::mat4> modelview{{glm::mat4(1.f)}};

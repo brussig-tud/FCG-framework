@@ -1,4 +1,4 @@
-add_library(render-examples OBJECT render_examples.cpp)
+add_library(render-examples OBJECT render_examples.cpp line_examples.cpp)
 target_link_libraries(render-examples PRIVATE Render)
 
 add_executable(render-smoke main.cpp)
@@ -26,4 +26,17 @@ add_executable(render-ellipsoid ellipsoid.cpp)
 target_link_libraries(render-ellipsoid PRIVATE Render)
 add_test(NAME render-ellipsoid COMMAND render-ellipsoid)
 set_tests_properties(render-ellipsoid PROPERTIES TIMEOUT 90
+	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
+
+add_executable(render-lines lines.cpp)
+target_link_libraries(render-lines PRIVATE Render)
+add_test(NAME render-lines COMMAND render-lines)
+set_tests_properties(render-lines PROPERTIES TIMEOUT 90
+	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
+
+add_executable(render-connectivity-failures connectivity_failures.cpp)
+target_compile_definitions(render-connectivity-failures PRIVATE FCG_RENDER_STATIC_DEFINE)
+target_link_libraries(render-connectivity-failures PRIVATE Render)
+add_test(NAME render-connectivity-failures COMMAND render-connectivity-failures)
+set_tests_properties(render-connectivity-failures PROPERTIES TIMEOUT 60
 	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
