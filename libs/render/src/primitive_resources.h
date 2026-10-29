@@ -36,7 +36,7 @@ namespace detail {
 // Structs and enums
 //
 
-/// Geometry and shader family used by a primitive renderer.
+/// \brief Geometry and shader family used by a primitive renderer.
 enum class PrimitiveKind
 {
 	/// Two-sided planar rectangles.
@@ -56,8 +56,7 @@ enum class PrimitiveKind
 // Classes
 //
 
-/// \brief
-/// 	GPU resources and draw implementation shared by the instanced primitive renderers.
+/// \brief GPU resources and draw implementation shared by the instanced primitive renderers.
 ///
 /// Boxes use an indexed triangle list of 24 vertices and 36 indices. Quads use an unindexed triangle strip of 4
 /// vertices; ellipsoids use the same strip as a surface proxy.
@@ -70,18 +69,12 @@ struct PrimitiveResources
 	/// 	Takes ownership of uploaded geometry and initialized placeholder storage. The pipelines are added by
 	/// 	<tt>create</tt>.
 	///
-	/// \param device
-	/// 	The device owning all resources. Must outlive this object.
-	/// \param vertices
-	/// 	The uploaded vertex buffer.
-	/// \param indices
-	/// 	The uploaded index buffer for boxes, or empty for quad-based geometry.
-	/// \param dummy
-	/// 	Zero-initialized storage buffer bound to storage slots of attributes without a buffer source.
-	/// \param kind
-	/// 	Geometry and shader family.
-	/// \param cull
-	/// 	Surface culling mode, evaluated analytically for ellipsoids.
+	/// \param device The device owning all resources. Must outlive this object.
+	/// \param vertices The uploaded vertex buffer.
+	/// \param indices The uploaded index buffer for boxes, or empty for quad-based geometry.
+	/// \param dummy Zero-initialized storage buffer bound to storage slots of attributes without a buffer source.
+	/// \param kind Geometry and shader family.
+	/// \param cull Surface culling mode, evaluated analytically for ellipsoids.
 	PrimitiveResources(
 		Device &device, Buffer vertices, std::optional<Buffer> indices, Buffer dummy,
 		PrimitiveKind kind, SDL_GPUCullMode cull
@@ -103,42 +96,30 @@ struct PrimitiveResources
 	////
 	// Methods
 
-	/// \brief
-	/// 	Creates the geometry, the placeholder storage and the untextured and textured pipelines.
+	/// \brief Creates the geometry, the placeholder storage and the untextured and textured pipelines.
 	///
 	/// Either everything is created or an error is returned and nothing is retained.
 	///
-	/// \param device
-	/// 	The device to create the resources on. Must outlive the result.
-	/// \param target
-	/// 	Attachment formats and sample count of compatible render passes.
-	/// \param options
-	/// 	Depth, culling and blending settings.
-	/// \param kind
-	/// 	Geometry and shader family.
+	/// \param device The device to create the resources on. Must outlive the result.
+	/// \param target Attachment formats and sample count of compatible render passes.
+	/// \param options Depth, culling and blending settings.
+	/// \param kind Geometry and shader family.
 	///
 	/// \return The created resources, or the error described for <tt>BoxRenderer::create</tt>.
 	[[nodiscard]] static auto create (
 		Device &device, const RenderTargetInfo &target, const RendererOptions &options, PrimitiveKind kind
 	) -> std::expected<std::unique_ptr<PrimitiveResources>, RenderError>;
 
-	/// \brief
-	/// 	Validates the used attribute sources and the draw options, then records one instanced draw.
+	/// \brief Validates the used attribute sources and the draw options, then records one instanced draw.
 	///
 	/// Implements \c PrimitiveRenderer::draw for the primitive renderers; nothing is recorded on error.
 	///
-	/// \param attributes
-	/// 	The instance attributes.
-	/// \param state
-	/// 	Supplies the viewing matrices.
-	/// \param command
-	/// 	The command buffer containing \p pass.
-	/// \param pass
-	/// 	The active render pass.
-	/// \param options
-	/// 	Texture and lighting settings.
-	/// \param range
-	/// 	The instances to draw.
+	/// \param attributes The instance attributes.
+	/// \param state Supplies the viewing matrices.
+	/// \param command The command buffer containing \p pass.
+	/// \param pass The active render pass.
+	/// \param options Texture and lighting settings.
+	/// \param range The instances to draw.
 	///
 	/// \return Success, or the error described for <tt>PrimitiveRenderer::draw</tt>.
 	[[nodiscard]] auto draw (

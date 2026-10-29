@@ -268,7 +268,8 @@ public:
 		ImGui::SetNextItemWidth(-ImGui::CalcTextSize("Display").x - ImGui::GetStyle().ItemInnerSpacing.x);
 		if (ImGui::BeginCombo("Display", displayNames[(std::size_t)displayMode]))
 		{
-			for (unsigned i = 0; i < 3; ++i) {
+			for (unsigned i = 0; i < 3; ++i)
+			{
 				const bool selected = i == (unsigned)displayMode;
 				if (ImGui::Selectable(displayNames[i], selected)) {
 					displayMode = (DisplayMode)i;
