@@ -8,6 +8,7 @@
 #include <format>
 #include <span>
 #include <stdexcept>
+#include <utility>
 
 // SDL3
 #include <SDL3/SDL.h>
@@ -40,8 +41,17 @@ namespace fcg {
 // Player
 
 Player::Player(Device &device, Window *mainWindow, std::span<std::unique_ptr<Applet>> applets)
-	: m_device(device), window(mainWindow), applets(applets)
-{}
+	: m_device(device), window(mainWindow)
+{
+	// Classify once, retaining registration order within each collection
+	for (const auto &applet : applets)
+		if (auto *camera = dynamic_cast<Camera*>(applet.get()))
+			cameraEntries.push_back({camera, applet.get()});
+		else
+			otherApplets.push_back(applet.get());
+	if (!cameraEntries.empty())
+		currentCamera = &cameraEntries.front();
+}
 
 Player::~Player() {
 	shutdownPresentation();
@@ -167,11 +177,81 @@ auto Player::shouldClose () const -> bool {
 	return window && window->shouldClose();
 }
 
-auto Player::findCamera (std::string_view name) -> std::optional<Camera*> {
-	for (auto &applet : applets)
-		if (Camera *cam = dynamic_cast<Camera*>(applet.get()); cam && applet->name() == name)
-			return cam;
+auto Player::cameras () const -> std::vector<Camera*> {
+	std::vector<Camera*> result;
+	result.reserve(cameraEntries.size());
+	for (const auto &entry : cameraEntries)
+		result.push_back(entry.camera);
+	return result;
+}
+
+auto Player::activeCamera () const noexcept -> std::optional<Camera*> {
+	return currentCamera ? std::optional(currentCamera->camera) : std::nullopt;
+}
+
+auto Player::findCamera (std::string_view name) const -> std::optional<Camera*> {
+	for (const auto &entry : cameraEntries)
+		if (entry.applet->name() == name)
+			return entry.camera;
 	return {};
+}
+
+void Player::setActiveCamera (Camera *camera)
+{
+	// Null is a selection in its own right, distinct from no pending request
+	if (!camera) {
+		pendingCamera = nullptr;
+		return;
+	}
+	for (auto &entry : cameraEntries)
+		if (entry.camera == camera) {
+			pendingCamera = &entry;
+			return;
+		}
+	throw std::invalid_argument("Cannot activate an unregistered camera");
+}
+
+void Player::setActiveCamera (std::string_view name) {
+	const auto camera = findCamera(name);
+	if (!camera)
+		throw std::invalid_argument("No registered camera has the requested name");
+	setActiveCamera(*camera);
+}
+
+void Player::applyCameraSelection (std::optional<CameraEntry*> selection) {
+	if (!selection || *selection == currentCamera)
+		return;
+	deactivateCamera();
+	currentCamera = *selection;
+	requireSceneRedraw();
+}
+
+void Player::prepareCameraPipelines () {
+	if (!currentCamera || !currentCamera->pipelinesDirty)
+		return;
+	currentCamera->applet->recreatePipelines(m_device, *this);
+	currentCamera->pipelinesDirty = false;
+}
+
+void Player::prepareCameraViewport ()
+{
+	if (!currentCamera || !currentCamera->viewportDirty)
+		return;
+	currentCamera->applet->onViewportResize(m_device, currentCamera->viewport, *this);
+	currentCamera->viewport = viewportSize();
+	currentCamera->viewportDirty = false;
+}
+
+void Player::activateCamera () {
+	if (!currentCamera || cameraActivated)
+		return;
+	cameraActivated = true;
+	currentCamera->camera->onActivate(*this);
+}
+
+void Player::deactivateCamera () noexcept {
+	if (std::exchange(cameraActivated, false))
+		currentCamera->camera->onDeactivate(*this);
 }
 
 auto Player::swapchainFormat () const -> SDL_GPUTextureFormat {

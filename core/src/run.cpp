@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <exception>
 #include <memory>
+#include <span>
 #include <vector>
 #include <ranges>
 #include <chrono>
@@ -40,7 +41,7 @@ namespace {
 /// captures them, and react to close requests and Escape.
 void handleEvent (
 	const SDL_Event &event, fcg::Window &window, fcg::Gui &gui, fcg::Player &player,
-	std::vector<std::unique_ptr<fcg::Applet>> &applets
+	std::span<fcg::Applet*> applets, fcg::Applet *camera
 ){
 	// Always feed the GUI so ImGui can react to input
 	gui.processEvent(event);
@@ -64,12 +65,16 @@ void handleEvent (
 	{
 		fcg::Event normalized = fcg::makeEvent(event);
 		fcg::EventContext context;
-		for (auto &applet : applets) {
+		for (auto *applet : applets) {
 			applet->onEvent(normalized, context, player);
 			if (context.wasHandled()) {
 				handledByApplet = true;
 				break;
 			}
+		}
+		if (!handledByApplet && camera) {
+			camera->onEvent(normalized, context, player);
+			handledByApplet = context.wasHandled();
 		}
 	}
 
@@ -172,7 +177,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 			// We now have a working device
 			auto &device = maybeDevice.value();
 
-			// Moving the vector preserves the element addresses referenced by the player.
+			// The player borrows applet objects, whose addresses survive moving the owning vector.
 			Player player(device, window.get(), std::span(_applets));
 
 			// Acquired frames finish inside the loop, before applet and GUI teardown releases the claim.
@@ -191,6 +196,11 @@ FCG_FRAMEWORK_EXPORT auto run (
 			std::vector<std::unique_ptr<Applet>> applets = std::move(_applets);
 			auto shutdownApplets = [&] (std::vector<std::unique_ptr<Applet>> *owned) noexcept {
 				SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: shutting down...");
+				player.deactivateCamera();
+				player.currentCamera = nullptr;
+				player.pendingCamera.reset();
+				player.cameraEntries.clear();
+				player.otherApplets.clear();
 				player.shutdownPresentation();
 				destroyApplets(owned);
 			};
@@ -229,6 +239,10 @@ FCG_FRAMEWORK_EXPORT auto run (
 			if (gui)
 			{
 				player.gui = gui.get();
+				// Establish the viewport that every camera sees during initialization
+				for (auto &entry : player.cameraEntries)
+					entry.viewport = player.viewportSize();
+
 				// Initialize all applets
 				for (auto &applet : applets) {
 					SDL_LogInfo(
@@ -238,8 +252,11 @@ FCG_FRAMEWORK_EXPORT auto run (
 					applet->init(device, player);
 				}
 				(void)player.applySceneFormat();
-				for (auto &applet : applets)
+				player.applyCameraSelection(std::exchange(player.pendingCamera, std::nullopt));
+				player.prepareCameraPipelines();
+				for (auto *applet : player.otherApplets)
 					applet->recreatePipelines(device, player);
+				player.activateCamera();
 
 				// Info trace
 				SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: startup complete.");
@@ -255,6 +272,9 @@ FCG_FRAMEWORK_EXPORT auto run (
 			auto lastFrameTime = std::chrono::high_resolution_clock::now();
 			while (!player.shouldClose())
 			{
+				// Freeze selection before any callbacks can queue another request
+				const auto cameraSelection = std::exchange(player.pendingCamera, std::nullopt);
+
 				// Retain the last animation frame even if callbacks release continuous redraw during this iteration
 				if (player.continuousRedrawRequested())
 					player.requireSceneRedraw();
@@ -316,15 +336,30 @@ FCG_FRAMEWORK_EXPORT auto run (
 					player.invalidateReadbacks();
 					player.requireSceneRedraw();
 				}
+
+				// Dormant cameras retain coalesced maintenance until they are selected
+				if (sceneFormatChanged || resized)
+					for (auto &entry : player.cameraEntries) {
+						entry.pipelinesDirty |= sceneFormatChanged;
+						entry.viewportDirty |= resized;
+					}
+				const auto *previousCamera = player.currentCamera;
+				player.applyCameraSelection(cameraSelection);
+				if (player.currentCamera != previousCamera)
+					pendingRedraws = 2;
+				player.prepareCameraPipelines();
 				if (sceneFormatChanged)
-					for (auto &applet : applets)
+					for (auto *applet : player.otherApplets)
 						applet->recreatePipelines(device, player);
+				player.prepareCameraViewport();
 				if (resized)
-					for (auto &applet : applets)
+					for (auto *applet : player.otherApplets)
 						applet->onViewportResize(device, oldViewportSize, player);
+				player.activateCamera();
 
 				// Event handling
-				if (   player.continuousRedrawRequested() || pendingRedraws > 0 || player.pendingSceneFormat
+				if (   player.continuousRedrawRequested() || pendingRedraws > 0
+					|| player.pendingSceneFormat || player.pendingCamera
 					|| (player.frame && player.sceneRedrawRequired))
 				{
 					// Non-blocking mode: process all pending events without waiting. Any event could change GUI
@@ -332,7 +367,8 @@ FCG_FRAMEWORK_EXPORT auto run (
 					SDL_Event event;
 					bool handledAnyEvent = false;
 					while (SDL_PollEvent(&event)) {
-						handleEvent(event, *window, *gui, player, applets);
+						handleEvent(event, *window, *gui, player, player.otherApplets,
+							player.currentCamera ? player.currentCamera->applet : nullptr);
 						handledAnyEvent = true;
 					}
 					if (handledAnyEvent)
@@ -349,9 +385,11 @@ FCG_FRAMEWORK_EXPORT auto run (
 					SDL_Event event;
 					if (SDL_WaitEventTimeout(&event, waitTimeoutMs)) {
 						lastFrameTime = std::chrono::high_resolution_clock::now();
-						handleEvent(event, *window, *gui, player, applets);
+						handleEvent(event, *window, *gui, player, player.otherApplets,
+							player.currentCamera ? player.currentCamera->applet : nullptr);
 						while (SDL_PollEvent(&event))
-							handleEvent(event, *window, *gui, player, applets);
+							handleEvent(event, *window, *gui, player, player.otherApplets,
+								player.currentCamera ? player.currentCamera->applet : nullptr);
 						pendingRedraws = 2; // ImGui reacts to input with one frame latency, schedule follow-up redraws
 					}
 					else if (waitTimeoutMs < 0)
@@ -384,7 +422,11 @@ FCG_FRAMEWORK_EXPORT auto run (
 
 				// Begin the GUI frame, then update applet state and let them define their GUI
 				gui->newFrame(player.frame);
-				for (auto &applet : applets) {
+				if (player.currentCamera) {
+					player.currentCamera->applet->gui(device, player);
+					player.currentCamera->applet->update(device, player, dt);
+				}
+				for (auto *applet : player.otherApplets) {
 					applet->gui(device, player);
 					applet->update(device, player, dt);
 				}
@@ -407,7 +449,11 @@ FCG_FRAMEWORK_EXPORT auto run (
 
 						// Consume before callbacks so requests made while drawing survive for the next frame
 						player.sceneRedrawRequired = false;
-						for (auto &applet : applets)
+						if (player.currentCamera)
+							player.currentCamera->applet->render(
+								device, rs, renderPass, player.frame->commandBuffer(), player
+							);
+						for (auto *applet : player.otherApplets)
 							applet->render(device, rs, renderPass, player.frame->commandBuffer(), player);
 					}
 

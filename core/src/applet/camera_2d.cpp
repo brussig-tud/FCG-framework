@@ -96,6 +96,12 @@ void Camera2D::onViewportResize (Device&, const glm::uvec2&, Player&) {
 	focusChange->resized();
 }
 
+void Camera2D::onDeactivate (Player&) noexcept {
+	activeDragButton = MouseButton::Unknown;
+	lastLeftClickTime.reset();
+	focusChange->reset();
+}
+
 void Camera2D::setFovY (const CameraParameters::Intrinsics::FovY &fovY)
 {
 	const auto *ortho = std::get_if<CameraParameters::Intrinsics::OrthoExtend>(&fovY);

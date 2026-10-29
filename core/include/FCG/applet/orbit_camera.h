@@ -13,13 +13,13 @@
 /// \brief A perspective camera applet with orbit, pan, roll, dolly, and picked focus.
 ///
 /// <tt>\ref fcg::applet::OrbitCamera "OrbitCamera"</tt> is a ready-to-use camera: add it to
-/// <tt>\ref fcg::run "run"</tt> before your scene applets and navigate with the mouse while it installs its viewing
-/// matrices for the applets that follow. It accepts only perspective fields of view. All parameters can also be set
+/// <tt>\ref fcg::run "run"</tt> alongside your scene applets and select it to navigate with the mouse.
+/// While active, it supplies the scene's viewing matrices. It accepts only perspective fields of view. All parameters can also be set
 /// programmatically through the <tt>\ref fcg::Camera "Camera"</tt> interface, already before the applet is
 /// initialized.
 ///
 /// \section fcg_orbit_camera_usage Getting started
-/// Create the applet, optionally configure it, and put it in front of the scene applets:
+/// Create the applet, optionally configure it, and combine it with scene applets:
 /// \snippet camera_examples.cpp orbit camera
 ///
 /// \section fcg_orbit_camera_workflows Common tasks
@@ -45,7 +45,7 @@
 /// to change one axis. These setters keep the axes normalized and perpendicular.
 ///
 /// \section fcg_orbit_camera_lifetime Ownership and lifetime
-/// Run the applet before the scene applets it should serve. The <tt>\ref fcg::Player "Player"</tt> must outlive the
+/// Select the camera to supply viewing matrices for scene applets. The <tt>\ref fcg::Player "Player"</tt> must outlive the
 /// applet; the normal run loop guarantees this.
 ///
 /// \section fcg_orbit_camera_errors Handling errors
@@ -110,8 +110,8 @@ namespace applet {
 
 /// \brief Applet providing an interactive perspective camera that orbits around its focal point.
 ///
-/// Add it to \c fcg::run before the applets that draw the scene, so that the matrices it loads into the
-/// \c RenderState apply to them. The camera can be controlled with the mouse (see \c onEvent), through its GUI
+/// Add it to \c fcg::run and select it through \c Player::setActiveCamera when needed. While active, its matrices
+/// apply to all ordinary scene applets. The camera can be controlled with the mouse (see \c onEvent), through its GUI
 /// window, and programmatically through the <tt>\ref fcg::Camera "Camera"</tt> interface at any time, including
 /// before initialization.
 ///
@@ -259,6 +259,11 @@ public:
 
 	////
 	// Interface: fcg::Camera
+
+	/// \brief Stop navigation and focus activity before dormancy, preserving camera parameters.
+	///
+	/// \param player The player running this camera.
+	void onDeactivate (Player &player) noexcept override;
 
 	/// \brief Access the current camera parameters. The projection is always perspective.
 	///

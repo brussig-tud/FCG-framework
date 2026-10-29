@@ -52,8 +52,8 @@
 /// applet to record its draw calls.
 ///
 /// All applets share the main window, the GPU device and the <tt>\ref fcg::Player "Player"</tt>, which gives access to
-/// shared application state. Callbacks follow the order in which applets were passed to
-/// <tt>\ref fcg::run "run"</tt>; input delivery follows \ref fcg_events_workflows_handling.
+/// shared application state. Ordinary applets retain the order passed to <tt>\ref fcg::run "run"</tt>. The active
+/// camera runs first except for input, where it runs last; see \ref fcg_events_workflows_handling.
 ///
 /// \section fcg_applets_usage Getting started
 /// Derive from <tt>\ref fcg::Applet "Applet"</tt>, implement the callbacks, and pass the applet to
@@ -64,16 +64,15 @@
 /// \section fcg_applets_workflows Common tasks
 /// \subsection fcg_applets_workflows_running Running applets together
 /// Combine applets by passing several instances to <tt>\ref fcg::run "run"</tt>, e.g.
-/// <tt>fcg::run&lt;MyCamera, MyScene&gt;()</tt>. The order matters in two ways:
-/// - Events follow the dispatch rules in \ref fcg_events_workflows_handling.
-/// - The <tt>\ref fcg::Applet::render "render"</tt> callbacks share one
-///   <tt>\ref fcg::RenderState "RenderState"</tt> in the same order. A camera applet placed before a scene applet
-///   installs its viewing matrices for the scene to draw with.
+/// <tt>fcg::run&lt;MyCamera, MyScene&gt;()</tt>. Ordinary applets run in registration order. The active camera installs
+/// its viewing matrices before scene applets render and receives input after ordinary applets; see
+/// \ref fcg_events_workflows_handling. Multiple cameras can be registered, with at most one receiving callbacks
+/// after initialization; see \ref fcg_runtime_workflows_cameras.
 ///
 /// \subsection fcg_applets_workflows_scene Refreshing the scene
 /// After changing scene content, call <tt>\ref fcg::Player::requireSceneRedraw "Player::requireSceneRedraw"</tt>.
-/// The next scene pass draws every applet in registration order. GUI-only frames reuse the scene while still
-/// updating widgets and presentation. For example, changing the clear color from a GUI control requires a refresh:
+/// The next scene pass draws the active camera followed by ordinary applets. GUI-only frames reuse the scene while
+/// still updating widgets and presentation. For example, changing the clear color from a GUI control requires a refresh:
 /// \snippet presentation_examples.cpp scene_redraw
 ///
 /// \subsection fcg_applets_workflows_redraw Continuous redraw
@@ -190,14 +189,15 @@ namespace fcg {
 /// 	and pass instances to <tt>\ref fcg::run "run"</tt>.
 ///
 /// All applets of an application share the main window, the GPU device and the <tt>\ref fcg::Player "Player"</tt>.
-/// All callbacks run on the thread that called \c fcg::run. Callback order follows the order of applets passed to
-/// \c fcg::run; see \ref fcg_events_workflows_handling for input delivery.
+/// All callbacks run on the thread that called \c fcg::run. All applets initialize in registration order; afterwards,
+/// ordinary applets retain their relative order and the active camera runs first, except for input where it runs last.
+/// Dormant cameras receive no callbacks after initialization until selected; see \ref fcg_runtime_workflows_cameras.
 ///
 /// The player invokes the callbacks as follows:
 /// 1. <tt>\ref init "init"</tt> once per applet, after the main window, the GPU device and the GUI have been set up
 /// 	and before the first frame.
-/// 2. After every applet completes initialization, <tt>\ref recreatePipelines "recreatePipelines"</tt> on each applet.
-/// 3. Once per main-loop iteration:
+/// 2. After initialization, <tt>\ref recreatePipelines "recreatePipelines"</tt> on the active camera and ordinary applets.
+/// 3. Once per main-loop iteration, for the active camera and ordinary applets:
 /// 	- <tt>\ref recreatePipelines "recreatePipelines"</tt> if the scene format changed;
 /// 	- <tt>\ref onViewportResize "onViewportResize"</tt> if the size of the main viewport has changed;
 /// 	- <tt>\ref onEvent "onEvent"</tt> for eligible input events of the main window;
@@ -252,7 +252,8 @@ public:
 
 	/// \brief Create or replace pipelines for the effective scene render target.
 	///
-	/// Called in registration order after all applets complete \c init and after each applied scene-format change.
+	/// Called for the active camera first, then ordinary applets in registration order, after all applets complete
+	/// \c init and after each applied scene-format change. Dormant cameras defer this callback until activation.
 	/// Query \c Player::mainRenderTargetInfo for the effective attachment formats and sample count. Runtime calls
 	/// precede resize notifications, input, GUI, updates and rendering, including while minimized. Size-only changes
 	/// do not call this method. Preserve resources and application state independent of the scene format, release
@@ -265,10 +266,12 @@ public:
 	virtual void recreatePipelines (Device &device, Player &player) = 0;
 
 	/// \brief
-	/// 	Called at the beginning of a main-loop iteration whenever the size of the main viewport has changed. The main
-	/// 	viewport is the scene texture targeted by the render pass passed to <tt>\ref render "render"</tt>.
+	/// 	Called at the beginning of a main-loop iteration whenever the size of the main viewport has changed. The
+	/// 	main viewport is the scene texture targeted by the render pass passed to <tt>\ref render "render"</tt>.
 	///
-	/// The call happens before any input events of that iteration are delivered. Query the new dimensions with
+	/// The call happens before any input events of that iteration are delivered. Dormant cameras defer notification
+	/// until activation, coalescing changes and receiving their last acknowledged size as \c oldViewportSize.
+	/// Query the new dimensions with
 	/// <tt>\ref fcg::Player::viewportSize "Player::viewportSize"</tt>.
 	///
 	/// \param device The GPU device used for rendering.
@@ -321,8 +324,8 @@ public:
 	virtual void update (Device &device, Player &player, float dt) = 0;
 
 	/// \brief
-	/// 	Called when the scene needs refreshing, after all applets had their <tt>\ref gui "gui"</tt> and
-	/// 	<tt>\ref update "update"</tt> turn, to record the applet's draw calls.
+	/// 	Called when the scene needs refreshing, after ordinary applets and the active camera had their
+	/// 	<tt>\ref gui "gui"</tt> and <tt>\ref update "update"</tt> turn, to record the applet's draw calls.
 	///
 	/// The render pass targets the frame's scene texture, not the window's swapchain image. Before the first applet
 	/// renders, the scene color is cleared to <tt>\ref fcg::Player::clearColor "Player::clearColor"</tt> and the depth
@@ -337,8 +340,8 @@ public:
 	///
 	/// \param device The GPU device used for rendering.
 	/// \param renderState
-	/// 	The render state of this frame. The same object is passed to every applet in order, so changes made by an
-	/// 	applet (for example, a camera setting the view matrices) are visible to the applets after it.
+	/// 	The render state of this frame. The same object is passed to the active camera first and then ordinary
+	/// 	applets. Changes made by an applet, such as setting view matrices, are visible to the applets after it.
 	/// \param renderPass
 	/// 	The scene render pass. Record all draw calls that should appear in the scene into this pass. The framework
 	/// 	begins the pass before the first applet and ends it after the last one; do not end or re-begin it yourself.

@@ -12,6 +12,7 @@
 #include <FCG/applet/camera_2d.h>
 #include <FCG/applet/orbit_camera.h>
 #include <FCG/viewing.h>
+#include <FCG/player.h>
 
 
 
@@ -48,7 +49,7 @@ void pitchCameraUp (fcg::applet::OrbitCamera &camera) {
 	orbit->setFovY(60.f);
 	configureCamera(*orbit);
 	std::vector<std::unique_ptr<fcg::Applet>> applets;
-	applets.push_back(std::move(orbit)); // Add scene applets after the camera.
+	applets.push_back(std::move(orbit)); // Combine with scene applets in the same run.
 	return applets;
 }
 /// [orbit camera]
@@ -66,3 +67,21 @@ void pitchCameraUp (fcg::applet::OrbitCamera &camera) {
 	return applets;
 }
 /// [planar camera]
+
+/// Enumerate cameras and queue selections from an applet callback.
+/// [select cameras]
+void selectCameras (fcg::Player &player)
+{
+	for (auto *camera : player.cameras())
+		camera->setNearPlane(.1f);
+
+	if (const auto camera = player.findCamera("2D Camera"))
+		player.setActiveCamera(*camera);
+	if (player.findCamera("Orbit Camera"))
+		player.setActiveCamera("Orbit Camera"); // Latest selection wins.
+
+	if (const auto camera = player.activeCamera())
+		(*camera)->setFarPlane(100.f); // Queries still describe the effective camera.
+	player.setActiveCamera(nullptr); // Run without an active camera on the next iteration.
+}
+/// [select cameras]

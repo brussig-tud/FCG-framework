@@ -39,7 +39,8 @@
 /// "Player::viewportSize"</tt> returns the pixel size.
 ///
 /// \subsection fcg_events_workflows_handling Cooperation between applets
-/// Events are delivered in the order in which applets were passed to <tt>\ref fcg::run "run"</tt>. Call
+/// Events are delivered to ordinary applets in registration order, then to the active camera if still unhandled.
+/// Dormant cameras receive no input. Call
 /// <tt>\ref fcg::EventContext::markHandled "EventContext::markHandled"</tt> when consuming an event. Once that
 /// callback returns, delivery stops: remaining applets do not receive the event. Marking an Escape
 /// <tt>\ref fcg::EventType::KeyDown "KeyDown"</tt> event as handled also suppresses the player's close action.

@@ -97,6 +97,18 @@
 
 //////
 //
+// Forward declarations
+//
+
+// Framework types
+namespace fcg {
+	class Player;
+}
+
+
+
+//////
+//
 // Namespaces open
 //
 
@@ -315,7 +327,8 @@ struct CameraParameters
 ///
 /// Implemented by <tt>\ref fcg::applet::OrbitCamera "OrbitCamera"</tt> and
 /// <tt>\ref fcg::applet::Camera2D "Camera2D"</tt>; use it to control a camera without knowing its concrete type, e.g.
-/// one obtained from <tt>\ref fcg::Player::findCamera "Player::findCamera"</tt>. Read the current state through
+/// one obtained from <tt>\ref fcg::Player::findCamera "Player::findCamera"</tt> or
+/// <tt>\ref fcg::Player::activeCamera "Player::activeCamera"</tt>. Read the current state through
 /// \c params and the derived queries, and change it only through the setters. Queries and setters can be used at any
 /// time, including before the camera applet is initialized.
 ///
@@ -337,6 +350,30 @@ public:
 
 	/// Virtual destructor, allowing cameras to be destroyed through this interface.
 	virtual ~Camera();
+
+
+	////
+	// Activation
+
+	/// \brief Called when this camera becomes active, after initialization and resource preparation.
+	///
+	/// The default implementation does nothing. Override to start activity that requires camera callbacks.
+	/// Requests to select another camera take effect at the next iteration. Exceptions propagate out of \c fcg::run;
+	/// \c onDeactivate is called during cleanup even when this hook throws.
+	///
+	/// \param player The player running this camera, valid throughout its activation.
+	///
+	/// \throws ... Exceptions from an overriding activation hook propagate to the caller.
+	virtual void onActivate (Player &player) {}
+
+	/// \brief Called before this camera becomes dormant or the runtime destroys applets.
+	///
+	/// The default implementation does nothing. Override to release continuous-redraw requests and clear transient
+	/// input and picking state. Every started \c onActivate call has one matching deactivation, including during
+	/// exception unwinding. This hook must not throw. Camera parameters may be retained for reactivation.
+	///
+	/// \param player The player running this camera, still valid during the call.
+	virtual void onDeactivate (Player &player) noexcept {}
 
 
 	////

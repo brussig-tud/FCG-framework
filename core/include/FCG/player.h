@@ -10,6 +10,7 @@
 
 // C++ STL
 #include <string>
+#include <string_view>
 #include <vector>
 #include <memory>
 #include <span>
@@ -87,6 +88,29 @@ class FCG_FRAMEWORK_EXPORT Player
 	friend auto fcg::run (std::vector<std::unique_ptr<Applet>>, PlayerSettings&&) -> int;
 
 
+	////
+	// Types
+
+	/// A registered camera and the resource notifications deferred while it is dormant.
+	struct CameraEntry
+	{
+		/// The borrowed camera interface.
+		Camera *camera;
+
+		/// The borrowed applet interface of the same object.
+		Applet *applet;
+
+		/// Whether pipelines must be prepared for the effective scene format.
+		bool pipelinesDirty = true;
+
+		/// Whether a viewport notification has been deferred.
+		bool viewportDirty = false;
+
+		/// The viewport last acknowledged by initialization or a resize callback.
+		glm::uvec2 viewport{0};
+	};
+
+
 public:
 
 	////
@@ -97,7 +121,7 @@ public:
 	/// Called by \c fcg::run; applications normally don't call this.
 	///
 	/// \pre
-	/// 	\c device, the window pointed to by \c mainWindow (if any) and the storage referenced by \c applets must
+	/// 	\c device, the window pointed to by \c mainWindow (if any) and the applet objects referenced by \c applets must
 	/// 	outlive the player.
 	///
 	/// \param device
@@ -106,9 +130,8 @@ public:
 	/// 	The main window that applets interact with through the player, or \c nullptr for a player without a window.
 	/// 	Only referenced, not owned.
 	/// \param applets
-	/// 	The applets driven by the main loop. Only the span is stored, so the referenced elements must stay at the
-	/// 	same address.
-	explicit Player (Device &device, Window *mainWindow, std::span<std::unique_ptr<Applet>> applets);
+	/// 	The applets driven by the main loop. Their addresses are retained; ownership stays with the caller.
+	explicit Player(Device &device, Window *mainWindow, std::span<std::unique_ptr<Applet>> applets);
 
 	/// Destroy the player. References returned by \c getDepthReadbackResult become invalid.
 	~Player();
@@ -283,6 +306,23 @@ public:
 	/// 	clicking its close button), \c false otherwise.
 	[[nodiscard]] auto shouldClose () const -> bool;
 
+	/// \brief Enumerate all registered cameras, including dormant cameras, in registration order.
+	///
+	/// \pre Call on the runtime thread.
+	///
+	/// \return A new vector of borrowed camera pointers, valid until their applets are destroyed.
+	[[nodiscard]] auto cameras () const -> std::vector<Camera*>;
+
+	/// \brief Query the camera currently receiving callbacks.
+	///
+	/// The first registered camera is selected by default. Pending selections through \c setActiveCamera are not
+	/// reflected until the next iteration begins.
+	///
+	/// \pre Call on the runtime thread.
+	///
+	/// \return The borrowed active camera, or \c std::nullopt; valid until its applet is destroyed.
+	[[nodiscard]] auto activeCamera () const noexcept -> std::optional<Camera*>;
+
 
 	////
 	// Methods
@@ -292,8 +332,8 @@ public:
 	/// Success means the request was accepted. The latest valid request wins; requesting the effective format cancels
 	/// a pending change. Rejected requests preserve existing state. Requests from \c Applet::init are applied after
 	/// all applets initialize and before pipeline creation. Other requests are applied before the next frame begins,
-	/// including while minimized. All applets then receive \c Applet::recreatePipelines before resize notifications,
-	/// input, GUI, updates and rendering. Requests from that callback wait until the next iteration.
+	/// including while minimized. Ordinary applets and the active camera receive \c Applet::recreatePipelines before
+	/// resize notifications, input, GUI, updates and rendering. Requests from that callback wait until the next iteration.
 	///
 	/// \pre Call on the main thread with a claimed main window.
 	///
@@ -379,25 +419,52 @@ public:
 
 	/// \brief Find a camera provided by one of the running applets.
 	///
-	/// Searches the running applets, in the order they were passed to \c fcg::run, for one that derives from
-	/// <tt>\ref Camera</tt> and whose \c Applet::name equals \c name.
+	/// Searches all registered cameras, including dormant cameras, in registration order for one whose \c Applet::name
+	/// equals \c name. Duplicate names select the first match.
+	///
+	/// \pre Call on the runtime thread.
 	///
 	/// \param name The applet name of the camera to look for.
 	///
 	/// \return
 	/// 	A pointer to the first matching camera, or \c std::nullopt if there is none. The camera is owned by
 	/// 	\c fcg::run and stays valid until the applets are destroyed at shutdown.
-	[[nodiscard]] auto findCamera (std::string_view name) -> std::optional<Camera*>;
+	[[nodiscard]] auto findCamera (std::string_view name) const -> std::optional<Camera*>;
+
+	/// \brief Select a camera for the next main-loop iteration, or deactivate all cameras.
+	///
+	/// The latest valid request wins. Selecting the current camera cancels a queued change. Requests from
+	/// initialization take effect before startup pipeline creation; requests from other callbacks take effect
+	/// before the next iteration's callbacks. A change requests a scene refresh automatically.
+	///
+	/// \pre Call on the runtime thread.
+	///
+	/// \param camera A borrowed registered camera, or \c nullptr to deactivate all cameras.
+	///
+	/// \throws std::invalid_argument If \c camera is unregistered; the current and pending selections are preserved.
+	void setActiveCamera (Camera *camera);
+
+	/// \brief Select the first registered camera with the given applet name for the next iteration.
+	///
+	/// Resolves the name immediately and queues the selection through the pointer overload of \c setActiveCamera.
+	/// An empty string is an ordinary name (use a null camera pointer instead to deactivate all cameras).
+	///
+	/// \pre Call on the runtime thread.
+	///
+	/// \param name The applet name to look up, including among dormant cameras.
+	///
+	/// \throws std::invalid_argument If no camera matches; the current and pending selections are preserved.
+	void setActiveCamera (std::string_view name);
 
 	/// \brief Request a readback of the main viewport's depth buffer, i.e. a download of its contents to the CPU.
 	///
-	/// The readback captures the depth buffer from the most recently submitted scene refresh. Commands recorded in
-	/// the current frame are not included. Calling this again within the same frame returns the same token, so
-	/// several applets can share one readback.
+	/// The readback captures the depth buffer from the most recently submitted scene refresh. Commands recorded in the
+	/// current frame are not included. Calling this again within the same frame returns the same token, so several
+	/// applets can share one readback.
 	///
 	/// Retrieve the result with <tt>\ref getDepthReadbackResult</tt>. It is ready at the start of the next frame;
-	/// querying it earlier blocks until the GPU has finished the download. The token stays valid until a newer
-	/// readback is requested in a later frame or the viewport is resized. A resize invalidates all tokens before
+	/// querying it earlier blocks until the GPU has finished the download. The token stays valid until a newer readback
+	/// is requested in a later frame or the viewport is resized. A resize invalidates all tokens before
 	/// \c Applet::onViewportResize is called; discard them instead of querying them.
 	///
 	/// Can be called from \c Applet::onEvent, \c Applet::gui, \c Applet::update, \c Applet::onViewportResize and
@@ -446,6 +513,21 @@ private:
 
 	////
 	// Methods
+
+	/// Commit a selection frozen at the iteration boundary, leaving hook-generated requests queued.
+	void applyCameraSelection (std::optional<CameraEntry*> selection);
+
+	/// Recreate the active camera's pipelines if needed, clearing the flag only on success.
+	void prepareCameraPipelines ();
+
+	/// Notify the active camera of coalesced viewport changes, clearing the flag only on success.
+	void prepareCameraViewport ();
+
+	/// Start the selected camera after maintenance; pair even a throwing hook with deactivation.
+	void activateCamera ();
+
+	/// End the current activation before switching or destroying applets.
+	void deactivateCamera () noexcept;
 
 	/// Query the attached GUI's retained coordinate scale, or one when no GUI is attached.
 	[[nodiscard]] auto guiUnitScale () const noexcept -> float;
@@ -530,8 +612,20 @@ private:
 	/// Frame counter serving as the token for readbacks requested in the current frame. Incremented once per frame.
 	uint64_t readbackToken = 0;
 
-	/// The applets driven by the main loop, searched by \c findCamera.
-	std::span<std::unique_ptr<Applet>> applets;
+	/// Ordinary applets in registration order, borrowed from the runtime's owning vector.
+	std::vector<Applet*> otherApplets;
+
+	/// Cameras in registration order; fixed membership keeps record addresses stable after construction.
+	std::vector<CameraEntry> cameraEntries;
+
+	/// Selected record, or null when all cameras are dormant.
+	CameraEntry *currentCamera = nullptr;
+
+	/// Queued selection; an engaged null pointer requests deactivation.
+	std::optional<CameraEntry*> pendingCamera;
+
+	/// Whether the current camera's activation hook has started and needs a matching deactivation.
+	bool cameraActivated = false;
 };
 
 
