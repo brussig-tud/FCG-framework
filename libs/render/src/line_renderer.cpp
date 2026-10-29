@@ -13,6 +13,7 @@
 // FCG Framework
 #include <FCG/player.h>
 #include <FCG/res.h>
+#include <FCG/Render/line_set_builder.h>
 
 // Implemented header
 #include "FCG/Render/line_renderer.h"
@@ -284,6 +285,13 @@ auto LineRenderer::draw (
 	SDL_BindGPUVertexStorageBuffers(pass, 0, bindings.data(), (Uint32)bindings.size());
 	SDL_DrawGPUPrimitives(pass, 4, (Uint32)count, 0, 0);
 	return {};
+}
+
+auto LineRenderer::draw (
+	const LineSet &lines, RenderState &state, SDL_GPUCommandBuffer *commandBuffer,
+	SDL_GPURenderPass *renderPass, const DrawOptions &options, InstanceRange range
+) const -> std::expected<void, RenderError> {
+	return draw(lines.attributes, lines.connectivity, state, commandBuffer, renderPass, options, range);
 }
 
 

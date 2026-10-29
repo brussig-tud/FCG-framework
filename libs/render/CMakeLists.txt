@@ -16,6 +16,7 @@ target_sources(Render PRIVATE
 	src/primitive_connectivity.cpp
 	src/connected_primitive_renderer.cpp
 	src/line_renderer.cpp
+	src/line_set_builder.cpp
 	src/quad_renderer.cpp
 	src/box_renderer.cpp
 	src/ellipsoid_renderer.cpp
@@ -29,6 +30,7 @@ target_sources(Render PRIVATE
 	include/FCG/Render/primitive_connectivity.h
 	include/FCG/Render/connected_primitive_renderer.h
 	include/FCG/Render/line_renderer.h
+	include/FCG/Render/line_set_builder.h
 	include/FCG/Render/quad_renderer.h
 	include/FCG/Render/box_renderer.h
 	include/FCG/Render/ellipsoid_renderer.h

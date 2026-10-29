@@ -16,6 +16,7 @@
 /// <tt>\ref fcg::PrimitiveAttributes "PrimitiveAttributes"</tt> using
 /// <tt>\ref fcg::PrimitiveConnectivity "PrimitiveConnectivity"</tt>. Node radii are half-widths in physical
 /// framebuffer pixels, independent of camera distance. Node colors vary along each segment.
+/// For a convenient way to define polylines and upload their nodes and indices together, see \ref fcg_line_sets.
 ///
 /// \section fcg_lines_usage Getting started
 /// Include the line renderer and create it for the current scene target:
@@ -67,6 +68,7 @@
 // Framework types
 namespace fcg {
 	class Player;
+	struct LineSet;
 }
 
 
@@ -236,6 +238,25 @@ public:
 		SDL_GPUCommandBuffer *commandBuffer, SDL_GPURenderPass *renderPass, const DrawOptions &options={},
 		InstanceRange range={}
 	) const -> std::expected<void, RenderError> override;
+
+	/// \brief Draw the selected segments from an uploaded line set in an active render pass.
+	///
+	/// \pre
+	/// 	The set's collections and all rendering arguments meet the preconditions of the overload taking
+	/// 	\c PrimitiveAttributes and <tt>PrimitiveConnectivity</tt>.
+	///
+	/// \param lines The uploaded line set, borrowed for this call.
+	/// \param state Viewing matrices and physical viewport dimensions.
+	/// \param commandBuffer The command buffer containing the active pass.
+	/// \param renderPass The compatible active pass.
+	/// \param options Texture and lighting requests; lines support neither.
+	/// \param range The segment range, rather than a node range; the default selects all.
+	///
+	/// \return Success, or \c RenderErrorCode::InvalidArgument for texture or lighting requests; errors record nothing.
+	[[nodiscard]] auto draw (
+		const LineSet &lines, RenderState &state, SDL_GPUCommandBuffer *commandBuffer,
+		SDL_GPURenderPass *renderPass, const DrawOptions &options={}, InstanceRange range={}
+	) const -> std::expected<void, RenderError>;
 
 
 	////

@@ -1,4 +1,4 @@
-add_library(render-examples OBJECT render_examples.cpp line_examples.cpp)
+add_library(render-examples OBJECT render_examples.cpp line_examples.cpp line_set_examples.cpp)
 target_link_libraries(render-examples PRIVATE Render)
 
 add_executable(render-smoke main.cpp)
@@ -34,9 +34,35 @@ add_test(NAME render-lines COMMAND render-lines)
 set_tests_properties(render-lines PROPERTIES TIMEOUT 90
 	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
 
+add_executable(render-line-sets line_sets.cpp)
+target_link_libraries(render-line-sets PRIVATE Render)
+add_test(NAME render-line-sets COMMAND render-line-sets)
+set_tests_properties(render-line-sets PROPERTIES TIMEOUT 90
+	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
+
+add_executable(render-line-set-failures line_set_failures.cpp)
+target_compile_definitions(render-line-set-failures PRIVATE FCG_RENDER_STATIC_DEFINE)
+target_link_libraries(render-line-set-failures PRIVATE Render)
+add_test(NAME render-line-set-failures COMMAND render-line-set-failures)
+set_tests_properties(render-line-set-failures PROPERTIES TIMEOUT 90
+	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
+
 add_executable(render-connectivity-failures connectivity_failures.cpp)
 target_compile_definitions(render-connectivity-failures PRIVATE FCG_RENDER_STATIC_DEFINE)
 target_link_libraries(render-connectivity-failures PRIVATE Render)
 add_test(NAME render-connectivity-failures COMMAND render-connectivity-failures)
 set_tests_properties(render-connectivity-failures PROPERTIES TIMEOUT 60
 	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
+
+if(FCG_INCLUDE_PACKAGING)
+	file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/installed-dependencies.cmake"
+		CONTENT "set(RENDER_CONSUMER_INCLUDE_DIRS \"$<TARGET_GENEX_EVAL:SDL3::SDL3,$<TARGET_PROPERTY:SDL3::SDL3,INTERFACE_INCLUDE_DIRECTORIES>>;$<TARGET_GENEX_EVAL:glm::glm,$<TARGET_PROPERTY:glm::glm,INTERFACE_INCLUDE_DIRECTORIES>>\")\n")
+	add_test(NAME render-installed-line-sets COMMAND "${CMAKE_COMMAND}"
+		"-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/installed"
+		"-DBINARY=${CMAKE_CURRENT_BINARY_DIR}/installed-consumer"
+		"-DCOMPILER=${CMAKE_CXX_COMPILER}"
+		"-DPREFIX=${PROJECT_BINARY_DIR}/tests/install-prefix"
+		"-DDEPENDENCIES=${CMAKE_CURRENT_BINARY_DIR}/installed-dependencies.cmake"
+		-P "${CMAKE_CURRENT_SOURCE_DIR}/installed/run.cmake")
+	set_tests_properties(render-installed-line-sets PROPERTIES DEPENDS install-smoke-verify TIMEOUT 90)
+endif()

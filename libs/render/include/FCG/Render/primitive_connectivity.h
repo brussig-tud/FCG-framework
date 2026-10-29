@@ -95,11 +95,21 @@ public:
 	/// Not copy-assignable.
 	auto operator= (const PrimitiveConnectivity&) -> PrimitiveConnectivity& = delete;
 
-	/// Not movable.
-	PrimitiveConnectivity(PrimitiveConnectivity&&) = delete;
+	/// \brief Transfer the collection; existing source views remain valid under the destination's ownership.
+	///
+	/// The source subsequently permits only assignment and destruction.
+	///
+	/// \param other The collection to move.
+	PrimitiveConnectivity(PrimitiveConnectivity &&other) noexcept;
 
-	/// Not move-assignable.
-	auto operator= (PrimitiveConnectivity&&) -> PrimitiveConnectivity& = delete;
+	/// \brief Release this collection and transfer another collection, preserving its source views.
+	///
+	/// The source subsequently permits only assignment and destruction.
+	///
+	/// \param other The collection to move.
+	///
+	/// \return This collection.
+	auto operator= (PrimitiveConnectivity &&other) noexcept -> PrimitiveConnectivity&;
 
 
 	////
@@ -114,7 +124,7 @@ public:
 	/// \brief The current GPU index view, or an empty view for an empty collection.
 	///
 	/// An uploaded array's view borrows collection-owned storage and remains valid until the next successful change
-	/// of source or destruction of the collection.
+	/// of source or destruction of its owning collection. Moving transfers that ownership to the destination.
 	///
 	/// \return The current index view.
 	[[nodiscard]] auto source () const -> ConnectivityBufferView;
@@ -198,7 +208,7 @@ private:
 	////
 	// Fields
 
-	/// Storage and source state, retained across updates.
+	/// Storage and source state, retained across updates; null after moving.
 	std::unique_ptr<State> state;
 };
 

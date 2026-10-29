@@ -52,7 +52,8 @@ static_assert(!Constant<A::Position>);
 static_assert(Constant<A::Normal> && Constant<A::Radius> && Constant<A::Extent>
 	&& Constant<A::Orientation> && Constant<A::Color>);
 static_assert(!std::is_copy_constructible_v<fcg::PrimitiveAttributes>);
-static_assert(!std::is_move_constructible_v<fcg::PrimitiveAttributes>);
+static_assert(std::is_nothrow_move_constructible_v<fcg::PrimitiveAttributes>);
+static_assert(std::is_nothrow_move_assignable_v<fcg::PrimitiveAttributes>);
 static_assert(!std::is_move_constructible_v<Update>);
 static_assert(!std::is_copy_constructible_v<fcg::QuadRenderer> && std::is_nothrow_move_constructible_v<fcg::QuadRenderer>);
 static_assert(!std::is_copy_constructible_v<fcg::BoxRenderer> && std::is_nothrow_move_constructible_v<fcg::BoxRenderer>);

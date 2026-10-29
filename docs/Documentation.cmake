@@ -26,7 +26,7 @@ fcg_register_documentation(
     LIBRARY Render
     LINK_TARGET FCG-Framework::Render
     OVERVIEW fcg_render_overview
-    MODULES fcg_primitives fcg_ellipsoids fcg_connected_primitives fcg_lines
+    MODULES fcg_primitives fcg_ellipsoids fcg_connected_primitives fcg_lines fcg_line_sets
     INPUTS "${CMAKE_CURRENT_LIST_DIR}/../libs/render/include/FCG/Render"
     EXAMPLE_DIRS "${CMAKE_CURRENT_LIST_DIR}/../libs/render/tests"
     PREDEFINED FCG_RENDER_EXPORT=

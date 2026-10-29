@@ -21,7 +21,8 @@
 /// \section fcg_render_start Where to start
 /// Start with the \ref fcg_primitives guide: it explains the shared attribute collection, the supplied renderers, and
 /// how to create, update, and draw them. For spheres and ellipsoids, see \ref fcg_ellipsoids. For pixel-width line
-/// segments between shared nodes, see \ref fcg_lines and \ref fcg_connected_primitives.
+/// segments between shared nodes, see \ref fcg_lines and \ref fcg_connected_primitives. A convenient, highly abstracted
+/// way to use the line renderer is provided as well, see \ref fcg_line_sets for details.
 
 
 

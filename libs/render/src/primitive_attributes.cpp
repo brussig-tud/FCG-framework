@@ -139,6 +139,10 @@ PrimitiveAttributes::PrimitiveAttributes(Device &device) : state(std::make_uniqu
 
 PrimitiveAttributes::~PrimitiveAttributes() = default;
 
+PrimitiveAttributes::PrimitiveAttributes(PrimitiveAttributes&&) noexcept = default;
+
+auto PrimitiveAttributes::operator= (PrimitiveAttributes&&) noexcept -> PrimitiveAttributes& = default;
+
 auto PrimitiveAttributes::device () const -> Device& {
 	return state->device;
 }

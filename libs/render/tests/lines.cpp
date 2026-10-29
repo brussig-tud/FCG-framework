@@ -28,6 +28,7 @@
 // FCG Framework
 #include <FCG/texture.h>
 #include <FCG/Render/line_renderer.h>
+#include <FCG/Render/line_set_builder.h>
 
 
 
@@ -45,7 +46,8 @@ using A = fcg::Attribute;
 static_assert(!std::is_copy_constructible_v<fcg::LineRenderer>);
 static_assert(std::is_nothrow_move_constructible_v<fcg::LineRenderer>);
 static_assert(std::is_nothrow_move_assignable_v<fcg::LineRenderer>);
-static_assert(!std::is_move_constructible_v<fcg::PrimitiveConnectivity>);
+static_assert(std::is_nothrow_move_constructible_v<fcg::PrimitiveConnectivity>);
+static_assert(std::is_nothrow_move_assignable_v<fcg::PrimitiveConnectivity>);
 
 /// Fail independently of build-mode assertions.
 void require (bool condition, const std::string &message) {
@@ -654,6 +656,40 @@ void targets (fcg::Device &device)
 	}
 }
 
+/// Compare builder output and moves with an equivalent manually uploaded segment.
+void builderRendering (fcg::Device &device)
+{
+	Surface surface(device);
+	auto renderer = take(fcg::LineRenderer::create(device, surface.target()));
+	Segment segment;
+	segment.radii = {2.f, 5.f};
+	fcg::PrimitiveAttributes attributes(device);
+	fcg::PrimitiveConnectivity pairs(device);
+	assign(attributes, segment);
+	const std::array<std::uint32_t, 2> indices{0, 1};
+	check(pairs.setIndices(indices));
+	fcg::RenderState state(device, surface.size);
+	const auto reference = surface.render([&] (auto *command, auto *pass) {
+		check(renderer.draw(attributes, pairs, state, command, pass));
+	});
+
+	// Move over nonempty collections, then draw with the transferred source views
+	fcg::LineSetBuilder builder;
+	builder.recordPolyline([&] (auto &line) {
+		for (unsigned i = 0; i < 2; ++i)
+			line.addNode(glm::vec3(segment.positions[i]), segment.colors[i], segment.radii[i] * 2.f);
+	});
+	auto original = take(builder.upload(device));
+	auto moved = std::move(original);
+	fcg::LineSet destination(std::move(attributes), std::move(pairs));
+	destination = std::move(moved);
+	const auto built = surface.render([&] (auto *command, auto *pass) {
+		check(renderer.draw(destination, state, command, pass));
+	});
+	require(reference.colors == built.colors && reference.depths == built.depths,
+		"Builder output differs from manually uploaded geometry");
+}
+
 // Anonymous namespace end
 }
 
@@ -679,6 +715,7 @@ auto main () -> int
 		filtering(*device);
 		connectivity(*device);
 		targets(*device);
+		builderRendering(*device);
 	} catch (const std::exception &error) {
 		std::cerr << error.what() << '\n';
 		result = 1;

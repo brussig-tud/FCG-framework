@@ -444,11 +444,21 @@ public:
 	/// Not copy-assignable.
 	auto operator= (const PrimitiveAttributes&) -> PrimitiveAttributes& = delete;
 
-	/// Not movable.
-	PrimitiveAttributes(PrimitiveAttributes&&) = delete;
+	/// \brief Transfer the collection; existing source views remain valid under the destination's ownership.
+	///
+	/// \pre No update is active. The source subsequently permits only assignment and destruction.
+	///
+	/// \param other The collection to move.
+	PrimitiveAttributes(PrimitiveAttributes &&other) noexcept;
 
-	/// Not move-assignable.
-	auto operator= (PrimitiveAttributes&&) -> PrimitiveAttributes& = delete;
+	/// \brief Release this collection and transfer another collection, preserving its source views.
+	///
+	/// \pre Neither collection has an active update. The source subsequently permits only assignment and destruction.
+	///
+	/// \param other The collection to move.
+	///
+	/// \return This collection.
+	auto operator= (PrimitiveAttributes &&other) noexcept -> PrimitiveAttributes&;
 
 
 	////
@@ -465,7 +475,8 @@ public:
 	/// A constant is returned as its value. Both arrays set with \c Update::set and buffers bound with \c Update::bind
 	/// are returned as an <tt>AttributeBufferView</tt>. For an array set with <tt>Update::set</tt>, the view refers to
 	/// a buffer owned by the collection; for an empty array, its \c buffer may be null. Such a view stays valid until
-	/// the next successful \c setAttributes call that changes the attribute, or until the collection is destroyed.
+	/// the next successful \c setAttributes call that changes the attribute, or until its owning collection is
+	/// destroyed. Moving transfers that ownership to the destination.
 	///
 	/// \tparam A The attribute to query.
 	///
@@ -603,7 +614,7 @@ private:
 	////
 	// Fields
 
-	/// Implementation state; never null. Keeps no copies of uploaded CPU arrays.
+	/// Implementation state; null after moving. Keeps no copies of uploaded CPU arrays.
 	std::unique_ptr<State> state;
 };
 

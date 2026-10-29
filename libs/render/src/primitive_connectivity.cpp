@@ -96,6 +96,10 @@ PrimitiveConnectivity::PrimitiveConnectivity(Device &device) : state(std::make_u
 
 PrimitiveConnectivity::~PrimitiveConnectivity() = default;
 
+PrimitiveConnectivity::PrimitiveConnectivity(PrimitiveConnectivity&&) noexcept = default;
+
+auto PrimitiveConnectivity::operator= (PrimitiveConnectivity&&) noexcept -> PrimitiveConnectivity& = default;
+
 auto PrimitiveConnectivity::device () const -> Device& {
 	return state->device;
 }

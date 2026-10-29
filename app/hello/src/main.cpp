@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <memory>
 #include <optional>
 #include <span>
@@ -33,6 +34,7 @@
 #include <FCG/applet/orbit_camera.h>
 #include <FCG/Render/ellipsoid_renderer.h>
 #include <FCG/Render/line_renderer.h>
+#include <FCG/Render/line_set_builder.h>
 
 // Local includes
 #include <shapes/convex_poly.h>
@@ -53,7 +55,7 @@
 /// transformation of the current \c fcg::RenderState (e.g. as set up by a camera applet running before this one).
 /// Optional spheres mark geometric corners, with their radius specified as a percentage of the shape's circumradius.
 /// Geometric and triangulated wireframes show independent pixel-width segments with optional filtered edges.
-/// Triangulation diagonals are light grey and use 75% of the white face-edge width.
+/// Triangulation diagonals are light grey and use two-thirds of the white face-edge width.
 class SimpleShapesApplet : public fcg::Applet
 {
 public:
@@ -109,8 +111,6 @@ public:
 	void init (fcg::Device &device, fcg::Player &player) override {
 		m_device = &device;
 		cornerAttributes = std::make_unique<fcg::PrimitiveAttributes>(device);
-		wireAttributes = std::make_unique<fcg::PrimitiveAttributes>(device);
-		wireEdges = std::make_unique<fcg::PrimitiveConnectivity>(device);
 	}
 
 	/// \brief Replace mesh, corner and line pipelines for the player's effective target.
@@ -287,7 +287,7 @@ public:
 		ImGui::SetNextItemWidth(-ImGui::CalcTextSize("Line width (px)").x - ImGui::GetStyle().ItemInnerSpacing.x);
 		bool lineStyleChanged = ImGui::SliderFloat("Line width (px)", &lineWidth, 1.f, 10.f, "%.1f",
 			ImGuiSliderFlags_AlwaysClamp);
-		ImGui::SetItemTooltip("Full face-edge width in physical framebuffer pixels; triangulation diagonals use 75%%.");
+		ImGui::SetItemTooltip("Full face-edge width in physical framebuffer pixels; triangulation diagonals use two-thirds.");
 		if (lineStyleChanged) {
 			wireRadiiDirty = true;
 			wireReady = false;
@@ -388,7 +388,7 @@ public:
 				.first = displayMode == DisplayMode::Wireframe ? wireDiagonalCount : 0
 			};
 			if (auto result = lineRenderer->draw(
-				*wireAttributes, *wireEdges, rs, commandBuffer, renderPass, {}, range
+				*wireLines, rs, commandBuffer, renderPass, {}, range
 			); !result)
 				SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Drawing wireframe: %s", result.error().message.c_str());
 		}
@@ -413,40 +413,44 @@ protected:
 	/// \param player The player whose scene is refreshed after updates or failures.
 	void updateWireframe (const SimpleShape &shape, fcg::Player &player)
 	{
-		// Give each geometric corner separate attributes for diagonals and face boundaries
-		const auto corners = shape.corners();
-		std::vector<glm::vec4> positions, colors;
-		std::vector<std::uint32_t> indices;
+		// Use the same full widths for geometry replacements and radius-only edits
+		const auto faceWidth = lineWidth;
+		const auto diagonalWidth = faceWidth * 2/3.f;
 		auto diagonalCount = wireDiagonalCount;
+		std::expected<void, fcg::RenderError> result;
 		if (wireGeometryDirty)
 		{
-			positions.reserve(2 * corners.size());
-			positions.insert(positions.end(), corners.begin(), corners.end());
-			positions.insert(positions.end(), corners.begin(), corners.end());
-			colors.assign(corners.size(), glm::vec4(1/3.f, 1/3.f, 1/3.f, 1.f));
-			colors.resize(2 * corners.size(), glm::vec4(1.f));
+			// Give each independent segment two nodes with explicit color and full pixel width
+			auto builder = fcg::LineSetBuilder::create();
+			const auto corners = shape.corners();
+			const auto appendSegments = [&] (std::span<const std::uint32_t> pairs, glm::vec4 color, float width)
+			{
+				for (std::size_t i = 0; i < pairs.size(); i += 2)
+					builder.addPolyline({
+						{glm::vec3(corners[pairs[i]]), color, width},
+						{glm::vec3(corners[pairs[i + 1]]), color, width}
+					});
+			};
 
 			// Put diagonals first so the regular face edges blend over them in the same draw
-			indices = shape.triangulationDiagonals();
-			diagonalCount = indices.size() / 2;
-			indices.reserve(indices.size() + shape.edges().size());
-			for (const auto corner : shape.edges())
-				indices.push_back((std::uint32_t)corners.size() + corner);
+			const auto diagonals = shape.triangulationDiagonals();
+			diagonalCount = diagonals.size() / 2;
+			appendSegments(diagonals, glm::vec4(1/3.f, 1/3.f, 1/3.f, 1.f), diagonalWidth);
+			appendSegments(shape.edges(), glm::vec4(1.f), faceWidth);
+			auto maybeLines = builder.upload(player.device());
+			result = maybeLines.transform([&](auto &&lines) { wireLines = std::move(lines); });
+		}
+		else
+		{
+			// Width edits replace only half-widths for the diagonal prefix and face-edge suffix
+			std::vector<float> radii(wireLines->attributes.instanceCount(), faceWidth * .5f);
+			std::fill_n(radii.begin(), 2 * diagonalCount, diagonalWidth * .5f);
+			result = wireLines->attributes.setAttributes([&] (fcg::PrimitiveAttributes::Update &attributes) {
+				attributes.set<fcg::Attribute::Radius>(std::span(radii));
+			});
 		}
 
-		// Width edits replace only the explicit half-widths, keeping geometry and colors in place
-		std::vector<float> radii(corners.size(), lineWidth * .25f);
-		radii.resize(2 * corners.size(), lineWidth * 2/3.f);
-		auto result = wireAttributes->setAttributes([&] (fcg::PrimitiveAttributes::Update &attributes)
-		{
-			if (wireGeometryDirty) {
-				attributes.set<fcg::Attribute::Position>(std::span(positions));
-				attributes.set<fcg::Attribute::Color>(std::span(colors));
-			}
-			attributes.set<fcg::Attribute::Radius>(std::span(radii));
-		});
-		if (result && wireGeometryDirty)
-			result = wireEdges->setIndices(indices);
+		// Keep the relevant dirty flags set so failed replacements or radius edits are retried
 		if (!result) {
 			wireReady = false;
 			SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Updating wireframe: %s", result.error().message.c_str());
@@ -550,11 +554,8 @@ protected:
 	/// The wireframe renderer for the current scene format, empty if creation failed.
 	std::optional<fcg::LineRenderer> lineRenderer;
 
-	/// Two copies of the corners with explicit light-grey diagonal and white face-edge attributes.
-	std::unique_ptr<fcg::PrimitiveAttributes> wireAttributes;
-
-	/// Unique diagonal pairs followed by geometric boundary pairs, referencing their respective corner copies.
-	std::unique_ptr<fcg::PrimitiveConnectivity> wireEdges;
+	/// Owned independent segments with light-grey diagonals preceding white face edges.
+	std::optional<fcg::LineSet> wireLines;
 
 	/// Number of leading diagonal segments in the successfully uploaded connectivity.
 	std::size_t wireDiagonalCount = 0;
@@ -562,7 +563,7 @@ protected:
 	/// The selected shape representation.
 	DisplayMode displayMode = DisplayMode::Solid;
 
-	/// Full face-edge width in physical framebuffer pixels; diagonals use 75% of this width.
+	/// Full face-edge width in physical framebuffer pixels; diagonals use two-thirds of this width.
 	float lineWidth = 1.5f;
 
 	/// Whether line boundaries use smooth filtering.
