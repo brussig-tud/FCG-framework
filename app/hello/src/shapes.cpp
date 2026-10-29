@@ -24,7 +24,7 @@
 
 SimpleShape::~SimpleShape() = default;
 
-auto SimpleShape::triangulatedEdges () const -> std::vector<std::uint32_t>
+auto SimpleShape::triangulationDiagonals () const -> std::vector<std::uint32_t>
 {
 	// Map the flat-shaded mesh vertices back to their exact, shared geometric corners
 	const auto nodes = corners();
@@ -44,6 +44,13 @@ auto SimpleShape::triangulatedEdges () const -> std::vector<std::uint32_t>
 			const auto b = cornerForVertex[triangles[i + (side + 1) % 3]];
 			unique.emplace(std::min(a, b), std::max(a, b));
 		}
+
+	// Exclude geometric face boundaries, retaining only the added triangulation diagonals
+	const auto boundaries = edges();
+	for (std::size_t i = 0; i < boundaries.size(); i += 2) {
+		const auto a = boundaries[i], b = boundaries[i + 1];
+		unique.erase({std::min(a, b), std::max(a, b)});
+	}
 
 	// Flatten pairs into the connectivity renderer's contiguous 32-bit representation
 	std::vector<std::uint32_t> result;

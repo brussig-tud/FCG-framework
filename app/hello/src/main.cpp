@@ -7,8 +7,11 @@
 // C++ STL
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
+#include <vector>
 
 // Dear ImGui
 #include <imgui.h>
@@ -50,6 +53,7 @@
 /// transformation of the current \c fcg::RenderState (e.g. as set up by a camera applet running before this one).
 /// Optional spheres mark geometric corners, with their radius specified as a percentage of the shape's circumradius.
 /// Geometric and triangulated wireframes show independent pixel-width segments with optional filtered edges.
+/// Triangulation diagonals are light grey and use 75% of the white face-edge width.
 class SimpleShapesApplet : public fcg::Applet
 {
 public:
@@ -66,7 +70,7 @@ public:
 		/// Unique geometric face boundaries.
 		Wireframe,
 
-		/// Unique edges of the uploaded triangle mesh.
+		/// White geometric face boundaries with thinner, light-grey triangulation diagonals.
 		TriangulatedWireframe
 	};
 
@@ -107,7 +111,6 @@ public:
 		cornerAttributes = std::make_unique<fcg::PrimitiveAttributes>(device);
 		wireAttributes = std::make_unique<fcg::PrimitiveAttributes>(device);
 		wireEdges = std::make_unique<fcg::PrimitiveConnectivity>(device);
-		triangleEdges = std::make_unique<fcg::PrimitiveConnectivity>(device);
 	}
 
 	/// \brief Replace mesh, corner and line pipelines for the player's effective target.
@@ -284,7 +287,11 @@ public:
 		ImGui::SetNextItemWidth(-ImGui::CalcTextSize("Line width (px)").x - ImGui::GetStyle().ItemInnerSpacing.x);
 		bool lineStyleChanged = ImGui::SliderFloat("Line width (px)", &lineWidth, 1.f, 10.f, "%.1f",
 			ImGuiSliderFlags_AlwaysClamp);
-		ImGui::SetItemTooltip("Full line width in physical framebuffer pixels.");
+		ImGui::SetItemTooltip("Full face-edge width in physical framebuffer pixels; triangulation diagonals use 75%%.");
+		if (lineStyleChanged) {
+			wireRadiiDirty = true;
+			wireReady = false;
+		}
 		lineStyleChanged |= ImGui::Checkbox("Anti-aliasing", &lineAntialiasing);
 		ImGui::EndDisabled();
 		if (lineStyleChanged) {
@@ -333,7 +340,7 @@ public:
 			return;
 
 		// Refresh each visualization independently after the mesh's upload succeeds
-		if (displayMode != DisplayMode::Solid && wireGeometryDirty)
+		if (displayMode != DisplayMode::Solid && (wireGeometryDirty || wireRadiiDirty))
 			updateWireframe(shape, player);
 		if (showCorners && (cornerPositionsDirty || cornerRadiusDirty || cornerColorDirty))
 			updateCorners(shape, player);
@@ -374,11 +381,15 @@ public:
 				);
 		}
 
-		// Draw an open edge graph without filling the faces or writing line depth
+		// Select the face-edge suffix or draw all segments with face edges blending over diagonals
 		if (displayMode != DisplayMode::Solid && wireReady && lineRenderer)
 		{
-			const auto &connectivity = displayMode == DisplayMode::Wireframe ? *wireEdges : *triangleEdges;
-			if (auto result = lineRenderer->draw(*wireAttributes, connectivity, rs, commandBuffer, renderPass); !result)
+			const fcg::InstanceRange range{
+				.first = displayMode == DisplayMode::Wireframe ? wireDiagonalCount : 0
+			};
+			if (auto result = lineRenderer->draw(
+				*wireAttributes, *wireEdges, rs, commandBuffer, renderPass, {}, range
+			); !result)
 				SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Drawing wireframe: %s", result.error().message.c_str());
 		}
 	}
@@ -389,28 +400,53 @@ protected:
 	////
 	// Methods
 
-	/// Copy the current pixel width and filtering choice to the available line renderer.
+	/// Copy the current filtering choice to the available line renderer.
 	void applyLineStyle () {
 		if (lineRenderer)
-			lineRenderer->setStyle({.defaultWidth = lineWidth, .filter = lineAntialiasing
+			lineRenderer->setStyle({.filter = lineAntialiasing
 				? fcg::LineFilter::Smoothstep : fcg::LineFilter::None});
 	}
 
-	/// \brief Refresh node positions and both edge sets after a successful mesh upload.
+	/// \brief Refresh wireframe geometry or pixel radii after a successful mesh upload.
 	///
 	/// \param shape The selected, successfully uploaded shape.
 	/// \param player The player whose scene is refreshed after updates or failures.
 	void updateWireframe (const SimpleShape &shape, fcg::Player &player)
 	{
-		// Upload positions once for both representations, using the line renderer's white color default
-		const auto triangles = shape.triangulatedEdges();
-		auto result = wireAttributes->setAttributes([&] (fcg::PrimitiveAttributes::Update &attributes) {
-			attributes.set<fcg::Attribute::Position>(shape.corners());
+		// Give each geometric corner separate attributes for diagonals and face boundaries
+		const auto corners = shape.corners();
+		std::vector<glm::vec4> positions, colors;
+		std::vector<std::uint32_t> indices;
+		auto diagonalCount = wireDiagonalCount;
+		if (wireGeometryDirty)
+		{
+			positions.reserve(2 * corners.size());
+			positions.insert(positions.end(), corners.begin(), corners.end());
+			positions.insert(positions.end(), corners.begin(), corners.end());
+			colors.assign(corners.size(), glm::vec4(1/3.f, 1/3.f, 1/3.f, 1.f));
+			colors.resize(2 * corners.size(), glm::vec4(1.f));
+
+			// Put diagonals first so the regular face edges blend over them in the same draw
+			indices = shape.triangulationDiagonals();
+			diagonalCount = indices.size() / 2;
+			indices.reserve(indices.size() + shape.edges().size());
+			for (const auto corner : shape.edges())
+				indices.push_back((std::uint32_t)corners.size() + corner);
+		}
+
+		// Width edits replace only the explicit half-widths, keeping geometry and colors in place
+		std::vector<float> radii(corners.size(), lineWidth * .25f);
+		radii.resize(2 * corners.size(), lineWidth * 2/3.f);
+		auto result = wireAttributes->setAttributes([&] (fcg::PrimitiveAttributes::Update &attributes)
+		{
+			if (wireGeometryDirty) {
+				attributes.set<fcg::Attribute::Position>(std::span(positions));
+				attributes.set<fcg::Attribute::Color>(std::span(colors));
+			}
+			attributes.set<fcg::Attribute::Radius>(std::span(radii));
 		});
-		if (result)
-			result = wireEdges->setIndices(shape.edges());
-		if (result)
-			result = triangleEdges->setIndices(triangles);
+		if (result && wireGeometryDirty)
+			result = wireEdges->setIndices(indices);
 		if (!result) {
 			wireReady = false;
 			SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Updating wireframe: %s", result.error().message.c_str());
@@ -419,7 +455,9 @@ protected:
 		}
 
 		// Make both representations drawable only after every upload succeeds
+		wireDiagonalCount = diagonalCount;
 		wireGeometryDirty = false;
+		wireRadiiDirty = false;
 		wireReady = true;
 		player.requireSceneRedraw();
 	}
@@ -512,20 +550,20 @@ protected:
 	/// The wireframe renderer for the current scene format, empty if creation failed.
 	std::optional<fcg::LineRenderer> lineRenderer;
 
-	/// Shared wireframe positions; color and radius use the renderer's defaults.
+	/// Two copies of the corners with explicit light-grey diagonal and white face-edge attributes.
 	std::unique_ptr<fcg::PrimitiveAttributes> wireAttributes;
 
-	/// Unique geometric edge pairs referencing the shared positions.
+	/// Unique diagonal pairs followed by geometric boundary pairs, referencing their respective corner copies.
 	std::unique_ptr<fcg::PrimitiveConnectivity> wireEdges;
 
-	/// Unique edges of the uploaded mesh's triangle list.
-	std::unique_ptr<fcg::PrimitiveConnectivity> triangleEdges;
+	/// Number of leading diagonal segments in the successfully uploaded connectivity.
+	std::size_t wireDiagonalCount = 0;
 
 	/// The selected shape representation.
 	DisplayMode displayMode = DisplayMode::Solid;
 
-	/// Full line width in physical framebuffer pixels.
-	float lineWidth = 2.f;
+	/// Full face-edge width in physical framebuffer pixels; diagonals use 75% of this width.
+	float lineWidth = 1.5f;
 
 	/// Whether line boundaries use smooth filtering.
 	bool lineAntialiasing = true;
@@ -533,7 +571,10 @@ protected:
 	/// Whether the selected shape's wireframe data needs uploading.
 	bool wireGeometryDirty = true;
 
-	/// Whether positions and both edge collections match the selected uploaded mesh.
+	/// Whether the explicit pixel radii need uploading after a width edit.
+	bool wireRadiiDirty = true;
+
+	/// Whether attributes and connectivity match the selected uploaded mesh and requested line width.
 	bool wireReady = false;
 
 	/// Whether the GUI enables drawing corner spheres.

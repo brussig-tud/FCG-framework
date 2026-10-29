@@ -194,15 +194,16 @@ public:
 	/// Normally called by \c update rather than directly.
 	virtual void regenerate () = 0;
 
-	/// \brief Construct unique edge pairs from the generated triangle-list mesh.
+	/// \brief Construct unique diagonals introduced by triangulating the generated mesh.
 	///
 	/// Mesh vertices are mapped to their exact geometric corners, including copies with different face normals.
-	/// Each undirected edge occurs once, with the smaller corner index first.
+	/// Geometric boundaries returned by \c edges are excluded. Each undirected diagonal occurs once, with the
+	/// smaller corner index first.
 	///
 	/// \pre The generated mesh is a triangle list and every vertex position equals one of \c corners.
 	///
-	/// \return Owned, consecutive corner-index pairs describing the mesh's actual triangle edges.
-	[[nodiscard]] auto triangulatedEdges () const -> std::vector<std::uint32_t>;
+	/// \return Owned, consecutive corner-index pairs describing the mesh's triangulation diagonals.
+	[[nodiscard]] auto triangulationDiagonals () const -> std::vector<std::uint32_t>;
 
 	/// \brief Regenerates and uploads the geometry if the shape is \c dirty, and does nothing otherwise.
 	///
