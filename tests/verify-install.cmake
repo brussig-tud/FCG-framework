@@ -18,7 +18,7 @@ function(expect_artifact description)
 endfunction()
 
 # Libraries (static with debug postfix, static release, or shared).
-foreach(library Core Image Render Extras)
+foreach(library Core Image Mesh Render Extras)
     expect_artifact("${library} (static or shared) in lib/ or bin/"
         lib/lib${library}.a lib/lib${library}d.a
         lib/lib${library}.so lib/lib${library}d.so
@@ -28,7 +28,7 @@ foreach(library Core Image Render Extras)
 endforeach()
 
 # The source-built shared backend must accompany the installed framework runtime.
-foreach(runtime IMAGE_RUNTIME AVIF_RUNTIME TIFF_RUNTIME)
+foreach(runtime IMAGE_RUNTIME AVIF_RUNTIME TIFF_RUNTIME MESH_RUNTIME)
     if(${runtime} AND NOT EXISTS "${PREFIX}/lib/${${runtime}}" AND NOT EXISTS "${PREFIX}/bin/${${runtime}}")
         list(APPEND missing "${${runtime}} runtime")
     endif()
@@ -40,6 +40,7 @@ foreach (header run.h window.h applet.h event.h export.h buffer.h texture.h full
     Image/export.h Image/image.h Image/image_loader.h Image/sdl_image.h
     Image/error.h Image/pixel_format.h Image/pixel_access.h
     Image/features.h Image/radiance_hdr.h Image/pfm.h Image/openexr.h
+    Mesh/export.h Mesh/mesh.h Mesh/mesh_loader.h Mesh/error.h Mesh/obj.h Mesh/ply.h Mesh/stl.h
     Extras/export.h Extras/file_dialog.h
     render_target.h Render/export.h Render/error.h Render/primitive_attributes.h
     Render/primitive_renderer.h Render/quad_renderer.h Render/box_renderer.h Render/ellipsoid_renderer.h
@@ -72,14 +73,14 @@ endif()
 file(GLOB target_files "${PREFIX}/lib/cmake/FCG/FCG-*-targets.cmake")
 foreach(target_file IN LISTS target_files)
     file(READ "${target_file}" targets)
-    foreach(library Core Image Render Extras)
+    foreach(library Core Image Mesh Render Extras)
         if(NOT targets MATCHES "add_library\\(FCG-Framework::${library}")
             list(APPEND missing "FCG-Framework::${library} in ${target_file}")
         endif()
     endforeach()
 endforeach()
 
-file(GLOB_RECURSE private_headers "${PREFIX}/include/*sdl_image_capabilities*" "${PREFIX}/include/*file_dialog_internal*")
+file(GLOB_RECURSE private_headers "${PREFIX}/include/*sdl_image_capabilities*" "${PREFIX}/include/*file_dialog_internal*" "${PREFIX}/include/*mesh_internal*")
 if(private_headers)
     message(FATAL_ERROR "Private dependency/test headers were installed: ${private_headers}")
 endif()

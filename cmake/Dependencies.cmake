@@ -16,6 +16,8 @@ if(FCG_IMAGE_OPENEXR)
 		message(FATAL_ERROR "OpenEXR image support requires OpenEXR::OpenEXR")
 	endif()
 endif()
+include("${CMAKE_CURRENT_LIST_DIR}/Dependencies/OpenMesh.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/Dependencies/MeshDecoders.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/Dependencies/glm.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/Dependencies/imgui.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/Dependencies/glslang.cmake")
@@ -26,7 +28,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/Dependencies/WebP.cmake")
 
 # Fail at the dependency boundary rather than later in a consumer's link or shader setup.
 foreach(dependency SDL3::SDL3 SDL3_image::SDL3_image fcg-sdl-image fcg-stb-image glm::glm imgui::imgui
-	glslang-standalone SDL3_shadercross::SDL3_shadercross)
+	glslang-standalone SDL3_shadercross::SDL3_shadercross fcg-openmesh fcg-tinyobjloader fcg-tinyply)
 	if(NOT TARGET ${dependency})
 		message(FATAL_ERROR "FCG dependency resolution did not provide required target ${dependency}")
 	endif()

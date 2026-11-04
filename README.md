@@ -33,7 +33,7 @@ The manual is written to `build/debug/docs/html/index.html`.
 
 See [Maintaining the framework documentation](docs/DOCS.md) for authoring, registration, validation, and publishing.
 
-To use the framework in your own project, add it as a CMake dependency (e.g. via CPM) and link against the library targets `FCG-Framework::Core`, `FCG-Framework::Image`, `FCG-Framework::Render` and `FCG-Framework::Extras` as needed. See the full framework documentation for details.
+To use the framework in your own project, add it as a CMake dependency (e.g. via CPM) and link against the library targets `FCG-Framework::Core`, `FCG-Framework::Image`, `FCG-Framework::Mesh`, `FCG-Framework::Render` and `FCG-Framework::Extras` as needed. See the full framework documentation for details.
 
 
 ## Notable build options
@@ -59,7 +59,8 @@ Framework functionality is grouped by purpose into four libraries that applicati
 | Library | Description |
 | --- | --- |
 | [Core](https://brussig-tud.github.io/FCG-framework/fcg_core_overview.html) | The foundation: application lifecycle (applets driven by `fcg::run`), main window and GPU device, input events, GPU resources such as buffers, textures and fullscreen passes, render state shared between applets, ready-made camera controls, and an integrated Dear ImGui GUI. |
-| [Image](https://brussig-tud.github.io/FCG-framework/fcg_image_overview.html) | Decodes common image formats through SDL_image, plus Radiance HDR, Portable Float Map and optional OpenEXR, into CPU pixels for inspection, processing or configurable GPU upload. Loading requires no GPU device or applet. |
+| [Image](https://brussig-tud.github.io/FCG-framework/fcg_image_overview.html) | Decodes common SDR and HDR image formats into CPU pixels for inspection, processing or configurable GPU upload. Loading requires no GPU device or applet. |
+| [Mesh](https://brussig-tud.github.io/FCG-framework/fcg_mesh_overview.html) | Load common 3D model file formats (currently OBJ, PLY and STL) into an [OpenMesh](https://www.graphics.rwth-aachen.de/software/openmesh/) datastructure. Loading requires no GPU device or applet. |
 | [Render](https://brussig-tud.github.io/FCG-framework/fcg_render_overview.html) | Provides convenient renderers to quickly draw a large number of simple primitives (boxes, lines, etc.) without having to deal with shaders and pipeline setup. |
 | [Extras](https://brussig-tud.github.io/FCG-framework/fcg_extras_overview.html) | Optional desktop conveniences on top of Core that only some platforms or applications need, currently just native file/folder dialogs. |
 
@@ -67,3 +68,10 @@ Framework functionality is grouped by purpose into four libraries that applicati
 ## Examples
 
 Example applications using various parts of the Framework are in the `app/` directory. These are still WIP, exact descriptions to follow at a later date.
+
+Mesh loading uses OpenMesh (9.0 or newer), tinyobjloader and tinyply with variable-length list support (3.0).
+Compatible installed packages are preferred; pinned sources are fetched through CPM when necessary.
+Use `CPM_DOWNLOAD_OpenMesh`, `CPM_DOWNLOAD_tinyobjloader` or `CPM_DOWNLOAD_tinyply` to force source resolution,
+or `CPM_<package>_SOURCE` to reuse a checkout. Geometry uses float positions/normals and 2D UVs; colors use float RGBA.
+For installed framework consumers, supply matching OpenMesh headers and binaries explicitly, plus the decoder
+libraries when linking static Mesh archives, following the framework's existing third-party installation contract.

@@ -5,7 +5,7 @@ The FCG Framework is a lightweight C++ graphics framework used as the basis for 
 <em>Foundations Computer Graphics</em> exercise. It is built around the <em>SDL 3 GPU</em> API, a modern rendering
 middleware with backends for Vulkan, Direct3D 12 and Metal.
 
-The functionality is grouped by purpose into the <em>Core</em>, <em>Image</em>, <em>Render</em>, and <em>Extras</em>
+The functionality is grouped by purpose into the <em>Core</em>, <em>Image</em>, <em>Mesh</em>, <em>Render</em>, and <em>Extras</em>
 libraries. Each library has an overview page describing its purpose and where to start. The module guides then give
 step-by-step usage guidance for every part of a library.
 
@@ -18,6 +18,7 @@ Begin with the \ref fcg_core_overview "Core overview": it shows how to write a f
 
 - \ref fcg_core_overview "Core library overview"
 - \ref fcg_image_overview "Image library overview"
+- \ref fcg_mesh_overview "Mesh library overview"
 - \ref fcg_render_overview "Render library overview"
 - \ref fcg_extras_overview "Extras library overview"
 

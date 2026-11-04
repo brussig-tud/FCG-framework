@@ -15,6 +15,7 @@ if(FCG_SDL_IMAGE_BUILT_HERE AND SDL3_BINARY_DIR)
     endif()
     add_test(NAME dependencies-smoke COMMAND "${CMAKE_COMMAND}"
         "-DFCG_SOURCE=${PROJECT_SOURCE_DIR}"
+        "-DMESH_DEPENDENCY_MANIFEST=${PROJECT_BINARY_DIR}/libs/mesh/tests/dependencies-$<CONFIG>.cmake"
         "-DTEST_SOURCE=${CMAKE_CURRENT_LIST_DIR}"
         "-DTEST_BINARY=${CMAKE_CURRENT_BINARY_DIR}/dependencies"
         "-DIMAGE_DEPENDENCY_SOURCE=${image_dependency_source}"

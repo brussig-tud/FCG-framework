@@ -12,6 +12,7 @@
 # Shader resources: exercise lookup without a GPU and validate the custom-command dependency graph independently.
 add_subdirectory("${PROJECT_SOURCE_DIR}/core/tests" "${PROJECT_BINARY_DIR}/core/tests")
 add_subdirectory("${PROJECT_SOURCE_DIR}/libs/image/tests" "${PROJECT_BINARY_DIR}/libs/image/tests")
+add_subdirectory("${PROJECT_SOURCE_DIR}/libs/mesh/tests" "${PROJECT_BINARY_DIR}/libs/mesh/tests")
 add_subdirectory("${PROJECT_SOURCE_DIR}/libs/render/tests" "${PROJECT_BINARY_DIR}/libs/render/tests")
 add_subdirectory("${PROJECT_SOURCE_DIR}/libs/extras/tests" "${PROJECT_BINARY_DIR}/libs/extras/tests")
 include(dependencies/Tests.cmake)
@@ -36,6 +37,13 @@ set_tests_properties(shader-build-smoke PROPERTIES TIMEOUT 180)
 # future consumer.
 # ---------------------------------------------------------------------------
 if (FCG_INCLUDE_PACKAGING)
+	set(mesh_runtime "")
+	if(FCG_OPENMESH_BUILT_HERE)
+		get_target_property(mesh_runtime_type ${FCG_OPENMESH_TARGET} TYPE)
+		if(mesh_runtime_type STREQUAL "SHARED_LIBRARY")
+			set(mesh_runtime "$<TARGET_FILE_NAME:${FCG_OPENMESH_TARGET}>")
+		endif()
+	endif()
 	set(image_runtime "")
 	if(FCG_SDL_IMAGE_BUILT_HERE AND FCG_USE_SHARED_SDL)
 		set(image_runtime "$<TARGET_FILE_NAME:SDL3_image-shared>")
@@ -67,6 +75,7 @@ if (FCG_INCLUDE_PACKAGING)
 		COMMAND "${CMAKE_COMMAND}"
 			"-DPREFIX=${CMAKE_CURRENT_BINARY_DIR}/install-prefix"
 			"-DIMAGE_RUNTIME=${image_runtime}"
+			"-DMESH_RUNTIME=${mesh_runtime}"
 			"-DAVIF_RUNTIME=${avif_runtime}"
 			"-DTIFF_RUNTIME=${tiff_runtime}"
 			-P "${CMAKE_CURRENT_SOURCE_DIR}/verify-install.cmake"

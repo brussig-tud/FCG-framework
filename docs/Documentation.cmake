@@ -41,3 +41,11 @@ fcg_register_documentation(
     EXAMPLE_DIRS "${CMAKE_CURRENT_LIST_DIR}/../libs/extras/tests"
     PREDEFINED FCG_EXTRAS_EXPORT=
 )
+
+fcg_register_documentation(
+    LIBRARY Mesh LINK_TARGET FCG-Framework::Mesh OVERVIEW fcg_mesh_overview
+    MODULES fcg_meshes fcg_mesh_loading fcg_obj_mesh fcg_ply_mesh fcg_stl_mesh
+    INPUTS "${CMAKE_CURRENT_LIST_DIR}/../libs/mesh/include/FCG/Mesh"
+    EXAMPLE_DIRS "${CMAKE_CURRENT_LIST_DIR}/../libs/mesh/tests"
+    PREDEFINED FCG_MESH_EXPORT=
+)

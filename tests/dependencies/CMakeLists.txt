@@ -17,6 +17,15 @@ set(CPM_libavif_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/must-not-fetch-libavif")
 set(CPM_TIFF_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/must-not-fetch-tiff")
 find_package(SDL3 3.4 CONFIG REQUIRED)
 
+# Reuse the parent's resolved mesh SDK so these codec fixtures remain offline.
+include("${MESH_DEPENDENCY_MANIFEST}")
+foreach(mesh_dependency OpenMeshCore tinyobjloader tinyply)
+    add_library(${mesh_dependency} INTERFACE)
+endforeach()
+target_include_directories(OpenMeshCore INTERFACE ${mesh_includes})
+target_include_directories(tinyobjloader INTERFACE ${mesh_tinyobj_includes})
+target_include_directories(tinyply INTERFACE ${mesh_tinyply_includes})
+
 # Provide resolved runtime dependencies so resolution must reuse them without lookup or fetching.
 add_library(provided_glm INTERFACE)
 add_library(glm::glm ALIAS provided_glm)

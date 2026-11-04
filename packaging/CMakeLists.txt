@@ -116,3 +116,31 @@ install(
 	DESTINATION "${FCG_INSTALL_CMAKEDIR}"
 	COMPONENT FCG_Development
 )
+
+# Mesh follows the existing third-party export contract; fetched shared runtimes accompany the framework.
+if(FCG_OPENMESH_BUILT_HERE)
+    install(FILES "${OpenMesh_SOURCE_DIR}/LICENSE" DESTINATION "${CMAKE_INSTALL_DATADIR}/FCG/licenses/OpenMesh" COMPONENT FCG_Runtime)
+    get_target_property(mesh_core_type ${FCG_OPENMESH_TARGET} TYPE)
+    if(mesh_core_type STREQUAL "SHARED_LIBRARY")
+        if(WIN32)
+            install(FILES "$<TARGET_FILE:${FCG_OPENMESH_TARGET}>" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT FCG_Runtime)
+        else()
+            install(FILES "$<TARGET_FILE:${FCG_OPENMESH_TARGET}>" "$<TARGET_SONAME_FILE:${FCG_OPENMESH_TARGET}>"
+                DESTINATION "${CMAKE_INSTALL_LIBDIR}" COMPONENT FCG_Runtime)
+        endif()
+    endif()
+endif()
+foreach(decoder tinyobjloader tinyply)
+    if(FCG_${decoder}_BUILT_HERE)
+        if(decoder STREQUAL "tinyply")
+            # The source header carries the public-domain notice; upstream ships no separate license file.
+            file(STRINGS "${tinyply_SOURCE_DIR}/source/tinyply.h" mesh_decoder_notice_lines LIMIT_COUNT 17)
+            string(JOIN "\n" mesh_decoder_notice_text ${mesh_decoder_notice_lines})
+            set(mesh_decoder_notice "${PROJECT_BINARY_DIR}/tinyply-license.txt")
+            file(WRITE "${mesh_decoder_notice}" "${mesh_decoder_notice_text}\n")
+        else()
+            set(mesh_decoder_notice "${tinyobjloader_SOURCE_DIR}/LICENSE")
+        endif()
+        install(FILES "${mesh_decoder_notice}" DESTINATION "${CMAKE_INSTALL_DATADIR}/FCG/licenses/${decoder}" COMPONENT FCG_Runtime)
+    endif()
+endforeach()
