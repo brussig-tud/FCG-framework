@@ -47,7 +47,10 @@
 ///   (<tt>\ref fcg::Player::requireSceneRedraw "requireSceneRedraw"</tt>);
 /// - request continuous redraws while animating
 ///   (<tt>\ref fcg::Player::pushContinuousRedraw "pushContinuousRedraw"</tt>);
-/// - look up a camera applet by name (<tt>\ref fcg::Player::findCamera "findCamera"</tt>);
+/// - enumerate and select cameras (<tt>\ref fcg::Player::cameras "cameras"</tt>,
+///   <tt>\ref fcg::Player::findCamera "findCamera"</tt>,
+///   <tt>\ref fcg::Player::activeCamera "activeCamera"</tt>,
+///   <tt>\ref fcg::Player::setActiveCamera "setActiveCamera"</tt>);
 /// - query the main viewport size and render-target formats
 ///   (<tt>\ref fcg::Player::viewportSize "viewportSize"</tt>,
 ///   <tt>\ref fcg::Player::mainRenderTargetInfo "mainRenderTargetInfo"</tt>);
@@ -58,6 +61,23 @@
 /// - replace the main window's scene presentation
 ///   (<tt>\ref fcg::Player::setPresentationRecorder "setPresentationRecorder"</tt>).
 ///
+/// \subsection fcg_runtime_workflows_cameras Selecting a camera
+/// Any applet implementing <tt>\ref fcg::Camera "Camera"</tt> is available for selection. The first camera passed
+/// to <tt>\ref fcg::run "run"</tt> is active by default. All applets initialize once in registration order.
+/// Of the cameras, only the active one receives further callbacks. It runs before ordinary applets except for input,
+/// where ordinary applets get the first opportunity to consume an event. Dormant cameras keep their parameters and receive
+/// any required pipeline and viewport preparation when selected again.
+///
+/// Enumerate cameras, find one by applet name, and select by pointer or name through the
+/// <tt>\ref fcg::Player "Player"</tt>. Duplicate names select the first registered match. An unknown name or
+/// unregistered pointer throws \c std::invalid_argument and preserves the current and pending selections.
+/// \snippet camera_examples.cpp select cameras
+/// Selections from initialization apply before startup pipeline creation. Later selections apply at the next
+/// iteration; <tt>\ref fcg::Player::activeCamera "Player::activeCamera"</tt> reports the effective selection until
+/// then. The latest valid request wins, and each change refreshes the scene automatically. Selecting the current
+/// camera cancels a queued change. A null pointer deactivates all cameras; an application can also run without any
+/// camera applets. Scene rendering then starts with identity viewing matrices.
+///
 /// \subsection fcg_runtime_workflows_redraw Refreshing the scene
 /// Call <tt>\ref fcg::Player::requireSceneRedraw "Player::requireSceneRedraw"</tt> after changing scene content,
 /// including <tt>\ref fcg::Player::clearColor "Player::clearColor"</tt>. Requests made in input, GUI or update
@@ -66,7 +86,7 @@
 /// scene-format changes refresh the scene automatically. Continuous redraw requests refresh it on every drawable
 /// iteration, including the iteration that releases the request.
 /// \snippet presentation_examples.cpp scene_redraw
-/// GUI-only iterations still run every applet's <tt>\ref fcg::Applet::gui "gui"</tt> and
+/// GUI-only iterations still run ordinary applets' and the active camera's <tt>\ref fcg::Applet::gui "gui"</tt> and
 /// <tt>\ref fcg::Applet::update "update"</tt>, present the retained scene and draw the GUI overlay. Changes to
 /// gamma or presentation parameters take effect at presentation without requiring a scene refresh.
 ///
@@ -152,9 +172,9 @@
 /// for combined color-target and sampler usage; integer and depth formats are unsupported. Success accepts the
 /// request, and <tt>\ref fcg::Player::mainRenderTargetInfo "Player::mainRenderTargetInfo"</tt> continues to report
 /// the effective format until it is applied. Requesting that effective format cancels a pending change.
-/// All initialization callbacks finish before the latest request is applied and every applet creates pipelines in
-/// <tt>\ref fcg::Applet::recreatePipelines "Applet::recreatePipelines"</tt>. Runtime requests apply before the next
-/// iteration's frame acquisition, also while minimized; recreation precedes resize callbacks and input. Requests
+/// All initialization callbacks finish before the latest request is applied. Ordinary applets and the active camera
+/// create pipelines in <tt>\ref fcg::Applet::recreatePipelines "Applet::recreatePipelines"</tt>. Runtime requests
+/// apply before the next iteration's frame acquisition, also while minimized; recreation precedes resize callbacks and input. Requests
 /// made during recreation wait until the following iteration. Format changes preserve depth readbacks when the
 /// viewport size stays the same. See \ref fcg_applets_workflows_pipelines for a compiled example.
 ///
@@ -249,7 +269,7 @@ struct PlayerSettings
 ///
 /// The function initializes SDL, creates the GPU device, the main window and the GUI, and calls
 /// <tt>\ref fcg::Applet::init "Applet::init"</tt> on each applet in order. After applying scene-format requests, it
-/// calls <tt>\ref fcg::Applet::recreatePipelines "Applet::recreatePipelines"</tt> on each applet in order, then runs
+/// prepares pipelines for the active camera and then ordinary applets, then runs
 /// the main loop, invoking the applet callbacks as described for <tt>\ref fcg::Applet "Applet"</tt>, and blocks until the application is closed
 /// (by closing the main window, pressing Escape, an OS quit request or
 /// <tt>\ref fcg::Player::requestClose "Player::requestClose"</tt>). Finally, it destroys the applets in reverse order

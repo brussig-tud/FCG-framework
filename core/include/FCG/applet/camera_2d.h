@@ -13,13 +13,13 @@
 /// \brief An orthographic camera applet for XY scenes with pan, zoom, and rotation around Z.
 ///
 /// <tt>\ref fcg::applet::Camera2D "Camera2D"</tt> is a ready-to-use camera for 2D scenes: add it to
-/// <tt>\ref fcg::run "run"</tt> before your scene applets and it installs its viewing matrices for the applets that
-/// follow. It looks along -Z and only zooms, pans and rotates in the XY plane; the focus depth stays fixed, so zoom
-/// and focus movement never change what is sharp. All parameters can also be set programmatically through the
+/// <tt>\ref fcg::run "run"</tt> alongside your scene applets; while active, it installs their viewing matrices.
+/// It looks along -Z and only zooms, pans and rotates in the XY plane; the focus depth stays fixed, so zoom and focus
+/// movement never change what is sharp. All parameters can also be set programmatically through the
 /// <tt>\ref fcg::Camera "Camera"</tt> interface, already before the applet is initialized.
 ///
 /// \section fcg_camera_2d_usage Getting started
-/// Create the applet, optionally configure it, and put it in front of the scene applets:
+/// Create the applet, optionally configure it, and combine it with scene applets:
 /// \snippet camera_examples.cpp planar camera
 ///
 /// \section fcg_camera_2d_workflows Common tasks
@@ -43,7 +43,7 @@
 /// direction restriction, keeping the up vector exactly in XY.
 ///
 /// \section fcg_camera_2d_lifetime Ownership and lifetime
-/// Run the applet before the scene applets it should serve. The <tt>\ref fcg::Player "Player"</tt> must outlive the
+/// Select the camera to supply viewing matrices for scene applets. The <tt>\ref fcg::Player "Player"</tt> must outlive the
 /// applet; the normal run loop guarantees this.
 ///
 /// \section fcg_camera_2d_errors Handling errors
@@ -108,8 +108,8 @@ namespace applet {
 
 /// \brief Applet providing an interactive orthographic camera for XY scenes, with pan, zoom and rotation around Z.
 ///
-/// Add it to \c fcg::run before the applets that draw the scene, so that the matrices it loads into the
-/// \c RenderState apply to them. The camera can be controlled with the mouse (see \c onEvent), through its GUI
+/// Add it to \c fcg::run and select it through \c Player::setActiveCamera when needed. While active, its matrices
+/// apply to all ordinary scene applets. The camera can be controlled with the mouse (see \c onEvent), through its GUI
 /// window, and programmatically through the <tt>\ref fcg::Camera "Camera"</tt> interface at any time, including
 /// before initialization.
 ///
@@ -264,6 +264,11 @@ public:
 
 	////
 	// Interface: fcg::Camera
+
+	/// \brief Stop navigation and focus activity before dormancy, preserving camera parameters.
+	///
+	/// \param player The player running this camera.
+	void onDeactivate (Player &player) noexcept override;
 
 	/// \brief Access the current camera parameters.
 	///

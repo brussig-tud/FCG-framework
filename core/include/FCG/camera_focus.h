@@ -32,6 +32,8 @@
 ///   mouse-button event that should trigger focusing;
 /// - <tt>\ref fcg::CameraFocus::update "update"</tt> in <tt>\ref fcg::Applet::update "update"</tt>, which applies
 ///   finished picks and advances the animation;
+/// - <tt>\ref fcg::CameraFocus::reset "reset"</tt> in
+///   <tt>\ref fcg::Camera::onDeactivate "Camera::onDeactivate"</tt>;
 /// - <tt>\ref fcg::CameraFocus::resized "resized"</tt> in <tt>\ref fcg::Applet::onViewportResize
 ///   "onViewportResize"</tt>.
 ///
@@ -114,7 +116,8 @@ namespace fcg {
 /// - in \c Applet::onEvent, call \c pick for the mouse-button event that should pick a new focus;
 /// - in \c Applet::update, call \c update once per frame, always with the same \c Player;
 /// - in \c Applet::onViewportResize, call \c resized;
-/// - before any manual change to the camera, call \c cancel.
+/// - before any manual change to the camera, call \c cancel;
+/// - in \c Camera::onDeactivate, call \c reset to discard transient picking state.
 ///
 /// A successful pick reads the depth under the cursor and moves the focal point there over half a second, keeping
 /// the camera's orientation and focus distance. In planar mode, only the X and Y coordinates of the focal point
@@ -274,6 +277,12 @@ public:
 	///
 	/// Call before changing the camera manually. Keep calling \c update every frame afterwards.
 	void cancel ();
+
+	/// \brief Stop animation and discard pending picks and the last rendered view.
+	///
+	/// Call when the camera is deactivated. Releases any continuous-redraw request and makes \c pick return
+	/// \c false until \c rendered supplies a fresh view. The player retains ownership of GPU readback resources.
+	void reset ();
 
 	/// \brief Adapt to a change of the viewport size.
 	///

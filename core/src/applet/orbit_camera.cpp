@@ -98,6 +98,13 @@ void OrbitCamera::onViewportResize (Device&, const glm::uvec2&, Player&) {
 	focusChange->resized();
 }
 
+void OrbitCamera::onDeactivate (Player&) noexcept {
+	activeDragButton = MouseButton::Unknown;
+	lastLeftClickTime.reset();
+	dragStartedWithShift = false;
+	focusChange->reset();
+}
+
 void OrbitCamera::setFovY (const CameraParameters::Intrinsics::FovY &fovY) {
 	const auto *perspective = std::get_if<CameraParameters::Intrinsics::PerspectiveFov>(&fovY);
 	if (!perspective)

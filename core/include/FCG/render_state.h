@@ -19,8 +19,8 @@
 /// these matrices into shaders.
 ///
 /// In applications run by <tt>\ref fcg::run "run"</tt>, one render state is created per scene refresh and passed to
-/// every applet's <tt>\ref fcg::Applet::render "Applet::render"</tt> callback in applet order, so a camera applet can
-/// install its matrices for the applets that follow.
+/// the active camera's <tt>\ref fcg::Applet::render "Applet::render"</tt> callback first, followed by ordinary applets
+/// in registration order. Without an active camera, the scene starts with identity viewing matrices.
 ///
 /// \section fcg_render_state_usage Getting started
 /// Load the matrices for the frame, compose transforms by right-multiplication, and push the uniform block to the

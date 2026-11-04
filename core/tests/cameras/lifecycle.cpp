@@ -171,11 +171,13 @@ public:
 		return context.wasHandled();
 	}
 
-	void click (fcg::Applet &applet, float x = .55f, float y = .55f, SDL_Window *window = nullptr) {
+	void click (
+		fcg::Applet &applet, float x = .55f, float y = .55f, SDL_Window *window = nullptr, bool expectHandled = true
+	) {
 		int width = 0, height = 0;
 		SDL_GetWindowSize(window ? window : mainWindow, &width, &height);
-		require(button(applet, SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_LEFT, x * width, y * height, 2, window),
-			"Double click was not handled");
+		require(button(applet, SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_LEFT, x * width, y * height, 2, window)
+			== expectHandled, "Unexpected double-click consumption");
 		(void)button(applet, SDL_EVENT_MOUSE_BUTTON_UP, SDL_BUTTON_LEFT);
 	}
 
@@ -313,6 +315,42 @@ public:
 			// Destruction collects the pending readback through the exported public API.
 		}
 		redraw(false);
+	}
+
+	/// Stop both built-in cameras during animation, pending picking and a latched drag.
+	void deactivation (fcg::Device &device, fcg::Player &player)
+	{
+		for (fcg::Applet *applet : std::array<fcg::Applet*, 2>{&camera, &orbit})
+			for (const bool animate : {false, true})
+			{
+				// Supply a fresh picking snapshot before starting activity
+				auto &common = *dynamic_cast<fcg::Camera*>(applet);
+				fcg::RenderState state(device, player.viewportSize());
+				applet->render(device, state, nullptr, nullptr, player);
+				click(*applet);
+				if (animate) {
+					applet->update(device, player, .1f);
+					redraw(true);
+				}
+				(void)button(*applet, SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_RIGHT);
+				const auto before = common.params();
+
+				// Deactivation releases redraw and cancels input without modifying the pose
+				common.onDeactivate(player);
+				redraw(false);
+				applet->update(device, player, .1f);
+				require(!motion(20, 30, applet), "Deactivated camera retained a drag");
+				click(*applet, .55f, .55f, nullptr, applet == &orbit);
+				applet->update(device, player, .1f);
+				redraw(false);
+				require(common.params().extrinsics.eye == before.extrinsics.eye,
+					"Deactivation retained a pending pick or changed camera parameters");
+			}
+
+		// Restore a rendered snapshot for the remaining independent lifecycle checks
+		fcg::RenderState state(device, player.viewportSize());
+		camera.render(device, state, nullptr, nullptr, player);
+		orbit.render(device, state, nullptr, nullptr, player);
 	}
 
 	void mutations (fcg::Device &device, fcg::Player &player)
@@ -466,6 +504,7 @@ public:
 			camera.resetRotation();
 			redraw(false);
 			mutations(device, player);
+			deactivation(device, player);
 			camera.setEyeZ(1000000.f);
 			const float configuredDepth = camera.focalPoint().z;
 			click(camera);

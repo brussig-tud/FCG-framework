@@ -277,7 +277,7 @@ Document the class and every member with preceding triple-slash `///` Doxygen co
 
 ### Enum and (simple) struct definitions
 
-Whether the opening brace is on the same line as the struct name depends on how long the struct or enum is going to be. If it is at least 6 lines including doc comments, the opening `{` should be on its own line. Definitions 5 lines or shorter should have the `{` behind the struct or enum name separated by a single whitespace ` `.
+Whether the opening brace is on the same line as the struct name depends on how long the struct or enum *body* is going to be. If it is at least 6 lines including doc comments, the opening `{` should be on its own line. Definitions with a body of 5 lines or shorter should have the `{` behind the struct or enum name separated by a single whitespace ` `.
 
 
 
@@ -354,7 +354,12 @@ Long descriptions may be multi-paragraph.
 
 Between paragraphs, there should always be a blank line inside the doc comment (i.e., just `///`) *unless* these paragraphs are started with identical Doxygegn commands to form logical blocks – for example, 2 or more `\tparam`, `\param` or `\todo` commands must not have a blank `///` line between them, to visually inform readers of their block nature.
 
-If the contents of a Doxygen paragraph-level command are too long, then the command should be on its own line, with the paragraph contents starting indented on the next line. For example:
+Paragraph-level Doxygen commands should be condensed to a single line when they are short enough, for example:
+```C++
+/// \param device The rendering device to use for the operation.
+```
+
+If the contents of a paragraph-level Doxygen command are too long, then the command should be on its own line, with the paragraph contents starting indented on the next line. For example:
 ```C++
 /// \brief
 /// 	Convenience function for the longer-form equivalent that omits this and that parameter, for which some

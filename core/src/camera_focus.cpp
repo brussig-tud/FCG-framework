@@ -64,11 +64,14 @@ void CameraFocus::cancel ()
 	releaseRedraw();
 }
 
-void CameraFocus::resized () {
+void CameraFocus::reset () {
 	cancel();
-	// Player has already replaced the download storage and invalidated its tokens.
 	pending.reset();
 	lastRendered.reset();
+}
+
+void CameraFocus::resized () {
+	reset();
 }
 
 void CameraFocus::rendered (
