@@ -253,7 +253,7 @@ auto LineRenderer::draw (
 		return std::unexpected(RenderError{
 			RenderErrorCode::InvalidArgument, "Lines support unlit colors without textures"
 		});
-	const auto count = range.count == std::dynamic_extent ?+
+	const auto count = range.count == std::dynamic_extent ?
 		connectivity.indexCount()/2 - range.first : range.count;
 	if (!count)
 		return {};

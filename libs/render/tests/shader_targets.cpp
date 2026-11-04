@@ -130,7 +130,7 @@ void exercise (fcg::Device &device, std::string_view name)
 	const auto shader = fcg::res::shader(fcg::render::embedded::FS, name);
 	require(shader.has_value(), "Missing embedded shader");
 	const bool ellipsoid = name.starts_with("ellipsoid");
-	const bool line = name == "line";
+	const bool line = name == "line" || name == "wire_box";
 	const bool textured = name.ends_with("textured");
 	const fcg::RenderTargetInfo withDepth{
 		SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREFORMAT_D32_FLOAT};
@@ -144,7 +144,7 @@ void exercise (fcg::Device &device, std::string_view name)
 		const bool suppressed = fragment && target && target->depthStencilFormat == SDL_GPU_TEXTUREFORMAT_INVALID;
 		const fcg::ShaderResources resources{
 			.uniformBuffers = fragment ? (ellipsoid ? 2u : 1u) : 2u,
-			.storageBuffers = fragment ? 0u : 4u, .samplers = fragment && textured ? 1u : 0u};
+			.storageBuffers = fragment ? 0u : (name == "wire_box" ? 5u : 4u), .samplers = fragment && textured ? 1u : 0u};
 		const auto beforeDestructions = destructions;
 		const auto beforeCompilations = compilations;
 		failCompilation = fail;
@@ -208,7 +208,7 @@ auto main () -> int
 	try {
 		auto device = fcg::Device::create();
 		require(device.has_value(), SDL_GetError());
-		for (const auto name : {"primitive", "textured", "ellipsoid", "ellipsoid_textured", "line"})
+		for (const auto name : {"primitive", "textured", "ellipsoid", "ellipsoid_textured", "line", "wire_box"})
 			exercise(*device, name);
 	} catch (const std::exception &error) {
 		std::cerr << error.what() << '\n';

@@ -75,14 +75,8 @@ auto BoxRenderer::create (Device &device, const RenderTargetInfo &target, const 
 	return BoxRenderer(std::move(*resources));
 }
 
-auto BoxRenderer::create (Player &player, const RendererOptions &options) -> std::expected<BoxRenderer, RenderError>
-{
-	const auto target = player.mainRenderTargetInfo();
-	if (!target)
-		return std::unexpected(RenderError{
-			RenderErrorCode::InvalidState, "Player has no valid main-window render target"
-		});
-	return create(player.device(), *target, options);
+auto BoxRenderer::create (Player &player, const RendererOptions &options) -> std::expected<BoxRenderer, RenderError> {
+	return create(player.device(), *player.mainRenderTargetInfo(), options);
 }
 
 auto BoxRenderer::supportedAttributes () const -> std::span<const Attribute> {
@@ -92,10 +86,7 @@ auto BoxRenderer::supportedAttributes () const -> std::span<const Attribute> {
 auto BoxRenderer::draw (
 	const PrimitiveAttributes &attributes, RenderState &state, SDL_GPUCommandBuffer *commandBuffer,
 	SDL_GPURenderPass *renderPass, const DrawOptions &options, InstanceRange range
-) const -> std::expected<void, RenderError>
-{
-	if (!resources)
-		return std::unexpected(RenderError{RenderErrorCode::InvalidState, "Renderer has been moved from"});
+) const -> std::expected<void, RenderError> {
 	return resources->draw(attributes, state, commandBuffer, renderPass, options, range);
 }
 

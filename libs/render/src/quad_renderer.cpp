@@ -75,14 +75,8 @@ auto QuadRenderer::create (Device &device, const RenderTargetInfo &target, const
 	return QuadRenderer(std::move(*resources));
 }
 
-auto QuadRenderer::create (Player &player, const RendererOptions &options) -> std::expected<QuadRenderer, RenderError>
-{
-	const auto target = player.mainRenderTargetInfo();
-	if (!target)
-		return std::unexpected(RenderError{
-			RenderErrorCode::InvalidState, "The provided player has no valid main-window render target"
-		});
-	return create(player.device(), *target, options);
+auto QuadRenderer::create (Player &player, const RendererOptions &options) -> std::expected<QuadRenderer, RenderError> {
+	return create(player.device(), *player.mainRenderTargetInfo(), options);
 }
 
 auto QuadRenderer::supportedAttributes () const -> std::span<const Attribute> {
@@ -92,12 +86,7 @@ auto QuadRenderer::supportedAttributes () const -> std::span<const Attribute> {
 auto QuadRenderer::draw (
 	const PrimitiveAttributes &attributes, RenderState &state, SDL_GPUCommandBuffer *commandBuffer,
 	SDL_GPURenderPass *renderPass, const DrawOptions &options, InstanceRange range
-) const -> std::expected<void, RenderError>
-{
-	if (!resources)
-		return std::unexpected(RenderError{
-			RenderErrorCode::InvalidState, "Renderer has been moved from"
-		});
+) const -> std::expected<void, RenderError> {
 	return resources->draw(attributes, state, commandBuffer, renderPass, options, range);
 }
 

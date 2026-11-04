@@ -37,18 +37,13 @@ enum class RenderErrorCode
 	/// \brief
 	/// 	An argument is invalid.
 	///
-	/// Examples are invalid attribute values or buffer view layouts, a draw range beyond the instance count, invalid
-	/// draw or renderer options, a target color or depth format or sample count the device does not support, and
-	/// objects that belong to different devices.
+	/// Examples are invalid attribute-update values or layouts, unsupported renderer features and missing connectivity.
 	InvalidArgument,
 
 	/// \brief
 	/// 	An object is not in a state that permits the operation.
 	///
-	/// Examples are calling \c PrimitiveAttributes::setAttributes from within its own callback, drawing an attribute
-	/// that is not usable (see <tt>PrimitiveAttributes::usable</tt>), a bound attribute buffer that was moved from or
-	/// no longer covers the drawn range, a \c Player without a usable main-window render target, a moved-from device,
-	/// and a moved-from renderer.
+	/// Examples are recursive attribute updates, unavailable renderer shader resources and unusable upload devices.
 	InvalidState,
 
 	/// An SDL call failed, for example when creating, uploading or submitting GPU resources.

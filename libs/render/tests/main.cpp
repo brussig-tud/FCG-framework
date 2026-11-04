@@ -641,36 +641,11 @@ void pixels (fcg::Device &device)
 	second.pixel(.5f,0,{0,255,0,255});
 	Snapshot none(canvas, quad, data, state, {}, {.first = 2});
 	none.pixel(.5f,0,{0,0,0,0});
-	Commands validation(device);
-	const auto invalid = fcg::RenderErrorCode::InvalidArgument;
-	fails(quad.draw(data, state, validation.handle, (SDL_GPURenderPass*)nullptr), invalid);
 
-	// Real active passes permit testing rejection before any invalid SDL calls.
-	SDL_GPUColorTargetInfo attachment{};
-	attachment.texture = canvas.color;
-	attachment.load_op = SDL_GPU_LOADOP_CLEAR;
-	attachment.store_op = SDL_GPU_STOREOP_STORE;
-	auto *pass = SDL_BeginGPURenderPass(validation.handle, &attachment, 1, nullptr);
-	require(pass, SDL_GetError());
-	fails(quad.draw(data, state, validation.handle, pass, {}, {.first = 3}), invalid);
-	fails(quad.draw(data, state, validation.handle, pass, {}, {.first = 1, .count = 2}), invalid);
-	check(data.setAttributes([] (Update &update) { update.set<A::Color>(std::span<const glm::vec4>{}); }));
-	fails(quad.draw(data, state, validation.handle, pass), invalid);
-	check(quad.draw(data, state, validation.handle, pass, {}, {.count = 0}));
-	std::array oneColor{glm::vec4(1)};
-	check(data.setAttributes([&] (Update &update) { update.set<A::Color>(std::span(oneColor)); }));
-	check(quad.draw(data, state, validation.handle, pass, {}, {.count = 1}));
-	fails(quad.draw(data, state, validation.handle, pass), invalid);
+	// Empty collections and accessed subranges satisfy the caller contracts
 	fcg::PrimitiveAttributes empty(device);
-	check(quad.draw(empty, state, validation.handle, pass));
-	fcg::DrawOptions badLight;
-	badLight.lighting.enabled = true;
-	badLight.lighting.direction = glm::vec3(0);
-	fails(quad.draw(data, state, validation.handle, pass, badLight), invalid);
-	fails(quad.draw(data, state, validation.handle, pass,
-		{.texture = fcg::PrimitiveTexture{texture.texture, nullptr}}), invalid);
-	SDL_EndGPURenderPass(pass);
-	validation.submit();
+	Snapshot emptyDraw(canvas, quad, empty, state);
+	emptyDraw.pixel(0,0,{0,0,0,0});
 
 	// Replacements are cycled while screenshots from earlier submissions remain in flight.
 	std::vector<std::unique_ptr<Snapshot>> snapshots;
@@ -724,8 +699,6 @@ void pixels (fcg::Device &device)
 	alwaysDraw.pixel(0,0,{0,255,0,255});
 
 	auto moved = std::move(depthQuad);
-	Commands unused(device);
-	fails(depthQuad.draw(data, state, unused.handle, (SDL_GPURenderPass*)nullptr), fcg::RenderErrorCode::InvalidState);
 	Snapshot movedDraw(depthCanvas, moved, data, state);
 	movedDraw.pixel(0,0,{255,0,0,255});
 }
@@ -744,7 +717,7 @@ void shaders ()
 	} properties;
 	require(properties.id != 0, SDL_GetError());
 	require(SDL_ShaderCross_Init(), SDL_GetError());
-	for (const auto name : {"primitive", "textured", "ellipsoid", "ellipsoid_textured"})
+	for (const auto name : {"primitive", "textured", "ellipsoid", "ellipsoid_textured", "wire_box"})
 	{
 		const bool ellipsoid = std::string_view(name).starts_with("ellipsoid");
 		const bool textured = std::string_view(name).ends_with("textured");
@@ -762,7 +735,7 @@ void shaders ()
 			require(metadata, SDL_GetError());
 			const auto resources = metadata->resource_info;
 			SDL_free(metadata);
-			require(resources.num_storage_buffers == (stage == fcg::ShaderStage::VERTEX ? 4u : 0u)
+			require(resources.num_storage_buffers == (stage == fcg::ShaderStage::VERTEX ? (std::string_view(name) == "wire_box" ? 5u : 4u) : 0u)
 				&& resources.num_uniform_buffers == (stage == fcg::ShaderStage::VERTEX
 				|| ellipsoid ? 2u : 1u)
 				&& resources.num_samplers == (stage == fcg::ShaderStage::FRAGMENT && textured ? 1u : 0u),
@@ -798,21 +771,14 @@ void shaders ()
 /// Missing, unclaimed, and claimed windows expose consistent target metadata before any frame.
 void targets (fcg::Device &device)
 {
-	fails(fcg::QuadRenderer::create(device, {}), fcg::RenderErrorCode::InvalidArgument);
-	fails(fcg::BoxRenderer::create(device,
-		{SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM}),
-		fcg::RenderErrorCode::InvalidArgument);
 	fcg::Player absent(device, nullptr, {});
 	const auto &constantPlayer = absent;
 	require(&absent.device() == &device && &constantPlayer.device() == &device, "Player changed its borrowed device");
 	require(!absent.mainRenderTargetInfo(), "Windowless player has a target");
-	fails(fcg::QuadRenderer::create(absent), fcg::RenderErrorCode::InvalidState);
-	fails(fcg::BoxRenderer::create(absent), fcg::RenderErrorCode::InvalidState);
 	auto window = fcg::Window::create({.width = 128, .height = 128});
 	require(window != nullptr, SDL_GetError());
 	fcg::Player player(device, window.get(), {});
 	require(!window->renderTargetInfo() && !player.mainRenderTargetInfo(), "Unclaimed window has a target");
-	fails(fcg::QuadRenderer::create(player), fcg::RenderErrorCode::InvalidState);
 	require(device.claimWindow(window), SDL_GetError());
 	const auto target = player.mainRenderTargetInfo();
 	require(target && target->colorFormat == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB

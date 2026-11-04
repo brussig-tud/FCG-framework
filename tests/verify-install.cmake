@@ -43,7 +43,7 @@ foreach (header run.h window.h applet.h event.h export.h buffer.h texture.h full
     Extras/export.h Extras/file_dialog.h
     render_target.h Render/export.h Render/error.h Render/primitive_attributes.h
     Render/primitive_renderer.h Render/quad_renderer.h Render/box_renderer.h Render/ellipsoid_renderer.h
-    Render/line_renderer.h Render/primitive_connectivity.h Render/connected_primitive_renderer.h
+    Render/line_renderer.h Render/line_style.h Render/wire_box_renderer.h Render/primitive_connectivity.h Render/connected_primitive_renderer.h
     Render/line_set_builder.h)
 	if (NOT EXISTS "${PREFIX}/include/FCG/${header}")
 		list(APPEND missing "include/FCG/${header}")

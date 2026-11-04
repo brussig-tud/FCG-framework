@@ -74,11 +74,6 @@ template <class Error> void check (std::expected<void, Error> result) {
 		throw std::runtime_error(result.error().message);
 }
 
-/// Require a specific Render error.
-template <class T> void fails (const std::expected<T, fcg::RenderError> &result, fcg::RenderErrorCode code) {
-	require(!result && result.error().code == code, "Unexpected ellipsoid validation result");
-}
-
 /// Create a test texture with the requested format, usage, and sample count.
 auto texture (
 	fcg::Device &device, SDL_GPUTextureFormat format, SDL_GPUTextureUsageFlags usage,
@@ -490,25 +485,9 @@ void analytic (fcg::Device &device)
 	shape.extent.y = 0;
 	draw("collapsed ellipsoid");
 
-	// Empty draws and malformed matrices fail before any invalid GPU command is emitted
-	assign(attributes, Ellipsoid{});
-	(void)scene.render([&] (auto *commands, auto *pass)
-	{
-		state.loadModelviewMatrix(glm::mat4(0));
+	// A valid empty range records nothing
+	(void)scene.render([&] (auto *commands, auto *pass) {
 		check(renderer.draw(attributes, state, commands, pass, {}, {.count = 0}));
-		fails(renderer.draw(attributes, state, commands, pass), fcg::RenderErrorCode::InvalidArgument);
-		state.loadModelviewMatrix(glm::mat4(1));
-		state.loadProjectionMatrix(glm::mat4(0));
-		fails(renderer.draw(attributes, state, commands, pass), fcg::RenderErrorCode::InvalidArgument);
-		state.loadProjectionMatrix(glm::mat4(1));
-		affine[0][3] = .1f;
-		state.loadModelviewMatrix(affine);
-		fails(renderer.draw(attributes, state, commands, pass), fcg::RenderErrorCode::InvalidArgument);
-		state.loadModelviewMatrix(glm::mat4(1));
-		affine = glm::mat4(1);
-		affine[0][0] = std::numeric_limits<float>::quiet_NaN();
-		state.loadProjectionMatrix(affine);
-		fails(renderer.draw(attributes, state, commands, pass), fcg::RenderErrorCode::InvalidArgument);
 	});
 }
 
@@ -646,13 +625,11 @@ void interoperability (fcg::Device &device)
 			"Depth pipeline option was not applied");
 	}
 
-	// Moved-from and invalid sources fail; unused attributes do not restrict the draw range
+	// Moved destinations and unused attributes preserve valid drawing ranges
 	auto moved = std::move(ellipsoids);
 	require(moved.supports(A::Position) && moved.supports(A::Extent) && moved.supports(A::Orientation)
 		&& moved.supports(A::Color) && !moved.supports(A::Radius) && !moved.supports(A::Normal), "Wrong ellipsoid attributes");
 	(void)scene.render([&] (auto *commands, auto *pass) {
-		fails(ellipsoids.draw(instances, state, commands, pass), fcg::RenderErrorCode::InvalidState);
-		fails(moved.draw(instances, state, commands, pass, {}, {.first = 3}), fcg::RenderErrorCode::InvalidArgument);
 		check(moved.draw(instances, state, commands, pass, {}, {.first = 2}));
 		check(moved.draw(instances, state, commands, pass));
 	});
@@ -660,7 +637,6 @@ void interoperability (fcg::Device &device)
 		update.set<A::Extent>(std::span<const glm::vec3>{});
 	}));
 	(void)scene.render([&] (auto *commands, auto *pass) {
-		fails(moved.draw(instances, state, commands, pass), fcg::RenderErrorCode::InvalidArgument);
 		check(moved.draw(instances, state, commands, pass, {}, {.count = 0}));
 	});
 }

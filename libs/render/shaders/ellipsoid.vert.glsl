@@ -1,4 +1,15 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+
+//////
+//
+// Includes
+//
+
+// Shared quaternion normalization and rotation
+#include "primitive_transform.glsl"
+
 
 
 //////
@@ -152,11 +163,6 @@ vec4 fetchAttribute (in uint slot, in uint instance, in uint count)
 	return value;
 }
 
-/// Rotates a local vector by a normalized quaternion in XYZW order.
-vec3 rotate (in vec4 q, in vec3 p) {
-	return p + 2.0 * cross(q.xyz, cross(q.xyz, p) + q.w * p);
-}
-
 /// Reports whether every vector component is finite.
 bool finiteVector (in vec3 value) {
 	return !any(isnan(value)) && !any(isinf(value));
@@ -192,8 +198,7 @@ void main ()
 	vec4 orientation = fetchAttribute(2, instance, 4);
 
 	// Normalize the quaternion and construct the sphere-to-eye transformations
-	orientation /= max(max(abs(orientation.x), abs(orientation.y)), max(abs(orientation.z), abs(orientation.w)));
-	orientation = normalize(orientation);
+	orientation = normalizedOrientation(orientation);
 	mat3 rotation = mat3(rotate(orientation, vec3(1, 0, 0)), rotate(orientation, vec3(0, 1, 0)),
 		rotate(orientation, vec3(0, 0, 1)));
 	mat3 scale = mat3(extent.x, 0, 0, 0, extent.y, 0, 0, 0, extent.z);

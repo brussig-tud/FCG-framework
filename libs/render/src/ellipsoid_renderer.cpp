@@ -75,14 +75,8 @@ auto EllipsoidRenderer::create (Device &device, const RenderTargetInfo &target, 
 }
 
 auto EllipsoidRenderer::create (Player &player, const RendererOptions &options)
-	-> std::expected<EllipsoidRenderer, RenderError>
-{
-	const auto target = player.mainRenderTargetInfo();
-	if (!target)
-		return std::unexpected(RenderError{
-			RenderErrorCode::InvalidState, "Player has no valid main-window render target"
-		});
-	return create(player.device(), *target, options);
+	-> std::expected<EllipsoidRenderer, RenderError> {
+	return create(player.device(), *player.mainRenderTargetInfo(), options);
 }
 
 auto EllipsoidRenderer::supportedAttributes () const -> std::span<const Attribute> {
@@ -93,8 +87,6 @@ auto EllipsoidRenderer::draw (
 	const PrimitiveAttributes &attributes, RenderState &state, SDL_GPUCommandBuffer *commandBuffer,
 	SDL_GPURenderPass *renderPass, const DrawOptions &options, InstanceRange range
 ) const -> std::expected<void, RenderError> {
-	if (!resources)
-		return std::unexpected(RenderError{RenderErrorCode::InvalidState, "Renderer has been moved from"});
 	return resources->draw(attributes, state, commandBuffer, renderPass, options, range);
 }
 

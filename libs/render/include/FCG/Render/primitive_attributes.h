@@ -498,9 +498,8 @@ public:
 	/// \brief Returns whether renderers can draw the current source of an attribute.
 	///
 	/// An attribute becomes unusable when \c setAttributes without a copy pass fails to submit an array assigned to
-	/// it. The GPU contents of the attribute are undefined then, and drawing with a renderer that uses the attribute
-	/// fails with <tt>RenderErrorCode::InvalidState</tt>. The next successful assignment of any source to the
-	/// attribute, including <tt>Update::clear</tt>, makes it usable again.
+	/// it. Its GPU contents are undefined until successfully replaced; callers must not draw with a renderer that
+	/// consumes it. The next successful assignment of any source, including <tt>Update::clear</tt>, makes it usable again.
 	///
 	/// \tparam A The attribute to query.
 	///

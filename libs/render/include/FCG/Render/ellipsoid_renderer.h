@@ -102,7 +102,8 @@ namespace fcg {
 /// is enabled. Clipping leaves open surfaces; no cap is drawn. Surface depth is used for depth testing and writing.
 ///
 /// Create or replace the renderer in <tt>\ref Applet::recreatePipelines</tt> and call \c draw inside an active render
-/// pass. A moved-from renderer is empty; \c draw returns <tt>RenderErrorCode::InvalidState</tt>.
+/// pass. Input preconditions are unchecked; violations result in undefined behavior.
+/// A moved-from renderer permits only assignment and destruction.
 class FCG_RENDER_EXPORT EllipsoidRenderer final : public PrimitiveRenderer
 {
 public:
@@ -115,6 +116,9 @@ public:
 	/// The renderer can draw into any render pass whose attachments match \p target, regardless of the pass size. To
 	/// draw into passes with other formats or another sample count, create another renderer.
 	///
+	/// \pre The device is live, supports the target attachment usages/sample count, and outlives the renderer.
+	/// \pre Renderer enum values are valid.
+	///
 	/// \param device The device to create the renderer on. It must outlive the renderer.
 	/// \param target
 	/// 	Color format, depth format and sample count of the render passes to draw into. A depth format of
@@ -122,11 +126,7 @@ public:
 	/// 	depth writes.
 	/// \param options Depth, culling and blending settings.
 	///
-	/// \return
-	/// 	The renderer, or an error. The error is <tt>RenderErrorCode::InvalidArgument</tt> if the device does not
-	/// 	support a format or the sample count of \p target, or if \p options holds an invalid culling mode or depth
-	/// 	comparison. It is <tt>RenderErrorCode::InvalidState</tt> if \p device has been moved from, and
-	/// 	<tt>RenderErrorCode::SDLFailure</tt> if creating the GPU resources failed.
+	/// \return The renderer, \c RenderErrorCode::SDLFailure on resource failure, or \c RenderErrorCode::InvalidState for missing shaders.
 	[[nodiscard]] static auto create (
 		Device &device, const RenderTargetInfo &target, const RendererOptions &options={}
 	) -> std::expected<EllipsoidRenderer, RenderError>;
@@ -137,13 +137,12 @@ public:
 	/// \c Applet::recreatePipelines; it also succeeds while the main window is minimized. The renderer keeps no
 	/// reference to \p player. If the formats of the main render target change, create a new renderer.
 	///
+	/// \pre The player has a usable main target and meets the explicit factory's device and option preconditions.
+	///
 	/// \param player The player whose device and main render target are used. Its device must outlive the renderer.
 	/// \param options Depth, culling and blending settings.
 	///
-	/// \return
-	/// 	The renderer, or an error. The error is <tt>RenderErrorCode::InvalidState</tt> if \p player has no main
-	/// 	window or the main window is not claimed by its device. Otherwise the errors are those of the overload
-	/// 	taking a \c Device and a <tt>RenderTargetInfo</tt>.
+	/// \return The renderer, or the operational error described by the explicit factory.
 	[[nodiscard]] static auto create (Player &player, const RendererOptions &options={})
 		-> std::expected<EllipsoidRenderer, RenderError>;
 
@@ -187,9 +186,7 @@ public:
 	/// \param options Texture and lighting settings for this draw.
 	/// \param range The instances to draw. The default draws all instances.
 	///
-	/// \return
-	/// 	Success, or an error as described for <tt>PrimitiveRenderer::draw</tt>. Additionally returns
-	/// 	<tt>RenderErrorCode::InvalidArgument</tt> for nonfinite or singular viewing matrices or a non-affine modelview.
+	/// \return Success for valid inputs.
 	[[nodiscard]] auto draw (
 		const PrimitiveAttributes &attributes, RenderState &state, SDL_GPUCommandBuffer *commandBuffer,
 		SDL_GPURenderPass *renderPass, const DrawOptions &options={}, InstanceRange range={}

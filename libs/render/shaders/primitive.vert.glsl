@@ -1,4 +1,15 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+
+//////
+//
+// Includes
+//
+
+// Shared quaternion normalization and rotation
+#include "primitive_transform.glsl"
+
 
 
 //////
@@ -137,11 +148,6 @@ vec4 fetchAttribute (in uint slot, in uint instance, in uint count)
 	return value;
 }
 
-/// Rotates a local vector by a normalized quaternion in XYZW order.
-vec3 rotate (in vec4 q, in vec3 p) {
-	return p + 2.0 * cross(q.xyz, cross(q.xyz, p) + q.w * p);
-}
-
 /// The shader entry point.
 void main ()
 {
@@ -152,8 +158,7 @@ void main ()
 	vec4 orientation = fetchAttribute(2, instance, 4);
 
 	// Scale before normalization to keep finite tiny and large quaternions representable
-	orientation /= max(max(abs(orientation.x), abs(orientation.y)), max(abs(orientation.z), abs(orientation.w)));
-	orientation = normalize(orientation);
+	orientation = normalizedOrientation(orientation);
 
 	// Transform the vertex and forward its color, texture coordinates, and normal
 	vec3 point = position.xyz / position.w + rotate(orientation, localPosition * extent);

@@ -11,7 +11,6 @@
 #include <cstddef>
 #include <cstring>
 #include <expected>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -134,46 +133,14 @@ static_assert(offsetof(RaycastUniforms, invProjection) == 4 * 16);
 static_assert(offsetof(RaycastUniforms, flags) == 8 * 16);
 static_assert(SDL_GPU_CULLMODE_NONE == 0 && SDL_GPU_CULLMODE_FRONT == 1 && SDL_GPU_CULLMODE_BACK == 2);
 
-/// Returns whether all components of \p value are finite.
-auto finite (const glm::vec3 &value) -> bool {
-	return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-}
-
-/// Returns whether all matrix components are finite, including the homogeneous row.
-auto finite (const glm::mat4 &value) -> bool {
-	for (int column = 0; column < 4; ++column)
-		for (int row = 0; row < 4; ++row)
-			if (!std::isfinite(value[column][row]))
-				return false;
-	return true;
-}
-
-/// Validates the source of one used attribute for the instances before \p end and writes its storage binding and
-/// uniform layout into \p bindings and \p uniforms at \p slot.
-template <fcg::Attribute A> auto prepareSource (
-	const fcg::PrimitiveAttributes &attributes, std::size_t slot, std::size_t end,
+/// Pack one used attribute source into its storage binding and uniform descriptor.
+template <fcg::Attribute A> void prepareSource (
+	const fcg::PrimitiveAttributes &attributes, std::size_t slot,
 	AttributeUniforms &uniforms, std::array<SDL_GPUBuffer*, 4> &bindings
-) -> std::expected<void, fcg::RenderError>
+)
 {
-	if (!attributes.usable<A>())
-		return failure(
-			fcg::RenderErrorCode::InvalidState, "Changed attribute array requires a successful replacement"
-		);
 	const auto source = attributes.source<A>();
-	if (const auto *view = std::get_if<fcg::AttributeBufferView<A>>(&source))
-	{
-		if (end > view->count)
-			return failure(
-				fcg::RenderErrorCode::InvalidArgument, "Consumed attribute array does not cover the draw range"
-			);
-		if (!view->buffer || !view->buffer->handle() || view->buffer->device() != &attributes.device()
-			|| !(view->buffer->usage() & SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ))
-			return failure(fcg::RenderErrorCode::InvalidState, "Attribute buffer owner is no longer usable");
-		const auto size = sizeof(typename fcg::AttributeTraits<A>::Value);
-		const auto available = view->buffer->size();
-		if (view->offset > available || (available - view->offset) < size
-			|| end - 1 > (available - view->offset - size) / view->stride)
-			return failure(fcg::RenderErrorCode::InvalidState, "Attribute buffer no longer covers the requested range");
+	if (const auto *view = std::get_if<fcg::AttributeBufferView<A>>(&source)) {
 		bindings[slot] = view->buffer->handle();
 		uniforms.layouts[slot] = {(Uint32)(view->offset / 4), (Uint32)(view->stride / 4), 1, 0};
 	}
@@ -187,7 +154,6 @@ template <fcg::Attribute A> auto prepareSource (
 	}
 	for (std::size_t i = 0; i < fcg::AttributeTraits<A>::componentOffsets.size(); ++i)
 		uniforms.components[slot][(int)i] = (Uint32)(fcg::AttributeTraits<A>::componentOffsets[i] / 4);
-	return {};
 }
 
 // Anonymous namespace end
@@ -227,23 +193,7 @@ auto detail::PrimitiveResources::create (
 	const bool ellipsoid = kind == PrimitiveKind::Ellipsoid;
 	const auto cull = options.cullMode.value_or(kind == PrimitiveKind::Quad
 		? SDL_GPU_CULLMODE_NONE : SDL_GPU_CULLMODE_BACK);
-	if (!device.handle())
-		return failure(RenderErrorCode::InvalidState, "Renderer requires a live device");
-	if (target.colorFormat == SDL_GPU_TEXTUREFORMAT_INVALID
-		|| !SDL_GPUTextureSupportsFormat(device.handle(), target.colorFormat, SDL_GPU_TEXTURETYPE_2D,
-			SDL_GPU_TEXTUREUSAGE_COLOR_TARGET))
-		return failure(RenderErrorCode::InvalidArgument, "Unsupported color target format");
 	const bool depth = target.depthStencilFormat != SDL_GPU_TEXTUREFORMAT_INVALID;
-	if (target.sampleCount < SDL_GPU_SAMPLECOUNT_1 || target.sampleCount > SDL_GPU_SAMPLECOUNT_8
-		|| !SDL_GPUTextureSupportsSampleCount(device.handle(), target.colorFormat, target.sampleCount))
-		return failure(RenderErrorCode::InvalidArgument, "Unsupported target sample count");
-	if (depth && (!SDL_GPUTextureSupportsFormat(device.handle(), target.depthStencilFormat, SDL_GPU_TEXTURETYPE_2D,
-		SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)
-		|| !SDL_GPUTextureSupportsSampleCount(device.handle(), target.depthStencilFormat, target.sampleCount)))
-		return failure(RenderErrorCode::InvalidArgument, "Unsupported depth target format or sample count");
-	if (cull < SDL_GPU_CULLMODE_NONE || cull > SDL_GPU_CULLMODE_BACK
-		|| options.depthCompare < SDL_GPU_COMPAREOP_NEVER || options.depthCompare > SDL_GPU_COMPAREOP_ALWAYS)
-		return failure(RenderErrorCode::InvalidArgument, "Invalid culling or depth comparison option");
 
 	std::array<Vertex, 24> geometry{};
 	std::array<Uint16, 36> triangles{};
@@ -361,64 +311,36 @@ auto detail::PrimitiveResources::draw (
 	SDL_GPURenderPass *pass, const DrawOptions &options, InstanceRange range
 ) const -> std::expected<void, RenderError>
 {
-	if (&attributes.device() != &device || !command || !pass)
-		return failure(
-			RenderErrorCode::InvalidArgument, "Draw requires attributes, commands, and pass on the renderer's device"
-		);
-	const auto total = attributes.instanceCount();
-	if (range.first > total)
-		return failure(RenderErrorCode::InvalidArgument, "Instance range starts beyond position count");
-	const auto count = range.count == std::dynamic_extent ? total - range.first : range.count;
-	if (count > total - range.first || count > std::numeric_limits<Uint32>::max())
-		return failure(RenderErrorCode::InvalidArgument, "Instance range exceeds position count");
+	// Select the caller-guaranteed instance range
+	const auto count = range.count == std::dynamic_extent ? attributes.instanceCount() - range.first : range.count;
 	if (!count)
 		return {};
-	if (options.texture && (!options.texture->texture || !options.texture->sampler))
-		return failure(RenderErrorCode::InvalidArgument, "Texturing requires both texture and sampler");
+
+	// Pack attributes and normalize the enabled light direction
 	const auto &light = options.lighting;
 	const auto scale = std::max({
 		std::abs(light.direction.x), std::abs(light.direction.y), std::abs(light.direction.z)
 	});
-	if (light.enabled
-		&& (!finite(light.direction) || scale == 0.f || !finite(light.ambient) || !finite(light.diffuse)))
-		return failure(
-			RenderErrorCode::InvalidArgument, "Lighting requires finite colors and a finite nonzero direction"
-		);
 	AttributeUniforms uniforms;
 	uniforms.drawInfo.x = (Uint32)range.first;
 	std::array<SDL_GPUBuffer*, 4> bindings;
 	bindings.fill(dummy.handle());
-	const auto end = range.first + count;
-	auto prepared = prepareSource<Attribute::Position>(attributes, 0, end, uniforms, bindings);
-	if (prepared)
-		prepared = prepareSource<Attribute::Extent>(attributes, 1, end, uniforms, bindings);
-	if (prepared)
-		prepared = prepareSource<Attribute::Orientation>(attributes, 2, end, uniforms, bindings);
-	if (prepared)
-		prepared = prepareSource<Attribute::Color>(attributes, 3, end, uniforms, bindings);
-	if (!prepared)
-		return prepared;
+	prepareSource<Attribute::Position>(attributes, 0, uniforms, bindings);
+	prepareSource<Attribute::Extent>(attributes, 1, uniforms, bindings);
+	prepareSource<Attribute::Orientation>(attributes, 2, uniforms, bindings);
+	prepareSource<Attribute::Color>(attributes, 3, uniforms, bindings);
 	LightUniforms lighting;
 	if (light.enabled)
 		lighting.direction = {glm::normalize(light.direction / scale), 1.f};
 	lighting.ambient = {light.ambient, kind == PrimitiveKind::Quad ? 1.f : 0.f};
 	lighting.diffuse = {light.diffuse, 0.f};
 
-	// Reject invalid viewing transforms before any uniforms or bindings are recorded
+	// Supply analytic surface projection for ellipsoids
 	std::optional<RaycastUniforms> raycast;
 	if (kind == PrimitiveKind::Ellipsoid)
-	{
-		const auto &modelview = state.modelviewMatrix();
-		const auto &projection = state.projectionMatrix();
-		if (!finite(modelview) || !finite(projection) || modelview[0][3] != 0.f || modelview[1][3] != 0.f
-			|| modelview[2][3] != 0.f || modelview[3][3] != 1.f
-			|| !finite(state.invModelviewMatrix()) || !finite(state.invProjectionMatrix()))
-			return failure(RenderErrorCode::InvalidArgument,
-				"Ellipsoids require finite invertible viewing matrices and an affine modelview");
-		raycast.emplace(projection, state.invProjectionMatrix(), glm::uvec4((Uint32)cull, 0, 0, 0));
-	}
+		raycast.emplace(state.projectionMatrix(), state.invProjectionMatrix(), glm::uvec4((Uint32)cull, 0, 0, 0));
 
-	// All validation precedes recording. Draw never creates resources or uploads arrays.
+	// Record the draw without creating resources or uploading arrays
 	state.pushViewingUniforms(command, ShaderStage::VERTEX, 0);
 	SDL_PushGPUVertexUniformData(command, 1, &uniforms, sizeof(uniforms));
 	SDL_PushGPUFragmentUniformData(command, 0, &lighting, sizeof(lighting));

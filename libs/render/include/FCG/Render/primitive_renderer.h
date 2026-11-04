@@ -10,8 +10,8 @@
 
 /// \page fcg_render_overview Render library overview
 ///
-/// The Render library draws instanced quads, boxes, smooth ellipsoids and (optionally anti-aliased) lines from
-/// user-definable GPU attributes; the quickest way to put many simple objects on the screen without writing your own
+/// The Render library draws instanced quads, boxes, smooth ellipsoids, wire boxes and (optionally anti-aliased) lines
+/// from user-definable GPU attributes; the quickest way to put many simple objects on the screen without writing your own
 /// pipelines and shaders.
 ///
 /// Link your application against \verbatim FCG-Framework::Render \endverbatim and include the renderer headers under
@@ -23,6 +23,7 @@
 /// how to create, update, and draw them. For spheres and ellipsoids, see \ref fcg_ellipsoids. For pixel-width line
 /// segments between shared nodes, see \ref fcg_lines and \ref fcg_connected_primitives. A convenient, highly abstracted
 /// way to use the line renderer is provided as well, see \ref fcg_line_sets for details.
+/// For oriented box outlines, see \ref fcg_wire_boxes.
 
 
 
@@ -38,7 +39,8 @@
 ///
 /// A <tt>\ref fcg::PrimitiveAttributes "PrimitiveAttributes"</tt> collection holds the per-instance data — position,
 /// extent, orientation, and color — on the GPU, and also offers optional normal and radius sources.
-/// <tt>\ref fcg::LineRenderer "LineRenderer"</tt> uses node radii for pixel widths.
+/// <tt>\ref fcg::LineRenderer "LineRenderer"</tt> uses node radii for pixel widths;
+/// <tt>\ref fcg::WireBoxRenderer "WireBoxRenderer"</tt> uses per-box radii.
 /// The renderers <tt>\ref fcg::QuadRenderer "QuadRenderer"</tt> and
 /// <tt>\ref fcg::BoxRenderer "BoxRenderer"</tt> draw rectangles and cuboids.
 /// <tt>\ref fcg::EllipsoidRenderer "EllipsoidRenderer"</tt> draws smooth ellipsoids. Each renderer uses one instanced
@@ -69,11 +71,13 @@
 /// borrowed <tt>\ref fcg::Device "Device"</tt> and <tt>\ref fcg::RenderTargetInfo "RenderTargetInfo"</tt>, e.g. for
 /// off-screen targets. A renderer keeps no reference to the player, so it keeps working while the window is
 /// minimized. Pipeline settings such as culling, blending, and depth behavior are fixed at creation via
-/// <tt>\ref fcg::RendererOptions "RendererOptions"</tt>; recreate the renderer to change them. Resizing the attribute data needs no recreation.
+/// <tt>\ref fcg::RendererOptions "RendererOptions"</tt>; recreate the renderer to change them. Resizing the
+/// attribute data needs no recreation.
 ///
 /// \subsection fcg_primitives_workflows_drawing Drawing and appearance
+/// Filled renderers support textures and lighting. Lines and wire boxes reject requests for those features.
 /// <tt>\ref fcg::DrawOptions "DrawOptions"</tt> optionally binds one caller-created 2D texture and sampler; its RGBA
-/// values multiply the instance colors. The renderers apply one directional light in eye space; boxes shade with
+/// values multiply the instance colors. Filled renderers apply one directional light in eye space; boxes shade with
 /// their flat face normals, quads shade with their plane normal and flip it on the back side, and ellipsoids use
 /// their outward surface normals. The light direction, ambient, and diffuse strengths are configurable.
 /// <tt>\ref fcg::InstanceRange "InstanceRange"</tt> selects a contiguous subrange of the instances;
@@ -88,7 +92,8 @@
 /// Factories and operations return <tt>std::expected&lt;T, \ref fcg::RenderError "RenderError"&gt;</tt>. Failed
 /// updates keep the previous attribute data; a failed automatic submission makes the changed arrays unusable until
 /// they are replaced successfully. Callback exceptions propagate after cleanup and record nothing. Errors carry a
-/// human-readable message and never log.
+/// human-readable message and never log. Renderer factories and draws rely on caller-guaranteed input validity;
+/// invalid inputs violate their preconditions. Upload operations report the input errors described in their APIs.
 ///
 /// \see \ref fcg_buffers, \ref fcg_textures, \ref fcg_applets, \ref fcg_render_state
 
@@ -145,8 +150,9 @@ struct RendererOptions
 
 	/// \brief The face culling mode.
 	///
-	/// If empty, \c BoxRenderer and \c EllipsoidRenderer cull back faces; \c QuadRenderer and \c LineRenderer cull
-	/// nothing. The outward sides of boxes and ellipsoids and the +Z sides of quads are their front faces.
+	/// If empty, \c BoxRenderer and \c EllipsoidRenderer cull back faces; \c QuadRenderer, \c LineRenderer and
+	/// \c WireBoxRenderer cull nothing. The outward sides of boxes and ellipsoids and the +Z sides of quads are
+	/// their front faces. Explicit culling on lines and wire boxes applies to their stroke triangles.
 	std::optional<SDL_GPUCullMode> cullMode;
 
 	/// \brief Whether colors are blended using straight (not premultiplied) alpha.
@@ -230,7 +236,8 @@ struct InstanceRange {
 /// The device must outlive the renderer. Every buffer bound to a drawn collection with
 /// <tt>\ref PrimitiveAttributes::Update::bind</tt> must stay alive while it is bound. Renderers are not thread-safe:
 /// calls must not run concurrently with each other or with updates of the drawn collection. Drawing never waits for the
-/// GPU to process the draw commands.
+/// GPU to process the draw commands. Input preconditions are unchecked; violations result in undefined behavior.
+/// A moved-from renderer permits only assignment and destruction.
 class FCG_RENDER_EXPORT PrimitiveRenderer
 {
 public:
@@ -265,15 +272,21 @@ public:
 
 	/// \brief Draws one primitive for each instance in \p range into an active render pass.
 	///
-	/// Records a single instanced draw into \p renderPass. The renderer binds its own pipeline, vertex buffer, storage
-	/// buffers and, when texturing, sampler on \p renderPass, and pushes its own vertex and fragment uniform data to
-	/// \p commandBuffer, replacing what was bound or pushed before. If \p range is valid but selects no instances, the
-	/// call succeeds and records nothing. On error, nothing is recorded.
+	/// Records a single instanced draw into \p renderPass. The renderer binds its pipeline and required buffers and
+	/// samplers, and pushes vertex and fragment uniforms to \p commandBuffer, replacing the corresponding bindings
+	/// and uniform data. A valid empty range succeeds without recording commands, subject to feature support.
+	/// On error, nothing is recorded.
 	///
 	/// \pre
-	/// 	\p commandBuffer and \p renderPass belong to the renderer's device, \p renderPass is active, and its
-	/// 	attachments match the target the renderer was created for. Values in buffers bound to used attributes with
-	/// 	<tt>PrimitiveAttributes::Update::bind</tt> meet the requirements of the respective <tt>Attribute</tt>.
+	/// 	The renderer, device, collections and used sources are live and usable. Collections, buffers and the
+	/// 	nonnull command/pass belong to the renderer's device; the pass is active and has compatible attachments.
+	/// \pre
+	/// 	The range fits the position count and SDL's 32-bit draw/address limits. Every supplied consumed array
+	/// 	covers the accessed elements; buffer layouts and values meet their attribute contracts.
+	/// \pre
+	/// 	Supported texture/sampler resources and enabled lighting values meet their documented contracts. Viewing
+	/// 	matrices meet the concrete renderer's requirements. Calls follow command-buffer threading and collection
+	/// 	lifetime rules.
 	///
 	/// \param attributes The instance attributes. Must belong to the renderer's device.
 	/// \param state Supplies the current viewing matrices.
@@ -282,15 +295,7 @@ public:
 	/// \param options Texture and lighting settings for this draw.
 	/// \param range The instances to draw. The default draws all instances.
 	///
-	/// \return
-	/// 	Success, or an error. The error is <tt>RenderErrorCode::InvalidArgument</tt> if \p attributes belongs to
-	/// 	another device, if \p commandBuffer or \p renderPass is null, if \p range extends beyond the instance count
-	/// 	of \p attributes or selects more than 2^32 - 1 instances, if an array of a used attribute has fewer
-	/// 	elements than the end of \p range, if \p options holds a texture or sampler that is null, or if enabled
-	/// 	lighting has a nonfinite or zero direction or nonfinite intensities. The error is
-	/// 	<tt>RenderErrorCode::InvalidState</tt> if the renderer has been moved from, if a used attribute is not
-	/// 	usable (see <tt>PrimitiveAttributes::usable</tt>), or if a buffer bound to a used attribute has been moved
-	/// 	from or no longer meets the requirements of <tt>AttributeBufferView</tt>.
+	/// \return Success, or the unsupported-feature error documented by the concrete renderer; errors record nothing.
 	[[nodiscard]] virtual auto draw (
 		const PrimitiveAttributes &attributes, RenderState &state, SDL_GPUCommandBuffer *commandBuffer,
 		SDL_GPURenderPass *renderPass, const DrawOptions &options={}, InstanceRange range={}

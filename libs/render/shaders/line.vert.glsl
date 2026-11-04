@@ -1,4 +1,15 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+
+//////
+//
+// Includes
+//
+
+// Shared clipping and pixel stroke expansion
+#include "stroke_vertex.glsl"
+
 
 
 //////
@@ -116,30 +127,9 @@ vec4 nodeAttribute (uint slot, uint node, uint count)
 	return value;
 }
 
-/// Clip the parameter interval to a homogeneous half-space whose endpoint distances are a and b.
-bool clipPlane (float a, float b, inout float first, inout float last)
-{
-	if (a < 0.0 && b < 0.0)
-		return false;
-	if (a < 0.0)
-		first = max(first, a / (a - b));
-	else if (b < 0.0)
-		last = min(last, a / (a - b));
-	return first <= last;
-}
-
 /// The shader entry point.
 void main ()
 {
-	// Initialize a fully clipped primitive for geometry that produces no stroke
-	gl_Position = vec4(0.0, 0.0, -1.0, 1.0);
-	strokeCoord = vec2(0.0);
-	geometry = vec4(0.0);
-	depths = vec4(0.0);
-	colorA = vec4(0.0);
-	colorB = vec4(0.0);
-	caps = uvec2(0);
-
 	// Fetch the explicit endpoint pair and its node attributes
 	uint address = attributes.connectivity.x + 2 * (uint(gl_InstanceIndex) + attributes.connectivity.y);
 	uint nodeA = indices[address];
@@ -149,68 +139,16 @@ void main ()
 	vec4 a = viewing.matrix * vec4(positionA.xyz / positionA.w, 1.0);
 	vec4 b = viewing.matrix * vec4(positionB.xyz / positionB.w, 1.0);
 	vec2 radius = vec2(nodeAttribute(1, nodeA, 1).x, nodeAttribute(1, nodeB, 1).x);
-	vec4 originalColorA = nodeAttribute(2, nodeA, 4);
-	vec4 originalColorB = nodeAttribute(2, nodeB, 4);
-	if (max(radius.x, radius.y) == 0.0)
-		return;
-
-	// Clip the centerline before dividing by W
-	float first = 0.0;
-	float last = 1.0;
-	if (!clipPlane(a.z, b.z, first, last) || !clipPlane(a.w - a.z, b.w - b.z, first, last))
-		return;
-	vec4 clippedA = mix(a, b, first);
-	vec4 clippedB = mix(a, b, last);
-	if (clippedA.w <= 0.0 || clippedB.w <= 0.0)
-		return;
-	radius = vec2(mix(radius.x, radius.y, first), mix(radius.x, radius.y, last));
-	colorA = mix(originalColorA, originalColorB, first);
-	colorB = mix(originalColorA, originalColorB, last);
-	caps = uvec2(first == 0.0 ? attributes.connectivity.z : 0,
-		last == 1.0 ? attributes.connectivity.z : 0);
-
-	// Express the surviving endpoints in a viewport-relative pixel coordinate system
-	vec2 pixelScale = viewing.viewport.xy * 0.5;
-	vec2 start = clippedA.xy / clippedA.w * pixelScale;
-	vec2 stop = clippedB.xy / clippedB.w * pixelScale;
-	vec2 delta = stop - start;
-	float segmentLength = length(delta);
-	vec2 tangent = vec2(1.0, 0.0);
-	depths = vec4(clippedA.z / clippedA.w, clippedB.z / clippedB.w,
-		1.0 / clippedA.w, 1.0 / clippedB.w);
-
-	// Projected round strokes collapse to a disk while butt strokes disappear
-	if (segmentLength < 0.0001)
-	{
-		if (caps.x == 0 && caps.y == 0)
-			return;
-		if (depths.y < depths.x) {
-			start = stop;
-			colorA = colorB;
-			depths.x = depths.y;
-			depths.z = depths.w;
-		}
-		colorB = colorA;
-		depths.y = depths.x;
-		depths.w = depths.z;
-		radius = vec2(max(radius.x, radius.y));
-		segmentLength = 0.0;
-		caps = uvec2(1);
-	}
-	else
-		tangent = delta / segmentLength;
-	geometry = vec4(segmentLength, radius, 0.0);
-
-	// Enclose the finite stroke and the complete filter support with one rectangle
-	vec2 normal = vec2(-tangent.y, tangent.x);
-	float transverse = max(radius.x, radius.y) + 1.0;
-	float left = (caps.x != 0 ? -radius.x : 0.0) - 1.0;
-	float right = segmentLength + (caps.y != 0 ? radius.y : 0.0) + 1.0;
 	vec2 corner = vec2(float(gl_VertexIndex & 1), float((gl_VertexIndex >> 1) & 1));
-	strokeCoord = vec2(mix(left, right, corner.x), mix(-transverse, transverse, corner.y));
-	vec2 ndc = (start + tangent * strokeCoord.x + normal * strokeCoord.y) / pixelScale;
-	bool atStart = corner.x == 0.0;
-	float clipW = 1.0 / (atStart ? depths.z : depths.w);
-	float depth = atStart ? depths.x : depths.y;
-	gl_Position = vec4(ndc * clipW, depth * clipW, clipW);
+
+	// Expand the stroke and forward its fragment interface
+	StrokeVertex vertex = strokeVertex(a, b, radius, nodeAttribute(2, nodeA, 4), nodeAttribute(2, nodeB, 4),
+		attributes.connectivity.z, viewing.viewport.xy, corner);
+	gl_Position = vertex.position;
+	strokeCoord = vertex.strokeCoord;
+	geometry = vertex.geometry;
+	depths = vertex.depths;
+	colorA = vertex.colorA;
+	colorB = vertex.colorB;
+	caps = vertex.caps;
 }

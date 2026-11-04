@@ -57,6 +57,7 @@
 
 // FCG Framework
 #include <FCG/Render/connected_primitive_renderer.h>
+#include <FCG/Render/line_style.h>
 
 
 
@@ -88,44 +89,6 @@ namespace fcg {
 
 //////
 //
-// Structs and enums
-//
-
-/// \brief Shape of a line segment's endpoint boundary.
-enum class LineCap {
-	/// An outward semicircle with the endpoint's pixel radius.
-	Round,
-
-	/// A straight boundary perpendicular to the projected segment.
-	Butt
-};
-
-/// \brief Method used to compute coverage at a stroke boundary.
-enum class LineFilter {
-	/// Hard geometric coverage, including when alpha blending is enabled.
-	None,
-
-	/// A derivative-scaled smooth transition, applied when alpha blending is enabled.
-	Smoothstep
-};
-
-/// \brief Appearance of independent line segments, changed through \c LineRenderer::setStyle.
-struct LineStyle
-{
-	/// Full stroke width in physical pixels when \c Attribute::Radius is absent; finite and nonnegative.
-	float defaultWidth = 1.f;
-
-	/// Endpoint shape; clipping intersections always use butt boundaries.
-	LineCap cap = LineCap::Round;
-
-	/// Coverage filter; blending-disabled pipelines always draw hard edges.
-	LineFilter filter = LineFilter::Smoothstep;
-};
-
-
-
-//////
-//
 // Classes
 //
 
@@ -142,7 +105,7 @@ struct LineStyle
 ///
 /// Create the renderer in <tt>\ref Applet::recreatePipelines</tt> and draw in an active render pass. Input
 /// preconditions are unchecked, and violations result in undefined behavior. A moved-from renderer permits only
-/// assignment and /// destruction. The device must outlive the renderer. Calls never wait for GPU idle.
+/// assignment and destruction. The device must outlive the renderer. Calls never wait for GPU idle.
 class FCG_RENDER_EXPORT LineRenderer final : public ConnectedPrimitiveRenderer
 {
 public:

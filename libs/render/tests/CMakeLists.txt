@@ -1,4 +1,4 @@
-add_library(render-examples OBJECT render_examples.cpp line_examples.cpp line_set_examples.cpp)
+add_library(render-examples OBJECT render_examples.cpp line_examples.cpp line_set_examples.cpp wire_box_examples.cpp)
 target_link_libraries(render-examples PRIVATE Render)
 
 add_executable(render-smoke main.cpp)
@@ -66,3 +66,16 @@ if(FCG_INCLUDE_PACKAGING)
 		-P "${CMAKE_CURRENT_SOURCE_DIR}/installed/run.cmake")
 	set_tests_properties(render-installed-line-sets PROPERTIES DEPENDS install-smoke-verify TIMEOUT 90)
 endif()
+
+add_executable(render-wire-boxes wire_boxes.cpp)
+target_link_libraries(render-wire-boxes PRIVATE Render)
+add_test(NAME render-wire-boxes COMMAND render-wire-boxes)
+set_tests_properties(render-wire-boxes PROPERTIES TIMEOUT 120
+	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
+
+add_executable(render-wire-box-failures wire_box_failures.cpp)
+target_compile_definitions(render-wire-box-failures PRIVATE FCG_FRAMEWORK_STATIC_DEFINE FCG_RENDER_STATIC_DEFINE)
+target_link_libraries(render-wire-box-failures PRIVATE Render fcg-render-shaders SDL3_shadercross::SDL3_shadercross)
+add_test(NAME render-wire-box-failures COMMAND render-wire-box-failures)
+set_tests_properties(render-wire-box-failures PROPERTIES TIMEOUT 90
+	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")

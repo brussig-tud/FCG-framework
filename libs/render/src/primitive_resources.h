@@ -110,7 +110,7 @@ struct PrimitiveResources
 		Device &device, const RenderTargetInfo &target, const RendererOptions &options, PrimitiveKind kind
 	) -> std::expected<std::unique_ptr<PrimitiveResources>, RenderError>;
 
-	/// \brief Validates the used attribute sources and the draw options, then records one instanced draw.
+	/// \brief Records one instanced draw using caller-guaranteed attribute sources and draw options.
 	///
 	/// Implements \c PrimitiveRenderer::draw for the primitive renderers; nothing is recorded on error.
 	///

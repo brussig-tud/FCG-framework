@@ -21,6 +21,7 @@
 #include <FCG/run.h>
 #include <FCG/Render/quad_renderer.h>
 #include <FCG/Render/box_renderer.h>
+#include <FCG/Render/wire_box_renderer.h>
 #include <FCG/Render/ellipsoid_renderer.h>
 
 
@@ -81,6 +82,7 @@ public:
 	{
 		quad.reset();
 		quadCulled.reset();
+		wireBox.reset();
 		box.reset();
 		boxTwoSided.reset();
 		ellipsoid.reset();
@@ -89,6 +91,7 @@ public:
 			throw std::runtime_error("Main target missing during initialization");
 		quad.emplace(take(fcg::QuadRenderer::create(player)));
 		quadCulled.emplace(take(fcg::QuadRenderer::create(player, {.cullMode = SDL_GPU_CULLMODE_BACK})));
+		wireBox.emplace(take(fcg::WireBoxRenderer::create(player)));
 		box.emplace(take(fcg::BoxRenderer::create(player)));
 		boxTwoSided.emplace(take(fcg::BoxRenderer::create(player, {.cullMode = SDL_GPU_CULLMODE_NONE})));
 		ellipsoid.emplace(take(fcg::EllipsoidRenderer::create(player)));
@@ -153,6 +156,7 @@ public:
 	) override {
 		check(quad->draw(*attributes, state, commands, pass, {}, {.count = 1}));
 		check(quadCulled->draw(*attributes, state, commands, pass, {}, {.first = 1}));
+		check(wireBox->draw(*attributes, state, commands, pass));
 		check(box->draw(*attributes, state, commands, pass));
 		check(boxTwoSided->draw(*attributes, state, commands, pass));
 		check(ellipsoid->draw(*attributes, state, commands, pass));
@@ -176,6 +180,9 @@ private:
 
 	/// Explicitly culled quad pipeline.
 	std::optional<fcg::QuadRenderer> quadCulled;
+
+	/// Wire boxes recreated with the effective scene format.
+	std::optional<fcg::WireBoxRenderer> wireBox;
 
 	/// Default culled box pipeline.
 	std::optional<fcg::BoxRenderer> box;
