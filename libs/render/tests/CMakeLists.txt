@@ -63,6 +63,7 @@ if(FCG_INCLUDE_PACKAGING)
 		"-DCOMPILER=${CMAKE_CXX_COMPILER}"
 		"-DPREFIX=${PROJECT_BINARY_DIR}/tests/install-prefix"
 		"-DDEPENDENCIES=${CMAKE_CURRENT_BINARY_DIR}/installed-dependencies.cmake"
+		"-DMESH_DEPENDENCIES=${PROJECT_BINARY_DIR}/libs/mesh/tests/dependencies-$<CONFIG>.cmake"
 		-P "${CMAKE_CURRENT_SOURCE_DIR}/installed/run.cmake")
 	set_tests_properties(render-installed-line-sets PROPERTIES DEPENDS install-smoke-verify TIMEOUT 90)
 endif()
@@ -78,4 +79,23 @@ target_compile_definitions(render-wire-box-failures PRIVATE FCG_FRAMEWORK_STATIC
 target_link_libraries(render-wire-box-failures PRIVATE Render fcg-render-shaders SDL3_shadercross::SDL3_shadercross)
 add_test(NAME render-wire-box-failures COMMAND render-wire-box-failures)
 set_tests_properties(render-wire-box-failures PROPERTIES TIMEOUT 90
+	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
+
+target_sources(render-examples PRIVATE mesh_render_examples.cpp)
+
+add_executable(render-meshes meshes.cpp)
+target_link_libraries(render-meshes PRIVATE Render)
+add_test(NAME render-meshes COMMAND render-meshes)
+set_tests_properties(render-meshes PROPERTIES TIMEOUT 120
+	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
+
+add_executable(render-mesh-failures mesh_failures.cpp)
+target_compile_definitions(render-mesh-failures PRIVATE FCG_RENDER_STATIC_DEFINE)
+target_link_libraries(render-mesh-failures PRIVATE Render)
+add_test(NAME render-mesh-failures COMMAND render-mesh-failures)
+add_executable(render-mesh-pipeline-failures mesh_renderer_failures.cpp)
+target_compile_definitions(render-mesh-pipeline-failures PRIVATE FCG_RENDER_STATIC_DEFINE)
+target_link_libraries(render-mesh-pipeline-failures PRIVATE Render fcg-render-shaders)
+add_test(NAME render-mesh-pipeline-failures COMMAND render-mesh-pipeline-failures)
+set_tests_properties(render-mesh-failures render-mesh-pipeline-failures PROPERTIES TIMEOUT 90
 	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")

@@ -11,12 +11,13 @@
 /// \page fcg_mesh_overview "Mesh library overview"
 ///
 /// The Mesh library loads polygon geometry into OpenMesh objects for inspection and processing.
-/// Link the CMake target <tt>FCG-Framework::Mesh</tt> and include <tt>\#include &lt;FCG/Mesh/mesh_loader.h&gt;</tt>.
+/// Link the CMake target \verbatim FCG-Framework::Mesh \endverbatim
+/// and include <tt>\#include &lt;FCG/Mesh/mesh_loader.h&gt;</tt>.
 /// Loading requires no window or GPU device.
 ///
 /// Start with \ref fcg_mesh_loading for file and memory loading, or \ref fcg_meshes to inspect attributes
 /// on a loaded \ref fcg::Mesh "<tt>Mesh</tt>". The \ref fcg_obj_mesh, \ref fcg_ply_mesh and \ref fcg_stl_mesh guides
-/// describe the supported file formats.
+/// describe the supported file formats. For triangulation and smooth vertex normals, see \ref fcg_mesh_processing.
 
 
 

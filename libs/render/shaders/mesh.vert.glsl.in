@@ -1,0 +1,104 @@
+#version 450
+
+
+//////
+//
+// Uniforms
+//
+
+/// Viewing transformations; matches the C++ ViewingUniforms layout.
+layout(set=1, binding=0, std140) uniform Viewing {
+	/// The object-to-eye transformation.
+	mat4 modelview;
+
+	/// The eye-to-object transformation.
+	mat4 invModelview;
+
+	/// The eye-to-clip transformation with zero-to-one normalized depth.
+	mat4 projection;
+
+	/// The clip-to-eye transformation.
+	mat4 invProjection;
+
+	/// The combined object-to-clip transformation.
+	mat4 modelviewProjection;
+
+	/// The combined clip-to-object transformation.
+	mat4 invModelviewProjection;
+
+	/// The inverse-transpose object-to-eye transformation for normals.
+	mat3 normal;
+
+	/// The inverse of the object-to-eye normal transformation.
+	mat3 invNormal;
+} viewing;
+
+
+
+//////
+//
+// Streams
+//
+
+////
+// Inputs
+
+/// Object-space vertex position in source units.
+layout(location=0) in vec3 position;
+
+#if @MESH_NORMALS@
+/// Object-space normal direction.
+layout(location=1) in vec3 normal;
+#endif
+
+#if @MESH_COLORS@
+/// Linear RGBA mesh color.
+layout(location=2) in vec4 meshColor;
+#endif
+
+#if @MESH_UVS@
+/// Source 2D texture coordinates.
+layout(location=3) in vec2 meshUV;
+#endif
+
+
+////
+// Outputs
+
+/// Interpolated linear RGBA color.
+layout(location=0) out vec4 color;
+
+/// Interpolated source UV coordinates.
+layout(location=1) out vec2 uv;
+
+/// Eye-space normal or position, selected by the mesh normal layout.
+layout(location=2) out vec3 surface;
+
+
+
+//////
+//
+// Functions
+//
+
+/// The shader entry point.
+void main ()
+{
+	// Transform geometry and forward only available attributes
+	gl_Position = viewing.modelviewProjection * vec4(position, 1.0);
+#if @MESH_NORMALS@
+	surface = viewing.normal * normal;
+#else
+	surface = (viewing.modelview * vec4(position, 1.0)).xyz;
+#endif
+#if @MESH_COLORS@
+	color = meshColor;
+#else
+	color = vec4(1.0);
+#endif
+#if @MESH_UVS@
+	uv = meshUV;
+#else
+	uv = vec2(0.0);
+#endif
+}

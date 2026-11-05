@@ -26,7 +26,7 @@ fcg_register_documentation(
     LIBRARY Render
     LINK_TARGET FCG-Framework::Render
     OVERVIEW fcg_render_overview
-    MODULES fcg_primitives fcg_wire_boxes fcg_ellipsoids fcg_connected_primitives fcg_lines fcg_line_sets
+    MODULES fcg_gpu_meshes fcg_mesh_rendering fcg_primitives fcg_wire_boxes fcg_ellipsoids fcg_connected_primitives fcg_lines fcg_line_sets
     INPUTS "${CMAKE_CURRENT_LIST_DIR}/../libs/render/include/FCG/Render"
     EXAMPLE_DIRS "${CMAKE_CURRENT_LIST_DIR}/../libs/render/tests"
     PREDEFINED FCG_RENDER_EXPORT=
@@ -44,7 +44,7 @@ fcg_register_documentation(
 
 fcg_register_documentation(
     LIBRARY Mesh LINK_TARGET FCG-Framework::Mesh OVERVIEW fcg_mesh_overview
-    MODULES fcg_meshes fcg_mesh_loading fcg_obj_mesh fcg_ply_mesh fcg_stl_mesh
+    MODULES fcg_mesh_processing fcg_meshes fcg_mesh_loading fcg_obj_mesh fcg_ply_mesh fcg_stl_mesh
     INPUTS "${CMAKE_CURRENT_LIST_DIR}/../libs/mesh/include/FCG/Mesh"
     EXAMPLE_DIRS "${CMAKE_CURRENT_LIST_DIR}/../libs/mesh/tests"
     PREDEFINED FCG_MESH_EXPORT=

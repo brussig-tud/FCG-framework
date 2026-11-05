@@ -1,0 +1,86 @@
+#version 450
+
+
+//////
+//
+// Uniforms
+//
+
+#if @MESH_TEXTURED@
+/// Linear RGBA color texture.
+layout(set=2, binding=0) uniform sampler2D colorTexture;
+#endif
+
+/// Mesh color and lighting parameters; matches the C++ MeshUniforms layout.
+layout(set=3, binding=0, std140) uniform Draw {
+	/// Linear RGBA color multiplier.
+	vec4 color;
+
+	/// Eye-space direction toward the light; W enables lighting.
+	vec4 direction;
+
+	/// Ambient RGB intensity; W enables reversed back-face normals.
+	vec4 ambient;
+
+	/// Diffuse RGB intensity; W is reserved.
+	vec4 diffuse;
+} draw;
+
+
+
+//////
+//
+// Streams
+//
+
+////
+// Inputs
+
+/// Interpolated linear RGBA mesh color.
+layout(location=0) in vec4 color;
+
+/// Interpolated source UV coordinates.
+layout(location=1) in vec2 uv;
+
+/// Eye-space normal or position, selected by the mesh normal layout.
+layout(location=2) in vec3 surface;
+
+
+////
+// Outputs
+
+/// Shaded linear RGBA fragment color.
+layout(location=0) out vec4 outputColor;
+
+
+
+//////
+//
+// Functions
+//
+
+/// The shader entry point.
+void main ()
+{
+	// Recover the surface direction before optional lighting; derivatives execute outside divergent branches
+#if @MESH_NORMALS@
+	vec3 n = surface;
+#else
+	vec3 n = cross(dFdy(surface), dFdx(surface));
+	if (!gl_FrontFacing)
+		n = -n;
+#endif
+	float magnitude = length(n);
+	n = magnitude > 0.0 ? n / magnitude : vec3(0.0);
+	if (draw.ambient.w != 0.0 && !gl_FrontFacing)
+		n = -n;
+
+	// Modulate source color and preserve alpha through lighting
+	vec4 base = color * draw.color;
+#if @MESH_TEXTURED@
+	base *= texture(colorTexture, uv);
+#endif
+	if (draw.direction.w != 0.0)
+		base.rgb *= draw.ambient.rgb + draw.diffuse.rgb * max(dot(n, draw.direction.xyz), 0.0);
+	outputColor = base;
+}

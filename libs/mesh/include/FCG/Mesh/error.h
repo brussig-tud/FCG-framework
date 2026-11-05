@@ -31,7 +31,7 @@ namespace fcg {
 // Structs and enums
 //
 
-/// Categories of loading and registry failures reported in <tt>MeshError::code</tt>.
+/// Categories of loading, processing and registry failures reported in <tt>MeshError::code</tt>.
 enum class MeshErrorCode
 {
 	/// An input, path, hint, option or registration argument is invalid.
@@ -50,7 +50,10 @@ enum class MeshErrorCode
 	InvalidTopology,
 
 	/// The registry already contains the requested handler ID.
-	DuplicateHandler
+	DuplicateHandler,
+
+	/// A polygon cannot be triangulated or a processing operation encounters a non-triangle.
+	ProcessingFailure
 };
 
 /// A mesh operation's failure category and human-readable diagnostic.
