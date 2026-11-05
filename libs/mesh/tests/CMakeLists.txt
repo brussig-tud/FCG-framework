@@ -53,8 +53,7 @@ target_sources(mesh-examples PRIVATE mesh_processing_examples.cpp)
 
 # CPU timing probe reports measurements; only bounded scratch allocation is asserted.
 add_executable(mesh-processing-performance processing_performance.cpp)
+# The array-backed fixture avoids OpenMesh debug property allocations.
+# Its OpenMesh handles still require the library in Windows shared builds.
 target_link_libraries(mesh-processing-performance PRIVATE Mesh)
-# OpenMesh debug property assertions allocate type-name strings on every property read.
-# Measure processing scratch independently of those third-party diagnostics.
-target_compile_definitions(mesh-processing-performance PRIVATE NDEBUG)
 add_test(NAME mesh-processing-performance COMMAND mesh-processing-performance)
