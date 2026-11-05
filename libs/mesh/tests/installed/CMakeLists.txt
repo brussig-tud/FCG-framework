@@ -7,4 +7,6 @@ target_link_libraries(consumer PRIVATE FCG-Framework::Mesh ${mesh_libraries})
 target_include_directories(consumer SYSTEM PRIVATE ${mesh_includes})
 target_compile_definitions(consumer PRIVATE ${mesh_definitions})
 set_target_properties(consumer PROPERTIES BUILD_RPATH "${MESH_INSTALL_PREFIX}/lib")
-file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/consumer.cmake" CONTENT "set(consumer \"$<TARGET_FILE:consumer>\")\n")
+# Record each configuration's executable path separately for multi-configuration generators
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/consumer-$<CONFIG>.cmake"
+    CONTENT "set(consumer \"$<TARGET_FILE:consumer>\")\n")

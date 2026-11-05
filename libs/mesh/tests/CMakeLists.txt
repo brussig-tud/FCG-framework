@@ -28,6 +28,8 @@ if(FCG_INCLUDE_PACKAGING)
         "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/installed"
         "-DBINARY=${CMAKE_CURRENT_BINARY_DIR}/installed-consumer"
         "-DCOMPILER=${CMAKE_CXX_COMPILER}"
+        "-DGENERATOR=${CMAKE_GENERATOR}"
+        "-DCONFIG=$<CONFIG>"
         "-DPREFIX=${PROJECT_BINARY_DIR}/tests/install-prefix"
         "-DDEPENDENCIES=${CMAKE_CURRENT_BINARY_DIR}/dependencies-$<CONFIG>.cmake"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/installed/run.cmake")
