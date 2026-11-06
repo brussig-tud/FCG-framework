@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <vector>
@@ -358,7 +359,13 @@ public:
 		for (fcg::Applet *applet : std::array<fcg::Applet*, 2>{&camera, &orbit})
 		{
 			auto &common = *dynamic_cast<fcg::Camera*>(applet);
-			const std::array<std::function<void()>, 15> setters{
+			const auto sphereRadius = [&] {
+				const auto &in = common.params().intrinsics;
+				if (const auto *perspective = std::get_if<fcg::CameraParameters::Intrinsics::PerspectiveFov>(&in.fovY))
+					return in.f * std::sin(.5f * glm::radians(perspective->angle));
+				return .5f * common.frustumDiameterAtFocus();
+			};
+			const std::array<std::function<void()>, 19> setters{
 				[&] { common.setFovY(common.params().intrinsics.fovY); },
 				[&] { common.setFocalLength(common.params().intrinsics.f); },
 				[&] { common.setNearPlane(.125f); },
@@ -373,7 +380,11 @@ public:
 				[&] { common.translateToFocalPoint(common.focalPoint()); },
 				[&] { common.resetRotation(); },
 				[&] { common.resetFocus(); },
-				[&] { common.setFrustumDiameterAtFocus(common.frustumDiameterAtFocus()); }
+				[&] { common.setFrustumDiameterAtFocus(common.frustumDiameterAtFocus()); },
+				[&] { common.adjustForFrustumDiameterAtFocus(common.frustumDiameterAtFocus()); },
+				[&] { common.adjustForFrustumDiameterAtDistance(common.frustumDiameterAtFocus(), common.params().intrinsics.f); },
+				[&] { common.adjustForSphereAtDistance(sphereRadius(), common.params().intrinsics.f); },
+				[&] { common.adjustForSphereAtFocus(sphereRadius()); }
 			};
 			for (const auto &set : setters)
 			{
@@ -389,12 +400,15 @@ public:
 		}
 		click(camera);
 		camera.update(device, player, .1f);
-		const std::array<std::function<void()>, 5> rejectedSetters{
+		const std::array<std::function<void()>, 8> rejectedSetters{
 			[&] { camera.setUp({0, 0, 1}); },
 			[&] { camera.setDir({1, 0, 0}); },
 			[&] { camera.setOrientation({0, 1, 0}, {0, 0, 1}); },
 			[&] { camera.setOrientation({0, 0, -1}, {0, 0, 1}); },
-			[&] { camera.setOrientationUnchecked({1, 0, 0}, {0, 1, 0}); }
+			[&] { camera.setOrientationUnchecked({1, 0, 0}, {0, 1, 0}); },
+			[&] { camera.adjustForFrustumDiameterAtDistance(4, 0); },
+			[&] { camera.adjustForSphereAtDistance(2, 0); },
+			[&] { camera.adjustForSphereAtFocus(std::numeric_limits<float>::quiet_NaN()); }
 		};
 		for (const auto &set : rejectedSetters)
 		{

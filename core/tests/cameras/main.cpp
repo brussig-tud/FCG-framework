@@ -114,11 +114,221 @@ void parameters ()
 	catch (const std::logic_error&) {
 		check(in.f == 1000 && in.frustumDiameterAtFocus() == 12);
 	}
+	fcg::CameraParameters adjusted{
+		.intrinsics={.fovY=Intrinsics::PerspectiveFov{60}, .f=3, .zNear=.125f, .zFar=100},
+		.extrinsics={{2, 3, 4}, {0, 0, -1}, {0, 1, 0}}
+	};
+	const auto perspFocus = adjusted.extrinsics.eye + adjusted.intrinsics.f * adjusted.extrinsics.dir;
+	adjusted.adjustForFrustumDiameterAtFocus(8.f);
+	check(close(adjusted.intrinsics.frustumDiameterAtFocus(), 8.f));
+	check(close(adjusted.extrinsics.eye + adjusted.intrinsics.f * adjusted.extrinsics.dir, perspFocus));
+	check(adjusted.extrinsics.dir == glm::vec3(0, 0, -1) && adjusted.extrinsics.up == glm::vec3(0, 1, 0));
+	check(close(std::get<Intrinsics::PerspectiveFov>(adjusted.intrinsics.fovY).angle, 60.f));
+	adjusted.intrinsics.fovY = Intrinsics::OrthoExtend{4.f};
+	const auto orthoEye = adjusted.extrinsics.eye;
+	adjusted.adjustForFrustumDiameterAtFocus(6.f);
+	check(std::holds_alternative<Intrinsics::OrthoExtend>(adjusted.intrinsics.fovY));
+	check(close(adjusted.intrinsics.frustumDiameterAtFocus(), 6.f) && adjusted.extrinsics.eye == orthoEye);
 	const fcg::CameraParameters::Extrinsics pose{{2, 3, 4}, {1, 0, 0}, {0, 0, 1}};
 	const auto view = pose.modelviewMatrix();
 	check(close(glm::vec3(view * glm::vec4(pose.eye, 1)), glm::vec3(0)));
 	check(close(glm::vec3(view * glm::vec4(pose.eye + pose.dir, 1)), {0, 0, -1}));
 	check(close(glm::vec3(view * glm::vec4(pose.up, 0)), {0, 1, 0}));
+}
+
+/// Verify framing through projection geometry and preserved camera state.
+void checkFraming (
+	const fcg::CameraParameters &before, const fcg::CameraParameters &after,
+	const glm::vec3 &target, float size, bool sphere
+)
+{
+	// Check the shared invariants independently of the fitting equations
+	check(close(before.extrinsics.eye + before.intrinsics.f * before.extrinsics.dir,
+		after.extrinsics.eye + after.intrinsics.f * after.extrinsics.dir));
+	check(before.extrinsics.dir == after.extrinsics.dir && before.extrinsics.up == after.extrinsics.up);
+	check(before.intrinsics.zNear == after.intrinsics.zNear && before.intrinsics.zFar == after.intrinsics.zFar);
+	check(before.intrinsics.fovY.index() == after.intrinsics.fovY.index());
+	if (const auto *perspective = std::get_if<Intrinsics::PerspectiveFov>(&before.intrinsics.fovY))
+		check(perspective->angle == std::get<Intrinsics::PerspectiveFov>(after.intrinsics.fovY).angle);
+	else {
+		check(before.extrinsics.eye == after.extrinsics.eye && before.intrinsics.f == after.intrinsics.f);
+		check(close(after.intrinsics.frustumDiameterAtFocus(), sphere ? 2.f * size : size));
+	}
+
+	// Extract the two vertical clipping planes, or project the requested height's edges
+	const auto transform = after.intrinsics.projectionMatrix({800, 600}) * after.extrinsics.modelviewMatrix();
+	for (const float sign : {-1.f, 1.f})
+		if (sphere)
+		{
+			const glm::vec4 plane{
+				transform[0][3] + sign * transform[0][1], transform[1][3] + sign * transform[1][1],
+				transform[2][3] + sign * transform[2][1], transform[3][3] + sign * transform[3][1]
+			};
+			check(close(glm::dot(plane, glm::vec4(target, 1)) / glm::length(glm::vec3(plane)), size));
+		} else {
+			const auto edge = target + sign * .5f * size * after.extrinsics.up;
+			const auto clip = transform * glm::vec4(edge, 1);
+			check(clip.w > 0.f && close(clip.y / clip.w, sign));
+		}
+}
+
+/// Exercise both plain-value projections, including unchecked small sizes and focus forwarding.
+void framingParameters ()
+{
+	for (const bool ortho : {false, true})
+		for (const bool sphere : {false, true})
+			for (const float distance : {2.f, 6.f, 8.f})
+				for (const float size : {sphere ? 2.f : 4.f, sphere ? 5.f : 12.f})
+				{
+					// Use a rotated pose and target depths on both sides of the focus
+					fcg::CameraParameters adjusted{
+						.intrinsics={.fovY=Intrinsics::PerspectiveFov{60}, .f=6, .zNear=.125f, .zFar=100},
+						.extrinsics={{2, 3, 4}, glm::normalize(glm::vec3(1, -2, -3)), glm::normalize(glm::vec3(2, 1, 0))}
+					};
+					if (ortho)
+						adjusted.intrinsics.fovY = Intrinsics::OrthoExtend{4};
+					const auto before = adjusted;
+					const auto target = before.extrinsics.eye + distance * before.extrinsics.dir;
+					if (sphere)
+						adjusted.adjustForSphereAtDistance(size, distance);
+					else
+						adjusted.adjustForFrustumDiameterAtDistance(size, distance);
+					checkFraming(before, adjusted, target, size, sphere);
+
+					// Focus-based overloads must perform the same adjustment at the original focus distance
+					if (distance == before.intrinsics.f)
+					{
+						auto focused = before;
+						if (sphere)
+							focused.adjustForSphereAtFocus(size);
+						else
+							focused.adjustForFrustumDiameterAtFocus(size);
+						check(same(focused, adjusted));
+					}
+					if (ortho) {
+						adjusted.adjustForFrustumDiameterAtDistance(.0002f, distance);
+						check(adjusted.intrinsics.frustumDiameterAtFocus() == .0002f);
+						adjusted.adjustForSphereAtFocus(.0001f);
+						check(adjusted.intrinsics.frustumDiameterAtFocus() == .0002f);
+					}
+				}
+}
+
+/// Exercise fitting through the common camera interface and concrete camera clamping.
+void framingCamera (fcg::Camera &camera, bool planar)
+{
+	// Restore the same valid starting state before each independent adjustment
+	const auto reset = [&] {
+		camera.setOrientation(planar ? glm::vec3(0, 0, -1) : glm::normalize(glm::vec3(1, -2, -3)), {2, 1, 0});
+		camera.setEye({2, 3, 4});
+		camera.setFocalLength(6);
+		camera.setFovY(planar ? Intrinsics::FovY{Intrinsics::OrthoExtend{4}} : Intrinsics::FovY{Intrinsics::PerspectiveFov{60}});
+	};
+	for (const bool sphere : {false, true})
+		for (const float distance : {2.f, 6.f, 8.f})
+			for (const float size : {sphere ? 2.f : 4.f, sphere ? 5.f : 12.f})
+			{
+				reset();
+				const auto before = camera.params();
+				const auto target = before.extrinsics.eye + distance * before.extrinsics.dir;
+				if (sphere)
+					camera.adjustForSphereAtDistance(size, distance);
+				else
+					camera.adjustForFrustumDiameterAtDistance(size, distance);
+				checkFraming(before, camera.params(), target, size, sphere);
+				if (distance == before.intrinsics.f)
+				{
+					const auto adjusted = camera.params();
+					reset();
+					if (sphere)
+						camera.adjustForSphereAtFocus(size);
+					else
+						camera.adjustForFrustumDiameterAtFocus(size);
+					check(same(adjusted, camera.params()));
+				}
+			}
+
+	// Invalid distances must be rejected even when orthographic sizing is independent of distance
+	reset();
+	for (const float invalid : {0.f, -1.f, std::numeric_limits<float>::quiet_NaN(),
+		std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity()})
+	{
+		rejects(camera, [&] { camera.adjustForFrustumDiameterAtDistance(4, invalid); });
+		rejects(camera, [&] { camera.adjustForSphereAtDistance(2, invalid); });
+	}
+	for (const float invalid : {std::numeric_limits<float>::quiet_NaN(),
+		std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity()})
+	{
+		rejects(camera, [&] { camera.adjustForFrustumDiameterAtDistance(invalid, 2); });
+		rejects(camera, [&] { camera.adjustForSphereAtDistance(invalid, 2); });
+		rejects(camera, [&] { camera.adjustForSphereAtFocus(invalid); });
+	}
+
+	// Finite nonpositive and tiny sizes follow the documented minimum size and camera limits
+	for (const float small : {-1.f, 0.f, std::numeric_limits<float>::denorm_min()})
+	{
+		reset();
+		camera.adjustForFrustumDiameterAtDistance(small, 2);
+		const auto diameterMinimum = camera.params();
+		reset();
+		camera.adjustForFrustumDiameterAtDistance(.001f, 2);
+		check(same(diameterMinimum, camera.params()));
+		reset();
+		camera.adjustForSphereAtDistance(small, 2);
+		const auto radiusMinimum = camera.params();
+		reset();
+		camera.adjustForSphereAtDistance(.0005f, 2);
+		check(same(radiusMinimum, camera.params()));
+	}
+	reset();
+	const auto focus = camera.focalPoint();
+	if (planar) {
+		camera.adjustForSphereAtFocus(100000);
+		check(camera.frustumDiameterAtFocus() == 100000.f);
+		rejects(camera, [&] { camera.adjustForSphereAtFocus(std::numeric_limits<float>::max()); });
+	} else
+	{
+		// An inward fit past the original focus is clamped while preserving that focus
+		camera.adjustForSphereAtDistance(.5f, 20);
+		check(camera.params().intrinsics.f == .001f && close(camera.focalPoint(), focus));
+		reset();
+		camera.adjustForFrustumDiameterAtDistance(1, 20);
+		check(camera.params().intrinsics.f == .001f && close(camera.focalPoint(), focus));
+		reset();
+		camera.setFovY(Intrinsics::PerspectiveFov{1});
+		rejects(camera, [&] { camera.adjustForSphereAtFocus(std::numeric_limits<float>::max()); });
+		rejects(camera, [&] { camera.adjustForFrustumDiameterAtFocus(std::numeric_limits<float>::max()); });
+	}
+}
+
+/// Verify that composite adjustments retain the applied focus distance when translation fails.
+void framingFailure ()
+{
+	// Inject a translation failure after the validated focus-distance setter succeeds
+	/// A camera whose translation setter rejects the composite adjustment.
+	class FailingCamera : public fcg::applet::OrbitCamera {
+	public:
+		/// Reject the requested eye translation for the composite-operation probe.
+		void translateToFocalPoint (const glm::vec3&) override {
+			throw std::invalid_argument("Injected translation failure");
+		}
+	};
+	for (const bool sphere : {false, true})
+	{
+		FailingCamera camera;
+		const auto before = camera.params();
+		bool rejected = false;
+		try
+		{
+			if (sphere)
+				camera.adjustForSphereAtDistance(5, before.intrinsics.f);
+			else
+				camera.adjustForFrustumDiameterAtDistance(10, before.intrinsics.f);
+		}
+		catch (const std::invalid_argument&) { rejected = true; }
+		check(rejected && camera.params().intrinsics.f != before.intrinsics.f);
+		check(camera.params().extrinsics.eye == before.extrinsics.eye);
+	}
 }
 
 void common (fcg::Applet &applet, bool planar)
@@ -139,6 +349,11 @@ void common (fcg::Applet &applet, bool planar)
 		camera.setFocusDistForFrustumDiameter(10);
 		check(close(camera.frustumDiameterAtFocus(), 10));
 	}
+	const auto keptFocus = camera.focalPoint();
+	const auto keptDir = camera.params().extrinsics.dir;
+	camera.adjustForFrustumDiameterAtFocus(6.f);
+	check(close(camera.frustumDiameterAtFocus(), 6.f) && close(camera.focalPoint(), keptFocus));
+	check(camera.params().extrinsics.dir == keptDir);
 	camera.setFocalLength(-1);
 	check(camera.params().intrinsics.f == .001f);
 	camera.setFocalLength(5);
@@ -187,6 +402,7 @@ void common (fcg::Applet &applet, bool planar)
 		rejects(camera, [&] { camera.translateToFocalPoint({0, 0, invalid}); });
 		rejects(camera, [&] { camera.setFrustumDiameterAtFocus(invalid); });
 		rejects(camera, [&] { camera.setFocusDistForFrustumDiameter(invalid); });
+		rejects(camera, [&] { camera.adjustForFrustumDiameterAtFocus(invalid); });
 	}
 }
 
@@ -397,6 +613,12 @@ void orientationCommits ()
 	try
 	{
 		parameters();
+		framingParameters();
+		framingFailure();
+		fcg::applet::OrbitCamera framingOrbit;
+		fcg::applet::Camera2D framingPlanar;
+		framingCamera(framingOrbit, false);
+		framingCamera(framingPlanar, true);
 		fcg::applet::OrbitCamera orbitCamera;
 		fcg::applet::Camera2D planarCamera;
 		axes(orbitCamera);

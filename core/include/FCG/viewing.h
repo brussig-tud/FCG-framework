@@ -48,6 +48,19 @@
 /// and up vector are independent of the old axes, allowing a 90-degree upward pitch in one operation:
 /// \snippet camera_examples.cpp quarter turn
 ///
+/// \subsection fcg_viewing_workflows_framing Framing an object
+/// <tt>\ref fcg::Camera::adjustForFrustumDiameterAtDistance "adjustForFrustumDiameterAtDistance"</tt> fits a vertical
+/// world-space height at a point along the current viewing direction. The distance identifies that point before
+/// moving the camera. <tt>\ref fcg::Camera::adjustForSphereAtDistance "adjustForSphereAtDistance"</tt> instead fits
+/// a sphere centered at that point, making the top and bottom planes tangent to its surface.
+/// Use <tt>\ref fcg::Camera::adjustForFrustumDiameterAtFocus "adjustForFrustumDiameterAtFocus"</tt> or
+/// <tt>\ref fcg::Camera::adjustForSphereAtFocus "adjustForSphereAtFocus"</tt> to fit at the current focal point:
+/// \snippet camera_examples.cpp frame sphere
+/// These operations preserve the focal point and orientation. Perspective cameras move along the viewing direction
+/// and keep their field-of-view angle; orthographic cameras change their view height. Camera clamping can prevent
+/// an exact fit. Horizontal containment depends on the viewport aspect ratio; choose near and far clipping
+/// distances that also contain the object.
+///
 /// \subsection fcg_viewing_workflows_implementing Implementing a custom camera
 /// Derive from <tt>\ref fcg::Camera "Camera"</tt>, keep a <tt>\ref fcg::CameraParameters "CameraParameters"</tt>
 /// member, and make every setter validate its input and update it so that <tt>\ref fcg::Camera::params "params"</tt>
@@ -67,10 +80,11 @@
 /// from the camera and expire with it. The interface owns no applet or GPU resources.
 ///
 /// \section fcg_viewing_errors Handling errors
-/// Setters reject nonfinite inputs, unsupported projection alternatives, and unsupported poses with
-/// \c std::invalid_argument, leaving the state unchanged. Accepted distances and extents may be clamped. Setting the
-/// focus distance from a frustum diameter throws \c std::logic_error for orthographic cameras, where the two are
-/// independent. Matrix calculations require the documented valid inputs.
+/// Individual setters reject nonfinite inputs, unsupported projection alternatives, and unsupported poses with
+/// \c std::invalid_argument, leaving the state unchanged. A framing adjustment can retain a changed focus distance
+/// if its subsequent eye translation fails; see the selected adjustment's API contract. Accepted distances and
+/// extents may be clamped. Setting the focus distance from a frustum diameter throws \c std::logic_error for
+/// orthographic cameras, where the two are independent. Matrix calculations require the documented valid inputs.
 ///
 /// \see \ref fcg_camera_focus, \ref fcg_orbit_camera, \ref fcg_camera_2d, \ref fcg_render_state
 
@@ -142,15 +156,13 @@ struct CameraParameters
 		// Types
 
 		/// Selects a perspective projection, described by its vertical field-of-view angle.
-		struct PerspectiveFov
-		{
+		struct PerspectiveFov {
 			/// The full vertical field-of-view angle in degrees, strictly between 0 and 180.
 			float angle;
 		};
 
 		/// Selects an orthographic projection, described by the full vertical extent of the view volume.
-		struct OrthoExtend
-		{
+		struct OrthoExtend {
 			/// The full vertical height of the view volume in world units, strictly positive.
 			float size;
 		};
@@ -314,6 +326,99 @@ struct CameraParameters
 
 	/// The extrinsic camera parameters, describing its world-space position and orientation.
 	Extrinsics extrinsics;
+
+
+	////
+	// Methods
+
+	/// \brief Fit a vertical height at a point along the viewing direction, preserving the focal point.
+	///
+	/// The target point is <tt>eye + distance * dir</tt> before adjustment. For a perspective projection, the eye
+	/// moves along the viewing direction and the focus distance changes, keeping the focal point, orientation and
+	/// field-of-view angle. For an orthographic projection, the view height becomes \c diameter and the pose and
+	/// focus distance stay unchanged. Clipping distances stay unchanged. No clamping is applied.
+	///
+	/// \pre
+	/// 	\p diameter and \p distance are finite and positive. For a perspective projection, \c f is finite and
+	/// 	positive, \c dir is a unit vector, the angle is in (0, 180), and the resulting focus distance is finite,
+	/// 	positive and representable in single precision, as are the focal point and resulting eye position.
+	///
+	/// \param diameter The requested full vertical height at the target point, in world units.
+	/// \param distance
+	/// 	The distance from the original eye to the target point along the viewing direction, in world units.
+	inline void adjustForFrustumDiameterAtDistance (float diameter, float distance)
+	{
+		if (const auto *perspective = std::get_if<Intrinsics::PerspectiveFov>(&intrinsics.fovY))
+		{
+			// Keep the focal point while changing the distance to the fixed target
+			const auto focalPoint = extrinsics.eye + intrinsics.f * extrinsics.dir;
+			const double halfAngle = .5 * glm::radians((double)perspective->angle);
+			const double targetDistance = .5 * diameter / glm::tan(halfAngle);
+			intrinsics.f = (float)(((double)intrinsics.f - distance) + targetDistance);
+			extrinsics.eye = focalPoint - intrinsics.f * extrinsics.dir;
+		} else
+			intrinsics.setFovYForFrustumDiameterAtFocus(diameter);
+	}
+
+	/// \brief Make the view height at the focus distance \c diameter without changing what is in focus.
+	///
+	/// Equivalent to \c adjustForFrustumDiameterAtDistance with the current focus distance. No clamping is applied.
+	///
+	/// \pre
+	/// 	\p diameter and \c f are finite and positive. For a perspective projection, \c dir is a unit vector,
+	/// 	the angle is in (0, 180), and the resulting focus distance is finite, positive and representable in single
+	/// 	precision, as are the focal point and resulting eye position.
+	///
+	/// \param diameter The requested full vertical height at the focus distance, in world units.
+	inline void adjustForFrustumDiameterAtFocus (float diameter) {
+		adjustForFrustumDiameterAtDistance(diameter, intrinsics.f);
+	}
+
+	/// \brief Fit the frustum to a sphere centered along the viewing direction, preserving the focal point.
+	///
+	/// The sphere center is <tt>eye + distance * dir</tt> before adjustment. For a perspective projection, the eye
+	/// moves along the viewing direction and the focus distance changes until the top and bottom planes are tangent
+	/// to the sphere, keeping the focal point, orientation and field-of-view angle. For an orthographic projection,
+	/// the height becomes <tt>2 * radius</tt> and the pose and focus distance stay unchanged. Clipping distances stay
+	/// unchanged; horizontal containment depends on the viewport aspect ratio. No clamping is applied.
+	///
+	/// \pre
+	/// 	\p radius and \p distance are finite and positive. For a perspective projection, \c f is finite and
+	/// 	positive, \c dir is a unit vector, the angle is in (0, 180), and the resulting focus distance is finite,
+	/// 	positive and representable in single precision, as are the focal point and resulting eye position.
+	/// 	For an orthographic projection, <tt>2 * radius</tt> is representable in single precision.
+	///
+	/// \param radius The sphere radius in world units.
+	/// \param distance
+	/// 	The distance from the original eye to the sphere center along the viewing direction, in world units.
+	inline void adjustForSphereAtDistance (float radius, float distance)
+	{
+		if (const auto *perspective = std::get_if<Intrinsics::PerspectiveFov>(&intrinsics.fovY))
+		{
+			// Keep the focal point while making the vertical planes tangent to the sphere
+			const auto focalPoint = extrinsics.eye + intrinsics.f * extrinsics.dir;
+			const double halfAngle = .5 * glm::radians((double)perspective->angle);
+			const double targetDistance = radius / glm::sin(halfAngle);
+			intrinsics.f = (float)(((double)intrinsics.f - distance) + targetDistance);
+			extrinsics.eye = focalPoint - intrinsics.f * extrinsics.dir;
+		} else
+			intrinsics.setFovYForFrustumDiameterAtFocus((float)(2. * radius));
+	}
+
+	/// \brief Fit the frustum to a sphere centered at the focal point, preserving that point.
+	///
+	/// Equivalent to \c adjustForSphereAtDistance with the current focus distance. No clamping is applied.
+	///
+	/// \pre
+	/// 	\p radius and \c f are finite and positive. For a perspective projection, \c dir is a unit vector,
+	/// 	the angle is in (0, 180), and the resulting focus distance is finite, positive and representable in single
+	/// 	precision, as are the focal point and resulting eye position. For an orthographic projection,
+	/// 	<tt>2 * radius</tt> is representable in single precision.
+	///
+	/// \param radius The sphere radius in world units.
+	inline void adjustForSphereAtFocus (float radius) {
+		adjustForSphereAtDistance(radius, intrinsics.f);
+	}
 };
 
 
@@ -333,7 +438,8 @@ struct CameraParameters
 /// time, including before the camera applet is initialized.
 ///
 /// Each camera supports only some projections and poses and may clamp values to its own ranges; the documentation of
-/// the implementing class lists the exact rules. A setter that throws leaves the camera unchanged.
+/// the implementing class lists the exact rules. Individual setters leave the camera unchanged when they throw;
+/// composite framing adjustments document any partially applied changes.
 ///
 /// \note
 /// 	For implementers: \c params must reflect the effect of every setter immediately. A camera that uses a
@@ -609,6 +715,92 @@ public:
 	/// 	If the camera uses an orthographic projection, whose view height does not depend on the focus distance.
 	/// 	The camera stays unchanged.
 	void setFocusDistForFrustumDiameter (float diameter);
+
+	/// \brief Fit a vertical height at a point along the viewing direction, preserving the focal point.
+	///
+	/// The target point is <tt>eye + distance * dir</tt> before adjustment. For a perspective camera, the eye moves
+	/// along the viewing direction and the focus distance changes, keeping the focal point, orientation and
+	/// field-of-view angle. For an orthographic camera, the view height changes and the pose and focus distance stay
+	/// unchanged. The diameter is clamped to at least 0.001, followed by the clamping of \c setFocalLength or
+	/// \c setFovY, which can prevent an exact fit. Clipping distances stay unchanged.
+	///
+	/// \note
+	/// 	For orbit cameras, an extreme resulting focus distance can destabilize mouse navigation: single-precision
+	/// 	arithmetic can lose the small offsets needed to calculate a valid viewing pose.
+	///
+	/// \param diameter The requested full vertical height at the target point, in world units.
+	/// \param distance
+	/// 	The positive distance from the original eye to the target point along the viewing direction, in world units.
+	///
+	/// \throws std::invalid_argument
+	/// 	If a size or distance is nonfinite, \p distance is nonpositive, a computed setter argument cannot be
+	/// 	represented in single precision, or a setter rejects the result. Invalid inputs are rejected before any
+	/// 	change. If eye translation fails after applying the focus distance, the new focus distance stays in effect.
+	void adjustForFrustumDiameterAtDistance (float diameter, float distance);
+
+	/// \brief Make the view height at the focus distance \c diameter without changing what is in focus.
+	///
+	/// For a perspective camera, the focus distance changes and the eye moves along the viewing direction so that
+	/// the focal point, the viewing direction and the field-of-view angle stay unchanged. For an orthographic
+	/// camera, the view height is set directly. The diameter is first clamped to
+	/// at least 0.001, and the result is then subject to the clamping of \c setFocalLength or \c setFovY.
+	///
+	/// \note
+	/// 	For orbit cameras, an extreme resulting focus distance can destabilize mouse navigation: single-precision
+	/// 	arithmetic can lose the small offsets needed to calculate a valid viewing pose.
+	///
+	/// \param diameter
+	/// 	The requested full vertical height at the focus distance, in world units.
+	///
+	/// \throws std::invalid_argument
+	/// 	If \c diameter is not finite, a computed setter argument cannot be represented in single precision, or
+	/// 	\c setFocalLength, \c setFovY or the eye translation rejects the result. If the eye translation fails
+	/// 	after the focus distance was already applied, the new focus distance stays in effect.
+	void adjustForFrustumDiameterAtFocus (float diameter);
+
+	/// \brief Fit a sphere centered along the viewing direction, preserving the focal point.
+	///
+	/// The sphere center is <tt>eye + distance * dir</tt> before adjustment. For a perspective camera, the eye moves
+	/// along the viewing direction and the focus distance changes, keeping the focal point, orientation and
+	/// field-of-view angle. For an orthographic camera, the view height changes to twice the radius and the pose and
+	/// focus distance stay unchanged. The radius is clamped to at least 0.0005, followed by the clamping of
+	/// \c setFocalLength or \c setFovY. The top and bottom planes are tangent to the sphere when camera limits allow
+	/// an exact fit. The sphere may initially contain the eye. Clipping distances stay unchanged; horizontal
+	/// containment depends on the viewport aspect ratio.
+	///
+	/// \note
+	/// 	For orbit cameras, an extreme resulting focus distance can destabilize mouse navigation: single-precision
+	/// 	arithmetic can lose the small offsets needed to calculate a valid viewing pose.
+	///
+	/// \param radius The sphere radius in world units.
+	/// \param distance
+	/// 	The positive distance from the original eye to the sphere center along the viewing direction, in world units.
+	///
+	/// \throws std::invalid_argument
+	/// 	If a size or distance is nonfinite, \p distance is nonpositive, a computed setter argument cannot be
+	/// 	represented in single precision, or a setter rejects the result. Invalid inputs are rejected before any
+	/// 	change. If eye translation fails after applying the focus distance, the new focus distance stays in effect.
+	void adjustForSphereAtDistance (float radius, float distance);
+
+	/// \brief Fit a sphere centered at the focal point, preserving that point.
+	///
+	/// Equivalent to \c adjustForSphereAtDistance with the current focus distance. The radius is clamped to at
+	/// least 0.0005, followed by the clamping of \c setFocalLength or \c setFovY. Perspective cameras keep their
+	/// field-of-view angle and orientation while moving the eye; orthographic cameras change only the view height.
+	/// The top and bottom planes are tangent when camera limits allow an exact fit. Clipping distances stay
+	/// unchanged; horizontal containment depends on the viewport aspect ratio.
+	///
+	/// \note
+	/// 	For orbit cameras, an extreme resulting focus distance can destabilize mouse navigation: single-precision
+	/// 	arithmetic can lose the small offsets needed to calculate a valid viewing pose.
+	///
+	/// \param radius The sphere radius in world units.
+	///
+	/// \throws std::invalid_argument
+	/// 	If \p radius is not finite, a computed setter argument cannot be represented in single precision, or a
+	/// 	setter rejects the result. If eye translation fails after applying the focus distance, the new focus
+	/// 	distance stays in effect.
+	void adjustForSphereAtFocus (float radius);
 };
 
 

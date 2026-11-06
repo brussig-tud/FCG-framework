@@ -43,6 +43,14 @@ void pitchCameraUp (fcg::applet::OrbitCamera &camera) {
 }
 /// [quarter turn]
 
+/// Fit the vertical frustum planes to a sphere centered at the current focal point.
+/// [frame sphere]
+void frameSphere (fcg::Camera &camera) {
+	// The sphere has radius 2 world units and is centered at camera.focalPoint()
+	camera.adjustForSphereAtFocus(2.f);
+}
+/// [frame sphere]
+
 /// [orbit camera]
 [[nodiscard]] auto orbitApplets () -> std::vector<std::unique_ptr<fcg::Applet>> {
 	auto orbit = std::make_unique<fcg::applet::OrbitCamera>();
