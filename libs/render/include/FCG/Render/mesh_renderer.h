@@ -25,7 +25,9 @@
 /// target has depth; alpha blending is optional. Counterclockwise faces are front-facing; back faces are culled by
 /// default. Disabling culling illuminates visible back faces with reversed normals.
 /// Colors are unlit by default. Optional lighting uses the eye-space direction toward a directional light, with
-/// ambient and diffuse intensities. A texture multiplies the mesh and draw colors and requires a UV layout.
+/// ambient, diffuse and Blinn-Phong specular reflection controlled by
+/// <tt>\ref fcg::DirectionalLight "DirectionalLight"</tt>. A texture multiplies the mesh and draw colors and
+/// requires a UV layout; specular reflection is added independently of these colors.
 /// Draw preconditions are unchecked; a mismatch results in undefined behavior.
 
 
@@ -81,7 +83,7 @@ namespace fcg {
 // Structs and enums
 //
 
-/// Per-draw mesh color, texturing, and optional diffuse illumination.
+/// Per-draw mesh color, texturing, and optional Blinn-Phong illumination.
 struct MeshDrawOptions
 {
 	/// Linear RGBA multiplier applied to mesh colors and the optional texture.
@@ -90,7 +92,7 @@ struct MeshDrawOptions
 	/// Optional borrowed 2D texture and sampler; requires a layout containing UVs.
 	std::optional<PrimitiveTexture> texture;
 
-	/// Eye-space ambient/directional diffuse lighting, disabled by default.
+	/// Eye-space directional lighting with ambient, diffuse and specular reflection, disabled by default.
 	DirectionalLight lighting;
 };
 

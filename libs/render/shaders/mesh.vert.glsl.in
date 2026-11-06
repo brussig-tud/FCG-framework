@@ -74,6 +74,9 @@ layout(location=1) out vec2 uv;
 /// Eye-space normal or position, selected by the mesh normal layout.
 layout(location=2) out vec3 surface;
 
+/// The surface position in eye coordinates.
+layout(location=3) out vec3 eyePosition;
+
 
 
 //////
@@ -86,10 +89,11 @@ void main ()
 {
 	// Transform geometry and forward only available attributes
 	gl_Position = viewing.modelviewProjection * vec4(position, 1.0);
+	eyePosition = (viewing.modelview * vec4(position, 1.0)).xyz;
 #if @MESH_NORMALS@
 	surface = viewing.normal * normal;
 #else
-	surface = (viewing.modelview * vec4(position, 1.0)).xyz;
+	surface = eyePosition;
 #endif
 #if @MESH_COLORS@
 	color = meshColor;

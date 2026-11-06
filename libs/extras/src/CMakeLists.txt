@@ -4,6 +4,7 @@ set(SOURCES
 	file_dialog.cpp
 	file_filters.cpp
 	gui.cpp
+	mesh_gui.cpp
 )
 
 # Collect headers

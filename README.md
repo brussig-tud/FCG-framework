@@ -54,7 +54,7 @@ See [Maintaining framework dependencies](cmake/DEPENDENCIES.md) for dependency r
 
 # Overview
 
-Framework functionality is grouped by purpose into four libraries that applications link against individually:
+Framework functionality is grouped by purpose into five libraries that applications link against individually:
 
 | Library | Description |
 | --- | --- |
@@ -62,12 +62,12 @@ Framework functionality is grouped by purpose into four libraries that applicati
 | [Image](https://brussig-tud.github.io/FCG-framework/fcg_image_overview.html) | Decodes common SDR and HDR image formats into CPU pixels for inspection, processing or configurable GPU upload. Loading requires no GPU device or applet. |
 | [Mesh](https://brussig-tud.github.io/FCG-framework/fcg_mesh_overview.html) | Load common 3D model file formats (currently OBJ, PLY and STL) into an [OpenMesh](https://www.graphics.rwth-aachen.de/software/openmesh/) datastructure. Loading requires no GPU device or applet. |
 | [Render](https://brussig-tud.github.io/FCG-framework/fcg_render_overview.html) | Provides convenient renderers to quickly draw a large number of simple primitives (boxes, lines, etc.) without having to deal with shaders and pipeline setup. |
-| [Extras](https://brussig-tud.github.io/FCG-framework/fcg_extras_overview.html) | Optional desktop conveniences on top of Core that only some platforms or applications need, currently just native file/folder dialogs. |
+| [Extras](https://brussig-tud.github.io/FCG-framework/fcg_extras_overview.html) | Native file/folder dialogs with loader-informed file filters, and reusable information GUI panels (currently for images and meshes). |
 
 
 ## Examples
 
-Example applications using various parts of the Framework are in the `app/` directory. These are still WIP, exact descriptions to follow at a later date.
+Example applications using various parts of the Framework are in the `app/` directory. `hello` shows various rendering capabilities and GUI widgets. `imgview` demonstrates image loading and display via textures using a planar camera. `meshview` demonstrates mesh loading and display. Individual apps can be excluded from the build using `FCG_BUILD_APP_<name>=OFF`. Building the demo apps can be disabled entirely with `FCG_BUILD_APPS=OFF`.
 
 Mesh loading uses OpenMesh (9.0 or newer), tinyobjloader and tinyply with variable-length list support (3.0).
 Compatible installed packages are preferred; pinned sources are fetched through CPM when necessary.

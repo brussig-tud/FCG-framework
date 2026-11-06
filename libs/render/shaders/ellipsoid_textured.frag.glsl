@@ -10,6 +10,9 @@
 // Shared analytic ellipsoid intersections and spherical texture coordinates
 #include "ellipsoid_fragment.glsl"
 
+// Shared eye-space Blinn-Phong reflection
+#include "blinn_phong.glsl"
+
 
 
 //////
@@ -28,8 +31,11 @@ layout(set=3, binding=0, std140) uniform Lighting {
 	/// The ambient RGB intensity, with nonzero W enabling two-sided quad normals.
 	vec4 ambient;
 
-	/// The diffuse RGB intensity, with W reserved.
+	/// The diffuse RGB intensity, with nonzero W selecting an orthographic viewing direction.
 	vec4 diffuse;
+
+	/// The linear RGB specular reflection color in XYZ and positive shininess exponent in W.
+	vec4 specular;
 } lighting;
 
 /// Surface projection and culling parameters; matches the C++ RaycastUniforms layout.
@@ -124,11 +130,12 @@ void main ()
 	// Discard missed samples and apply optional lighting with the outward eye-space normal
 	if (!hit)
 		discard;
-	if (lighting.direction.w != 0.0) {
+	if (lighting.direction.w != 0.0)
+	{
 		vec3 n = transpose(eyeToSphere) * sphere;
-		float scale = max(max(abs(n.x), abs(n.y)), abs(n.z));
-		n = normalize(n / scale);
-		base.rgb *= lighting.ambient.rgb + lighting.diffuse.rgb * max(dot(n, lighting.direction.xyz), 0.0);
+		vec3 eyePosition = eyeCenter + sphereToEye * sphere;
+		base.rgb = blinnPhong(base.rgb, n, eyePosition, lighting.direction.xyz,
+			lighting.ambient.rgb, lighting.diffuse.rgb, lighting.specular, lighting.diffuse.w != 0.0);
 	}
 
 	// Write the analytic surface depth and shaded color

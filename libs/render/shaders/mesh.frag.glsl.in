@@ -1,4 +1,15 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+
+//////
+//
+// Includes
+//
+
+// Shared eye-space Blinn-Phong reflection
+#include "blinn_phong.glsl"
+
 
 
 //////
@@ -22,8 +33,11 @@ layout(set=3, binding=0, std140) uniform Draw {
 	/// Ambient RGB intensity; W enables reversed back-face normals.
 	vec4 ambient;
 
-	/// Diffuse RGB intensity; W is reserved.
+	/// Diffuse RGB intensity, with nonzero W selecting an orthographic viewing direction.
 	vec4 diffuse;
+
+	/// The linear RGB specular reflection color in XYZ and positive shininess exponent in W.
+	vec4 specular;
 } draw;
 
 
@@ -44,6 +58,9 @@ layout(location=1) in vec2 uv;
 
 /// Eye-space normal or position, selected by the mesh normal layout.
 layout(location=2) in vec3 surface;
+
+/// The interpolated surface position in eye coordinates.
+layout(location=3) in vec3 eyePosition;
 
 
 ////
@@ -81,6 +98,7 @@ void main ()
 	base *= texture(colorTexture, uv);
 #endif
 	if (draw.direction.w != 0.0)
-		base.rgb *= draw.ambient.rgb + draw.diffuse.rgb * max(dot(n, draw.direction.xyz), 0.0);
+		base.rgb = blinnPhong(base.rgb, n, eyePosition, draw.direction.xyz,
+			draw.ambient.rgb, draw.diffuse.rgb, draw.specular, draw.diffuse.w != 0.0);
 	outputColor = base;
 }

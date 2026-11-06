@@ -16,6 +16,13 @@ if (FCG_BUILD_APPS)
 		list(APPEND FCG_APP_TARGETS ${APP_NAME})
 	endif()
 
+	# The "Mesh Viewer" demo.
+	option(FCG_BUILD_APP_MESHVIEW "Build the 'Mesh Viewer' demo app" ON)
+	if (FCG_BUILD_APP_MESHVIEW)
+		add_subdirectory(meshview)
+		list(APPEND FCG_APP_TARGETS ${APP_NAME})
+	endif()
+
 	# Publish actually included apps
 	set(FCG_APP_TARGETS ${FCG_APP_TARGETS} PARENT_SCOPE)
 endif()

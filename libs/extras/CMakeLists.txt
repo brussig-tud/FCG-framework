@@ -12,7 +12,7 @@ generate_export_header(Extras BASE_NAME FCG_EXTRAS EXPORT_FILE_NAME include/FCG/
 target_compile_definitions(Extras PUBLIC "$<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:FCG_EXTRAS_STATIC_DEFINE>")
 
 # Link framework dependencies
-target_link_libraries(Extras PUBLIC Core)
+target_link_libraries(Extras PUBLIC Core Mesh)
 target_link_libraries(Extras PRIVATE Image) # <- clients who need our Image-related features will link to it anyway
 
 # Collect sources

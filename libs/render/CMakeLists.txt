@@ -48,6 +48,7 @@ fcg_add_shader(ellipsoid_textured SOURCES shaders/ellipsoid.vert.glsl shaders/el
 fcg_add_shader(line SOURCES shaders/line.vert.glsl shaders/line.frag.glsl)
 fcg_add_shader(wire_box SOURCES shaders/wire_box.vert.glsl shaders/line.frag.glsl)
 # Configure concrete vertex/fragment interfaces for each canonical layout.
+configure_file(shaders/blinn_phong.glsl "${CMAKE_CURRENT_BINARY_DIR}/mesh-shaders/blinn_phong.glsl" COPYONLY)
 foreach(mesh_key RANGE 0 7)
 	math(EXPR MESH_NORMALS "${mesh_key} & 1")
 	math(EXPR MESH_COLORS "(${mesh_key} >> 1) & 1")

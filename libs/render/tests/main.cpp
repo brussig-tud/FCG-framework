@@ -32,6 +32,9 @@
 #include <fcg-render-shaders.h>
 
 
+// Local includes
+#include "lighting_reference.h"
+
 
 //////
 //
@@ -545,12 +548,12 @@ void pixels (fcg::Device &device)
 	fcg::DrawOptions light;
 	light.lighting = {.enabled = true, .direction = {0,0,1}, .ambient = {.1f,.2f,.3f}, .diffuse = {.2f,.3f,.4f}};
 	Snapshot lit(canvas, quad, data, state, light);
-	lit.pixel(0,0,{77,128,179,255});
+	lit.pixel(0,0,fcg::test::referencePixel(glm::vec4(1), {0,0,1}, {0,0,1}, light.lighting));
 	check(data.setAttributes([] (Update &update) {
 		update.set<A::Orientation>(glm::angleAxis(glm::radians(180.f), glm::vec3(0,1,0)));
 	}));
 	Snapshot back(canvas, quad, data, state, light);
-	back.pixel(0,0,{77,128,179,255});
+	back.pixel(0,0,fcg::test::referencePixel(glm::vec4(1), {0,0,1}, {0,0,1}, light.lighting));
 	Snapshot hidden(canvas, culled, data, state);
 	hidden.pixel(-.3f,-.3f,{0,0,0,0});
 	hidden.pixel(.3f,.3f,{0,0,0,0});
@@ -577,7 +580,7 @@ void pixels (fcg::Device &device)
 			faceUV.pixel(point.x, point.y, expected[corner]);
 		}
 		Snapshot normal(canvas, box, data, state, light);
-		normal.pixel(0,0,{77,128,179,255});
+		normal.pixel(0,0,fcg::test::referencePixel(glm::vec4(1), {0,0,1}, {0,0,1}, light.lighting));
 	}
 
 	// Normal-matrix transformation and orientation both affect lighting.
@@ -588,10 +591,9 @@ void pixels (fcg::Device &device)
 	}));
 	state.loadModelviewMatrix(glm::scale(glm::mat4(1), glm::vec3(1.2f,.8f,.7f)));
 	const auto transformedNormal = glm::normalize(state.normalMatrix() * (tilted * glm::vec3(0,0,1)));
-	const auto intensity = light.lighting.ambient + light.lighting.diffuse * transformedNormal.z;
+	const auto expectedNormal = fcg::test::referencePixel(glm::vec4(1), transformedNormal, {0,0,1}, light.lighting);
 	Snapshot normalMatrix(canvas, quad, data, state, light);
-	normalMatrix.pixel(0,0,{(int)std::lround(255 * intensity.r), (int)std::lround(255 * intensity.g),
-		(int)std::lround(255 * intensity.b), 255});
+	normalMatrix.pixel(0,0,expectedNormal);
 	state.loadModelviewMatrix(glm::mat4(1));
 	check(data.setAttributes([] (Update &update) { update.clear<A::Orientation>(); }));
 
@@ -599,7 +601,7 @@ void pixels (fcg::Device &device)
 	auto defaultBox = take(fcg::BoxRenderer::create(device, cullingCanvas.target()));
 	auto twoSidedBox = take(fcg::BoxRenderer::create(device, cullingCanvas.target(), {.cullMode = SDL_GPU_CULLMODE_NONE}));
 	Snapshot defaultCulling(cullingCanvas, defaultBox, data, state, light);
-	defaultCulling.pixel(0,0,{77,128,179,255});
+	defaultCulling.pixel(0,0,fcg::test::referencePixel(glm::vec4(1), {0,0,1}, {0,0,1}, light.lighting));
 	Snapshot explicitCulling(cullingCanvas, twoSidedBox, data, state, light);
 	explicitCulling.pixel(0,0,{26,51,77,255});
 
@@ -768,6 +770,70 @@ void shaders ()
 	SDL_ShaderCross_Quit();
 }
 
+/// Compare material controls, projection-dependent highlights, texturing and two-sided lighting with the reference.
+void lightingPixels (fcg::Device &device)
+{
+	// Lock the public defaults independently of the shader equation
+	const fcg::DirectionalLight defaults;
+	require(glm::length(defaults.direction - glm::normalize(glm::vec3(1.f/3.f,1.f/3.f,1.f))) < 1e-6f,
+		"Default light direction");
+	require(defaults.ambient == glm::vec3(.1f) && defaults.diffuse == glm::vec3(.8f)
+		&& defaults.specularColor == glm::vec3(1) && defaults.shininess == 48.f, "Default light material");
+
+	// Use dark albedo and a bright, colored reflection so both terms remain measurable
+	Canvas canvas(device);
+	auto quad = take(fcg::QuadRenderer::create(device, canvas.target()));
+	auto box = take(fcg::BoxRenderer::create(device, canvas.target()));
+	fcg::PrimitiveAttributes data(device);
+	const std::array positions{glm::vec4(0,0,-2,1)};
+	const glm::vec4 albedo(1.f/32.f,.25f,2.f/3.f,.5f);
+	check(data.setAttributes([&] (Update &update) {
+		update.set<A::Position>(std::span(positions));
+		update.set<A::Extent>(glm::vec3(.9f,.9f,0));
+		update.set<A::Color>(albedo);
+	}));
+	fcg::RenderState state(device);
+	Texture texture(device);
+	for (const bool perspective : {false, true})
+		for (const bool textured : {false, true})
+			for (const int material : {0, 1, 2, 3})
+			{
+				state.loadProjectionMatrix(perspective
+					? glm::perspectiveRH_ZO(glm::radians(60.f), 1.f, .1f, 10.f)
+					: glm::orthoRH_ZO(-1.f,1.f,-1.f,1.f,.1f,10.f));
+				fcg::DrawOptions options;
+				options.lighting.enabled = true;
+				if (textured)
+					options.texture = fcg::PrimitiveTexture{texture.texture, texture.sampler};
+				if (material == 1)
+					options.lighting.specularColor = glm::vec3(0);
+				if (material >= 2) {
+					options.lighting.specularColor = {.2f,.8f,.4f};
+					options.lighting.shininess = material == 2 ? 4.f : 128.f;
+				}
+				Snapshot image(canvas, quad, data, state, options);
+				const glm::dvec2 ndc(.265625,-.265625);
+				const double scale = perspective ? 2.0 * std::tan(glm::radians(30.0)) : 1.0;
+				const auto view = perspective ? glm::dvec3(-ndc * scale, 2) : glm::dvec3(0,0,1);
+				const auto base = textured ? albedo * glm::vec4(0,1,0,128.f/255.f) : albedo;
+				image.pixel(float(ndc.x), float(ndc.y), fcg::test::referencePixel(base, {0,0,1}, view, options.lighting));
+			}
+
+	// Back-facing light contributes ambient only, including a zero half-vector in orthographic projection
+	fcg::DrawOptions away;
+	away.lighting = {.enabled=true, .direction={0,0,-1}};
+	state.loadProjectionMatrix(glm::orthoRH_ZO(-1.f,1.f,-1.f,1.f,.1f,10.f));
+	Snapshot unlitSide(canvas, quad, data, state, away);
+	unlitSide.pixel(0,0,fcg::test::referencePixel(albedo, {0,0,1}, {0,0,1}, away.lighting));
+
+	// Boxes use the same material controls with flat outward face normals
+	check(data.setAttributes([] (Update &update) { update.set<A::Extent>(glm::vec3(.5f)); }));
+	fcg::DrawOptions options;
+	options.lighting.enabled = true;
+	Snapshot flatFace(canvas, box, data, state, options);
+	flatFace.pixel(0,0,fcg::test::referencePixel(albedo, {0,0,1}, {0,0,1}, options.lighting));
+}
+
 /// Missing, unclaimed, and claimed windows expose consistent target metadata before any frame.
 void targets (fcg::Device &device)
 {
@@ -821,6 +887,7 @@ auto main () -> int
 		require(device.has_value() && other.has_value(), SDL_GetError());
 		attributes(*device, *other);
 		pixels(*device);
+		lightingPixels(*device);
 		targets(*device);
 	} catch (const std::exception &error) {
 		std::cerr << error.what() << '\n';

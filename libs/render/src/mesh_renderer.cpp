@@ -7,6 +7,7 @@
 // C++ STL
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <utility>
@@ -29,7 +30,7 @@
 namespace {
 
 /// Fragment parameters matching the mesh shaders' Draw uniform layout.
-struct MeshUniforms
+struct alignas(16) MeshUniforms
 {
 	/// Linear RGBA color multiplier.
 	glm::vec4 color;
@@ -40,9 +41,14 @@ struct MeshUniforms
 	/// Ambient RGB intensity; W enables reversed back-face normals.
 	glm::vec4 ambient;
 
-	/// Diffuse RGB intensity; W is reserved.
+	/// Diffuse RGB intensity; W is nonzero for an orthographic viewing direction.
 	glm::vec4 diffuse;
+
+	/// Linear RGB specular color in XYZ and the Blinn-Phong exponent in W.
+	glm::vec4 specular;
 };
+static_assert(sizeof(MeshUniforms) == 5 * 16);
+static_assert(offsetof(MeshUniforms, specular) == 4 * 16);
 
 /// Capture an SDL failure before cleaning up pipeline resources.
 auto failure (const char *operation) -> std::unexpected<fcg::RenderError> {
@@ -205,7 +211,8 @@ void MeshRenderer::draw (
 	// Prepare uniforms
 	const auto &light = options.lighting;
 	MeshUniforms uniforms{
-		options.color, {}, {light.ambient, m_twoSided ? 1.f : 0.f}, {light.diffuse, 0.f}
+		options.color, {}, {light.ambient, m_twoSided ? 1.f : 0.f},
+		{light.diffuse, state.projectionMatrix()[3][3] != 0.f ? 1.f : 0.f}, {light.specularColor, light.shininess}
 	};
 	if (light.enabled) {
 		const auto scale = std::max({std::abs(light.direction.x), std::abs(light.direction.y), std::abs(light.direction.z)});

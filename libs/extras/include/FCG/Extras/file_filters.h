@@ -16,6 +16,7 @@
 #include <FCG/Extras/export.h>
 #include <FCG/Extras/file_dialog.h>
 #include <FCG/Image/image_loader.h>
+#include <FCG/Mesh/mesh_loader.h>
 
 
 
@@ -71,6 +72,22 @@ namespace extra {
 /// 	The list of filters described above.
 [[nodiscard]] FCG_EXTRAS_EXPORT auto imageFileFilters (
 	std::span<const ImageFileFormat> formats, bool includeAllFiles=true
+) -> std::vector<FileDialogFilter>;
+
+/// \brief Build file-dialog filters for mesh formats advertised by a loader.
+///
+/// Pass <tt>MeshLoader::global().fileFormats()</tt> to offer the registered mesh formats. Ordering, extension and
+/// group deduplication, wildcard handling, and empty-input behavior follow \c imageFileFilters, with the aggregate
+/// filter named <tt>"All supported meshes"</tt>.
+///
+/// \param formats
+/// 	Borrowed format descriptions. Generated filters must satisfy \c FileDialogFilter; dialogs report
+/// 	\c FileDialogErrorCode::InvalidArgument for invalid filters.
+/// \param includeAllFiles Whether to append <tt>"All files"</tt>; defaults to \c true.
+///
+/// \return Owned filters suitable for \c FileDialogOptions::filters.
+[[nodiscard]] FCG_EXTRAS_EXPORT auto meshFileFilters (
+	std::span<const MeshFileFormat> formats, bool includeAllFiles=true
 ) -> std::vector<FileDialogFilter>;
 
 

@@ -80,11 +80,15 @@ struct PrimitiveTexture
 	SDL_GPUSampler *sampler = nullptr;
 };
 
-/// \brief A directional light for simple diffuse lighting in primitive and mesh draw options.
+/// \brief An eye-space directional light with Blinn-Phong reflection for primitive and mesh draw options.
 ///
-/// With lighting enabled, the RGB part of each fragment color is multiplied by
-/// <tt>ambient + diffuse * max(dot(n, l), 0)</tt>, where \c n is the unit normal of the surface in eye space and
-/// \c l is the normalized <tt>direction</tt>. The alpha is unchanged. Boxes use the flat outward normal of each face.
+/// With lighting enabled, the base RGB color is multiplied by
+/// <tt>ambient + diffuse * max(dot(n, l), 0)</tt>. A separate specular term adds
+/// <tt>0.25 * specularColor * pow(max(dot(n, h), 0), shininess)</tt> when the surface faces the light.
+/// Here \c n is the eye-space unit normal, \c l points toward the light and \c h bisects the light and viewing
+/// directions. Perspective views use the direction toward the eye; orthographic views use eye-space +Z.
+/// Textures modulate the base color, while specular reflection is independent of it. Alpha is unchanged.
+/// Boxes use the flat outward normal of each face.
 /// Quads use their +Z normal on the front side and the flipped normal on the back side. Ellipsoids use their
 /// outward surface normal. Meshes use their supplied or generated normals, or geometric triangle normals.
 struct DirectionalLight
@@ -93,14 +97,22 @@ struct DirectionalLight
 	bool enabled = false;
 
 	/// Direction from the surface toward the light, in eye space. Must be finite and nonzero when lighting is enabled;
-	/// its length does not matter. The default (0, 0, 1) points toward the viewer.
-	glm::vec3 direction{0.f, 0.f, 1.f};
+	/// its length does not matter. The default is the unit vector along <tt>(1/3, 1/3, 1)</tt>.
+	glm::vec3 direction = glm::normalize(glm::vec3(1.f / 3.f, 1.f / 3.f, 1.f));
 
 	/// RGB intensity of the ambient term. Must be finite when lighting is enabled.
-	glm::vec3 ambient{.2f};
+	glm::vec3 ambient{.1f};
 
 	/// RGB intensity of the diffuse term. Must be finite when lighting is enabled.
 	glm::vec3 diffuse{.8f};
+
+	/// Linear RGB specular reflection color, defaulting to white. Must be finite when lighting is enabled;
+	/// zero disables highlights. The reflection is scaled by a fixed coefficient of 0.25.
+	glm::vec3 specularColor{1.f};
+
+	/// Blinn-Phong exponent controlling highlight width, defaulting to 48. Must be finite and strictly positive
+	/// when lighting is enabled; larger values produce narrower highlights.
+	float shininess = 48.f;
 };
 
 /// \brief Texture and lighting settings for a single <tt>PrimitiveRenderer::draw</tt> call.

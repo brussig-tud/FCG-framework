@@ -41,7 +41,7 @@ foreach (header run.h window.h applet.h event.h export.h buffer.h texture.h full
     Image/error.h Image/pixel_format.h Image/pixel_access.h
     Image/features.h Image/radiance_hdr.h Image/pfm.h Image/openexr.h
     Mesh/mesh_processing.h Mesh/export.h Mesh/mesh.h Mesh/mesh_loader.h Mesh/error.h Mesh/obj.h Mesh/ply.h Mesh/stl.h
-    Extras/export.h Extras/file_dialog.h
+    Extras/export.h Extras/file_dialog.h Extras/file_filters.h Extras/gui.h Extras/all.h
     render_target.h Render/export.h Render/error.h Render/primitive_attributes.h
     Render/primitive_renderer.h Render/quad_renderer.h Render/box_renderer.h Render/ellipsoid_renderer.h
     Render/line_renderer.h Render/line_style.h Render/wire_box_renderer.h Render/primitive_connectivity.h Render/connected_primitive_renderer.h
@@ -115,6 +115,11 @@ endif()
 if((EXISTS "${PREFIX}/bin/imgview" OR EXISTS "${PREFIX}/bin/imgview.exe")
     AND NOT EXISTS "${PREFIX}/bin/assets/cgvlogo.png")
     message(FATAL_ERROR "Image viewer executable-relative logo is not installed")
+endif()
+
+if((EXISTS "${PREFIX}/bin/meshview" OR EXISTS "${PREFIX}/bin/meshview.exe")
+    AND NOT EXISTS "${PREFIX}/bin/assets/mesh/max_low.obj")
+    message(FATAL_ERROR "Mesh viewer executable-relative startup mesh is not installed")
 endif()
 
 message(STATUS "install-smoke-verify: all expected deliverables present in ${PREFIX}")

@@ -111,10 +111,14 @@ struct alignas(16) LightUniforms
 	/// Ambient RGB intensity; W is nonzero for two-sided quad lighting.
 	glm::vec4 ambient{};
 
-	/// Diffuse RGB intensity; W is unused.
+	/// Diffuse RGB intensity; W is nonzero for an orthographic viewing direction.
 	glm::vec4 diffuse{};
+
+	/// Linear RGB specular color in XYZ and the Blinn-Phong exponent in W.
+	glm::vec4 specular{};
 };
-static_assert(sizeof(LightUniforms) == 3 * 16);
+static_assert(sizeof(LightUniforms) == 4 * 16);
+static_assert(offsetof(LightUniforms, specular) == 3 * 16);
 
 /// Projection and surface culling used by the ellipsoid fragment shader.
 struct alignas(16) RaycastUniforms
@@ -333,7 +337,8 @@ auto detail::PrimitiveResources::draw (
 	if (light.enabled)
 		lighting.direction = {glm::normalize(light.direction / scale), 1.f};
 	lighting.ambient = {light.ambient, kind == PrimitiveKind::Quad ? 1.f : 0.f};
-	lighting.diffuse = {light.diffuse, 0.f};
+	lighting.diffuse = {light.diffuse, state.projectionMatrix()[3][3] != 0.f ? 1.f : 0.f};
+	lighting.specular = {light.specularColor, light.shininess};
 
 	// Supply analytic surface projection for ellipsoids
 	std::optional<RaycastUniforms> raycast;

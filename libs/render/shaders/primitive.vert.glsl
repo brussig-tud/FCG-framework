@@ -115,6 +115,9 @@ layout(location=1) out vec2 uv;
 /// The outward normal in eye coordinates.
 layout(location=2) out vec3 eyeNormal;
 
+/// The surface position in eye coordinates.
+layout(location=3) out vec3 eyePosition;
+
 
 
 //////
@@ -166,4 +169,5 @@ void main ()
 	color = fetchAttribute(3, instance, 4);
 	uv = localUV;
 	eyeNormal = viewing.normal * rotate(orientation, localNormal);
+	eyePosition = (viewing.modelview * vec4(point, 1.0)).xyz;
 }

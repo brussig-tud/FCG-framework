@@ -1,4 +1,15 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+
+//////
+//
+// Includes
+//
+
+// Shared eye-space Blinn-Phong reflection
+#include "blinn_phong.glsl"
+
 
 
 //////
@@ -17,8 +28,11 @@ layout(set=3, binding=0, std140) uniform Lighting {
 	/// The ambient RGB intensity, with nonzero W enabling two-sided quad normals.
 	vec4 ambient;
 
-	/// The diffuse RGB intensity, with W reserved.
+	/// The diffuse RGB intensity, with nonzero W selecting an orthographic viewing direction.
 	vec4 diffuse;
+
+	/// The linear RGB specular reflection color in XYZ and positive shininess exponent in W.
+	vec4 specular;
 } lighting;
 
 
@@ -39,6 +53,9 @@ layout(location=1) in vec2 uv;
 
 /// The interpolated outward normal in eye coordinates.
 layout(location=2) in vec3 eyeNormal;
+
+/// The interpolated surface position in eye coordinates.
+layout(location=3) in vec3 eyePosition;
 
 
 ////
@@ -61,11 +78,13 @@ void main ()
 	vec4 base = color * texture(colorTexture, uv);
 
 	// Apply optional directional lighting with two-sided normals for quads
-	if (lighting.direction.w != 0.0) {
-		vec3 n = normalize(eyeNormal);
+	if (lighting.direction.w != 0.0)
+	{
+		vec3 n = eyeNormal;
 		if (lighting.ambient.w != 0.0 && !gl_FrontFacing)
 			n = -n;
-		base.rgb *= lighting.ambient.rgb + lighting.diffuse.rgb * max(dot(n, lighting.direction.xyz), 0.0);
+		base.rgb = blinnPhong(base.rgb, n, eyePosition, lighting.direction.xyz,
+			lighting.ambient.rgb, lighting.diffuse.rgb, lighting.specular, lighting.diffuse.w != 0.0);
 	}
 
 	// Write the shaded color

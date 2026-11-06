@@ -12,6 +12,7 @@
 // FCG Framework
 #include <FCG/Extras/file_dialog.h>
 #include <FCG/Extras/file_filters.h>
+#include <FCG/Image/image_loader.h>
 
 
 
@@ -56,6 +57,15 @@ void imageFilterExample ()
 	fcg::extra::FileDialogOptions options;
 	options.filters = fcg::extra::imageFileFilters(fcg::ImageLoader::global().fileFormats(), false);
 // [image_filters]
+}
+
+/// Build filters from the currently registered mesh loaders.
+void meshFilterExample ()
+{
+// [mesh_filters]
+	fcg::extra::FileDialogOptions options;
+	options.filters = fcg::extra::meshFileFilters(fcg::MeshLoader::global().fileFormats());
+// [mesh_filters]
 }
 
 /// Compile the remaining public overloads and the explicit completion-thread policy.

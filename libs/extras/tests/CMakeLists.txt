@@ -13,3 +13,8 @@ target_include_directories(extras-completion-smoke PRIVATE "$<TARGET_PROPERTY:Ex
 target_link_libraries(extras-completion-smoke PRIVATE Core)
 add_test(NAME extras-completion-smoke COMMAND extras-completion-smoke)
 set_tests_properties(extras-completion-smoke PROPERTIES TIMEOUT 15)
+
+# Exercise public exports, sparse source attributes and headless ImGui rendering.
+add_executable(extras-mesh-smoke mesh.cpp)
+target_link_libraries(extras-mesh-smoke PRIVATE Extras Image)
+add_test(NAME extras-mesh-smoke COMMAND extras-mesh-smoke "${PROJECT_SOURCE_DIR}/assets/mesh/max_low.obj")

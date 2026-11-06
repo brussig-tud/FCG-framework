@@ -36,6 +36,9 @@
 #include <FCG/Render/quad_renderer.h>
 
 
+// Local includes
+#include "lighting_reference.h"
+
 
 //////
 //
@@ -132,6 +135,9 @@ struct Hit
 
 	/// Outward unit normal in eye space.
 	glm::dvec3 normal{0, 0, 1};
+
+	/// Analytic surface position in eye space.
+	glm::dvec3 eyePosition{0};
 };
 
 /// Minimal command ownership that cancels incomplete recording on exceptions.
@@ -345,6 +351,7 @@ auto reference (
 		hit.depth = clip.z / clip.w;
 		hit.sphere = sphere;
 		hit.normal = glm::normalize(glm::transpose(inverse) * sphere);
+		hit.eyePosition = center + basis * sphere;
 		break;
 	}
 	return hit;
@@ -376,8 +383,8 @@ void verify (
 					+ std::to_string(image.depths[y * side + x]) + " expected " + std::to_string(hit.depth));
 			auto expected = glm::dvec3(shape.color);
 			if (options.lighting.enabled)
-				expected *= glm::dvec3(options.lighting.ambient) + glm::dvec3(options.lighting.diffuse)
-					* std::max(0.0, glm::dot(hit.normal, glm::normalize(glm::dvec3(options.lighting.direction))));
+				expected = fcg::test::referenceLighting(expected, hit.normal,
+					state.projectionMatrix()[3][3] != 0.f ? glm::dvec3(0,0,1) : -hit.eyePosition, options.lighting);
 			for (int channel = 0; channel < 3; ++channel)
 				require(std::abs((int)pixel[channel] - (int)std::round(255 * glm::clamp(expected[channel], 0.0, 1.0))) <= 3,
 					location + ": color or transformed normal mismatch");
@@ -408,6 +415,21 @@ void analytic (fcg::Device &device)
 	// The paper's perspective path, including rotation and homogeneous centers
 	state.loadProjectionMatrix(glm::perspectiveRH_ZO(glm::radians(60.f), 1.f, .1f, 100.f));
 	draw("perspective sphere");
+
+	// Compare configurable reflection colors, highlight widths and zero specular reflection over complete images
+	for (const bool perspective : {true, false})
+		for (const float exponent : {4.f, 48.f, 128.f})
+		{
+			state.loadProjectionMatrix(perspective
+				? glm::perspectiveRH_ZO(glm::radians(60.f), 1.f, .1f, 100.f)
+				: glm::orthoRH_ZO(-2.f,2.f,-2.f,2.f,.1f,10.f));
+			options.lighting.shininess = exponent;
+			options.lighting.specularColor = exponent == 48.f ? glm::vec3(0) : glm::vec3(.2f,.8f,.4f);
+			draw(std::string(perspective ? "perspective material " : "orthographic material ") + std::to_string(exponent));
+		}
+	options.lighting.specularColor = glm::vec3(1);
+	options.lighting.shininess = 48.f;
+	state.loadProjectionMatrix(glm::perspectiveRH_ZO(glm::radians(60.f), 1.f, .1f, 100.f));
 
 	// Missing optional attributes produce an opaque white unit sphere
 	check(attributes.setAttributes([] (fcg::PrimitiveAttributes::Update &update) {
@@ -701,6 +723,43 @@ void textures (fcg::Device &device)
 				}
 			}
 	}
+
+	// A black texture must preserve independently colored highlights and its modulated alpha
+	auto black = texture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER,
+		SDL_GPU_SAMPLECOUNT_1, 1);
+	const std::array<std::uint8_t, 4> blackTexel{0,0,0,128};
+	check(black.upload(std::as_bytes(std::span(blackTexel))));
+	shape = {};
+	shape.color = {1.f/32.f,.25f,2.f/3.f,.5f};
+	assign(attributes, shape);
+	for (const bool perspective : {false, true})
+		for (const bool colored : {false, true})
+		{
+			state.loadProjectionMatrix(perspective
+				? glm::perspectiveRH_ZO(glm::radians(60.f), 1.f, .1f, 10.f)
+				: glm::orthoRH_ZO(-2.f,2.f,-2.f,2.f,.1f,10.f));
+			fcg::DrawOptions reflection{.texture=fcg::PrimitiveTexture{black.handle(), sampler.handle()}};
+			reflection.lighting.enabled = true;
+			reflection.lighting.specularColor = colored ? glm::vec3(.2f,.8f,.4f) : glm::vec3(1);
+			reflection.lighting.shininess = colored ? 8.f : 48.f;
+			const auto image = scene.render([&] (auto *commands, auto *pass) {
+				check(renderer.draw(attributes, state, commands, pass, reflection));
+			});
+			for (Uint32 y = 0; y < side; ++y)
+				for (Uint32 x = 0; x < side; ++x)
+				{
+					const auto hit = reference(shape, state.modelviewMatrix(), state.projectionMatrix(), x, y,
+						SDL_GPU_CULLMODE_BACK);
+					if (!hit.visible)
+						continue;
+					const auto expected = fcg::test::referencePixel({0,0,0,shape.color.a * 128.f/255.f}, hit.normal,
+						perspective ? -hit.eyePosition : glm::dvec3(0,0,1), reflection.lighting);
+					for (unsigned channel = 0; channel < 4; ++channel)
+						require(std::abs(int(image.colors[y * side + x][channel]) - expected[channel]) <= 3,
+							"Textured analytic specular reflection or alpha");
+				}
+		}
+	state.loadProjectionMatrix(glm::orthoRH_ZO(-2.f,2.f,-2.f,2.f,.1f,10.f));
 
 	// Coarse mip levels are blue, so an unwrapped seam derivative incorrectly selects blue
 	auto mipmapped = texture(device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER,

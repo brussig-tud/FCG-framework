@@ -80,7 +80,9 @@
 /// <tt>\ref fcg::DrawOptions "DrawOptions"</tt> optionally binds one caller-created 2D texture and sampler; its RGBA
 /// values multiply the instance colors. Filled renderers apply one directional light in eye space; boxes shade with
 /// their flat face normals, quads shade with their plane normal and flip it on the back side, and ellipsoids use
-/// their outward surface normals. The light direction, ambient, and diffuse strengths are configurable.
+/// their outward surface normals. Configure light direction, ambient and diffuse strengths, specular color and
+/// shininess through <tt>\ref fcg::DirectionalLight "DirectionalLight"</tt>. Specular reflection is added
+/// independently of instance and texture colors, preserving alpha.
 /// <tt>\ref fcg::InstanceRange "InstanceRange"</tt> selects a contiguous subrange of the instances;
 /// an empty range draws nothing.
 ///

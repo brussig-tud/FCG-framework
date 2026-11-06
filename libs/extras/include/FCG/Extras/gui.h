@@ -52,6 +52,18 @@
 /// message. To embed the same image more than once in one window, enclose each call in a distinct
 /// <tt>ImGui::PushID</tt>/<tt>ImGui::PopID</tt> scope.
 ///
+/// \subsection fcg_extra_gui_workflows_meshes Inspecting mesh geometry and attributes
+/// Call <tt>\ref fcg::extra::collectMeshMetadata "collectMeshMetadata"</tt> after loading or editing an
+/// <tt>\ref fcg::Mesh "Mesh"</tt>. Store its owned <tt>\ref fcg::extra::MeshMetadata "MeshMetadata"</tt> and
+/// pass it to <tt>\ref fcg::extra::displayMeshMetadata "displayMeshMetadata"</tt> during subsequent GUI frames:
+/// \snippet extras_gui_examples.cpp mesh_metadata
+/// Counts exclude deleted elements. Bounds use source coordinates and include isolated live vertices. Attribute
+/// details show available/total counts for vertices, faces and face corners; allocated storage alone does not imply
+/// an attribute is present. Normals generated during GPU upload do not change the collected source information.
+/// Recollect after modifying the mesh. Collection needs no ImGui context, and the source can be destroyed afterwards.
+/// Use <tt>\ref fcg::extra::showMeshMetadataWindow "showMeshMetadataWindow"</tt> for a separate window:
+/// \snippet extras_gui_examples.cpp mesh_metadata_window
+///
 /// \section fcg_extra_gui_lifetime Ownership and lifetime
 /// Call on the main thread during an active ImGui frame. Inspected objects and optional close-state pointers are
 /// borrowed only for the duration of the call; keep them alive and avoid concurrent modification during that call.
@@ -66,9 +78,16 @@
 // C++ STL
 #include <optional>
 #include <string>
+#include <cstddef>
+
+// GLM library
+#include <glm/glm.hpp>
 
 // Dear ImGui library
 #include <imgui.h>
+
+// FCG Framework
+#include <FCG/Mesh/mesh.h>
 
 // Local includes
 #include "FCG/Extras/export.h"
@@ -132,6 +151,56 @@ struct GuiWindowOptions
 	std::optional<ImVec2> initialSize = std::nullopt;
 };
 
+/// World-space axis-aligned mesh bounds in the source coordinate units.
+struct MeshBounds {
+	/// Component-wise minimum position among live vertices.
+	glm::dvec3 minimum{0.0};
+
+	/// Component-wise maximum position among live vertices.
+	glm::dvec3 maximum{0.0};
+};
+
+/// Counts of elements with readable attributes in one mesh domain.
+struct MeshAttributeCoverage
+{
+	/// Elements with available normals, including their per-element availability flags.
+	std::size_t normals = 0;
+
+	/// Elements with available colors; explicitly requested corner colors use dense storage.
+	std::size_t colors = 0;
+
+	/// Elements with available 2D texture coordinates; faces have no such coordinates.
+	std::size_t texCoords = 0;
+};
+
+/// Owned mesh information collected at one point in time; recollect after modifying the source mesh.
+struct MeshMetadata
+{
+	/// Number of live vertices, including isolated vertices.
+	std::size_t vertexCount = 0;
+
+	/// Number of live edges.
+	std::size_t edgeCount = 0;
+
+	/// Number of live polygon faces before any rendering triangulation.
+	std::size_t faceCount = 0;
+
+	/// Number of corners belonging to live faces, excluding boundary halfedges.
+	std::size_t cornerCount = 0;
+
+	/// Source-space bounds of live vertices; absent when there are no live vertices.
+	std::optional<MeshBounds> bounds;
+
+	/// Availability counts among the live vertices.
+	MeshAttributeCoverage vertices;
+
+	/// Availability counts among the live faces.
+	MeshAttributeCoverage faces;
+
+	/// Availability counts among the corners of live faces.
+	MeshAttributeCoverage corners;
+};
+
 
 
 //////
@@ -167,6 +236,41 @@ FCG_EXTRAS_EXPORT void displayImageMetadata (const Image &image);
 /// \param image The borrowed image to inspect. It must remain alive throughout the call; an empty image is allowed.
 /// \param options Window settings, borrowed only during the call. A false close state skips the window.
 FCG_EXTRAS_EXPORT void showImageMetadataWindow (const Image &image, const GuiWindowOptions &options = {});
+
+/// \brief Collect live geometry counts, source-space bounds and attribute coverage without changing a mesh.
+///
+/// Scans vertices, edges and face corners once. Availability follows \c MeshAttributeTraits, including sparse
+/// per-element flags. The returned value owns all its data and can be displayed repeatedly without scanning again.
+/// Recollect after editing the source; generated GPU attributes are not included.
+///
+/// \pre Live vertex positions are finite. Access to \p mesh is externally synchronized during the call.
+///
+/// \param mesh Borrowed source mesh; an empty mesh is allowed and produces absent bounds and zero counts.
+///
+/// \return An owned summary that remains valid after the source is modified or destroyed.
+[[nodiscard]] FCG_EXTRAS_EXPORT auto collectMeshMetadata (const Mesh &mesh) -> MeshMetadata;
+
+/// \brief Display collected mesh counts, bounds and available/total attribute counts at the current ImGui cursor.
+///
+/// \pre
+/// 	Call on the main thread during an active ImGui frame with a destination window current. Use distinct caller
+/// 	ImGui ID scopes when displaying the same summary twice in one window.
+///
+/// \param metadata Borrowed summary, kept alive and externally synchronized throughout the call.
+FCG_EXTRAS_EXPORT void displayMeshMetadata (const MeshMetadata &metadata);
+
+/// \brief Display collected mesh information in a separate window, defaulting to <tt>"Mesh information"</tt>.
+///
+/// Window identity, geometry, flags and close-state handling follow \c showImageMetadataWindow.
+///
+/// \pre
+/// 	Call on the main thread during an active ImGui frame. A supplied title is nonempty and contains no NUL;
+/// 	geometry is finite and size components are nonnegative. Borrowed inputs remain valid and externally
+/// 	synchronized throughout the call.
+///
+/// \param metadata Borrowed summary to inspect; the source mesh need not remain alive.
+/// \param options Borrowed window settings; a false close state skips the window.
+FCG_EXTRAS_EXPORT void showMeshMetadataWindow (const MeshMetadata &metadata, const GuiWindowOptions &options = {});
 
 
 

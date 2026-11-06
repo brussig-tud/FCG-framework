@@ -54,3 +54,30 @@ void imageMetadataWindowExample (const fcg::Image &image, const fcg::Player &pla
 	});
 }
 // [image_metadata_window]
+
+/// \brief Collect source information once after loading or editing geometry.
+///
+/// \param mesh The source geometry to inspect.
+/// \return An owned summary to keep in the applet and display in later GUI frames.
+// [mesh_metadata]
+[[nodiscard]] auto collectMeshExample (const fcg::Mesh &mesh) -> fcg::extra::MeshMetadata {
+	return fcg::extra::collectMeshMetadata(mesh);
+}
+
+/// \brief Embed a previously collected summary from an applet's GUI callback.
+///
+/// \param metadata The summary stored after loading or editing the source mesh.
+void displayMeshExample (const fcg::extra::MeshMetadata &metadata) {
+	fcg::extra::displayMeshMetadata(metadata);
+}
+// [mesh_metadata]
+
+/// \brief Show a stored summary in a separate inspector window.
+///
+/// \param metadata The applet's cached source information.
+/// \param open Close state kept in the applet.
+// [mesh_metadata_window]
+void meshMetadataWindowExample (const fcg::extra::MeshMetadata &metadata, bool &open) {
+	fcg::extra::showMeshMetadataWindow(metadata, {.title="Mesh information###main-mesh-info", .open=&open});
+}
+// [mesh_metadata_window]

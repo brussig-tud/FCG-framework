@@ -45,6 +45,9 @@
 /// second argument to omit the appended filter. Link \verbatim FCG-Framework::Image \endverbatim alongside
 /// \verbatim FCG-Framework::Extras \endverbatim when using image-loader filters:
 /// \snippet file_dialog_examples.cpp image_filters
+/// For mesh files, use <tt>\ref fcg::extra::meshFileFilters "meshFileFilters"</tt> with the formats advertised by
+/// <tt>\ref fcg::MeshLoader "MeshLoader"</tt>:
+/// \snippet file_dialog_examples.cpp mesh_filters
 /// <tt>"*"</tt> is accepted only as the sole extension within a filter; separate all-files filters are allowed. An
 /// empty filter list leaves file types unrestricted. Save dialogs ignore multiple selection; folder dialogs ignore
 /// filters. Platforms may ignore individual settings.
