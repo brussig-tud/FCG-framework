@@ -19,10 +19,14 @@ find_package(SDL3 3.4 CONFIG REQUIRED)
 
 # Reuse the parent's resolved mesh SDK so these codec fixtures remain offline.
 include("${MESH_DEPENDENCY_MANIFEST}")
+set(mesh_dependency_libraries ${mesh_libraries})
 foreach(mesh_dependency OpenMeshCore tinyobjloader tinyply)
+    list(POP_FRONT mesh_dependency_libraries mesh_dependency_library)
     add_library(${mesh_dependency} INTERFACE)
+    target_link_libraries(${mesh_dependency} INTERFACE "${mesh_dependency_library}")
 endforeach()
 target_include_directories(OpenMeshCore INTERFACE ${mesh_includes})
+target_compile_definitions(OpenMeshCore INTERFACE ${mesh_definitions})
 target_include_directories(tinyobjloader INTERFACE ${mesh_tinyobj_includes})
 target_include_directories(tinyply INTERFACE ${mesh_tinyply_includes})
 
@@ -328,7 +332,7 @@ if(NOT "Image" IN_LIST FCG_ADDITIONAL_LIBS)
 endif()
 
 # Configure-time export validation covers provided targets as well as source-built backends.
-install(TARGETS Core Image Extras EXPORT FixtureTargets)
+install(TARGETS Core Image Mesh Extras EXPORT FixtureTargets)
 if(NOT BUILD_SHARED_LIBS)
     install(TARGETS fcg-shaders EXPORT FixtureTargets)
 endif()
