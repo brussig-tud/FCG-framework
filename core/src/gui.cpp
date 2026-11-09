@@ -59,7 +59,7 @@ auto Gui::create (Device &device, Window &mainWindow) -> std::unique_ptr<Gui>
 	}
 	ImGui::SetCurrentContext(gui->m_context);
 	ImGuiIO &io = ImGui::GetIO();
-	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // enable keyboard controls
+	io.ConfigNavCaptureKeyboard = false; // make sure applets get keystrokes as long as no actual input field has focus
 	ImGui::StyleColorsDark();
 
 	// Keep the pixel-snapped bitmap font for 1x output, but use the scalable font for scaled displays.
