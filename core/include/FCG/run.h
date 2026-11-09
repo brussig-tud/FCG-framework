@@ -45,6 +45,8 @@
 ///   (<tt>\ref fcg::Player::gammaCorrection "gammaCorrection"</tt>);
 /// - request a scene refresh after changing content
 ///   (<tt>\ref fcg::Player::requireSceneRedraw "requireSceneRedraw"</tt>);
+/// - schedule another iteration that refreshes the scene
+///   (<tt>\ref fcg::Player::postRedraw "postRedraw"</tt>);
 /// - request continuous redraws while animating
 ///   (<tt>\ref fcg::Player::pushContinuousRedraw "pushContinuousRedraw"</tt>);
 /// - enumerate and select cameras (<tt>\ref fcg::Player::cameras "cameras"</tt>,
@@ -86,6 +88,13 @@
 /// scene-format changes refresh the scene automatically. Continuous redraw requests refresh it on every drawable
 /// iteration, including the iteration that releases the request.
 /// \snippet presentation_examples.cpp scene_redraw
+/// To schedule one more iteration that polls events and refreshes the scene, call
+/// <tt>\ref fcg::Player::postRedraw "Player::postRedraw"</tt>. Calling before scene rendering also refreshes the
+/// current drawable frame. Repeated calls within an iteration coalesce; calling again during the posted iteration
+/// schedules another. The request completes automatically. If the posted iteration has no drawable image, later
+/// iterations may wait for events while the scene refresh remains pending until an image is available.
+/// \snippet presentation_examples.cpp post_redraw
+///
 /// GUI-only iterations still run ordinary applets' and the active camera's <tt>\ref fcg::Applet::gui "gui"</tt> and
 /// <tt>\ref fcg::Applet::update "update"</tt>, present the retained scene and draw the GUI overlay. Changes to
 /// gamma or presentation parameters take effect at presentation without requiring a scene refresh.

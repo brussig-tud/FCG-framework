@@ -80,6 +80,10 @@ void Player::requireSceneRedraw () noexcept {
 	sceneRedrawRequired = true;
 }
 
+void Player::postRedraw () noexcept {
+	redrawPosted = true;
+}
+
 void Player::pushContinuousRedraw () {
 	if (continuousRedrawRequests == 0)
 		SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: starting continuous redraw");

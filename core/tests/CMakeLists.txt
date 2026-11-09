@@ -103,7 +103,8 @@ endforeach()
 add_executable(scene-redraw-smoke lifecycle/scene_redraw.cpp)
 target_compile_definitions(scene-redraw-smoke PRIVATE FCG_FRAMEWORK_STATIC_DEFINE)
 target_link_libraries(scene-redraw-smoke PRIVATE Core)
-foreach(scenario requests caret unavailable attachments continuous cameras failure)
+foreach(scenario requests caret unavailable attachments continuous cameras failure
+	posted posted-init posted-unavailable posted-continuous)
 	add_test(NAME scene-redraw-${scenario} COMMAND scene-redraw-smoke ${scenario})
 	set_tests_properties(scene-redraw-${scenario} PROPERTIES TIMEOUT 60
 		FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-;without a matching push")

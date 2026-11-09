@@ -80,6 +80,8 @@
 /// something request continuous iterations with
 /// <tt>\ref fcg::Player::pushContinuousRedraw "Player::pushContinuousRedraw"</tt> for as long as they animate, and
 /// balance it with <tt>\ref fcg::Player::popContinuousRedraw "Player::popContinuousRedraw"</tt> afterwards.
+/// For one additional iteration that polls events and refreshes the scene, call
+/// <tt>\ref fcg::Player::postRedraw "Player::postRedraw"</tt>; the request completes automatically.
 ///
 /// \subsection fcg_applets_workflows_input Input and GUI
 /// Handle input in <tt>\ref fcg::Applet::onEvent "onEvent"</tt>; see \ref fcg_events. Define Dear ImGui widgets in

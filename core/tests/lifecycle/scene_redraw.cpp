@@ -52,6 +52,9 @@ unsigned step = 0;
 /// Synthetic input consumed by the production event loop.
 std::optional<SDL_Event> queuedEvent;
 
+/// The main window receiving synthetic input in posted-redraw scenarios.
+SDL_WindowID mainWindowID = 0;
+
 /// Number of acquisitions that must report ordinary image unavailability.
 unsigned unavailableImages = 0;
 
@@ -63,6 +66,9 @@ unsigned unavailableWaits = 0;
 
 /// Number of real GUI caret timeouts requested by the runtime.
 unsigned periodicWaits = 0;
+
+/// Number of waits observed after posted redraws have finished.
+unsigned idleWaits = 0;
 
 /// Number of frame command buffers submitted by production cleanup.
 unsigned submissions = 0;
@@ -84,6 +90,35 @@ auto pollEvent (SDL_Event *event) -> bool {
 /// Observe real scheduling decisions without hanging a failed test in an indefinite wait.
 auto waitEvent (SDL_Event *event, int timeout) -> bool
 {
+	// Check exact idle boundaries so a premature wait cannot be hidden by a synthetic wakeup
+	if (scenario == "posted" || scenario == "posted-init" || scenario == "posted-continuous")
+	{
+		const auto expectedStep = scenario == "posted" ? std::array{7u, 10u, 13u}.at(idleWaits)
+			: scenario == "posted-init" ? 2u : 3u;
+		require(step == expectedStep && timeout == -1, "Posted redraw waited at an unexpected iteration");
+		++idleWaits;
+		*event = {};
+		event->type = scenario == "posted" && step == 7 ? SDL_EVENT_DROP_COMPLETE : SDL_EVENT_USER;
+		if (event->type == SDL_EVENT_DROP_COMPLETE)
+			event->drop.windowID = mainWindowID;
+		return true;
+	}
+	if (scenario == "posted-unavailable")
+	{
+		require(timeout == -1, "Posted redraw unexpectedly used a timed wait");
+		if (noImage) {
+			require(step == 3 || step == 6, "Unavailable posted redraw waited at an unexpected iteration");
+			++unavailableWaits;
+		} else {
+			require(step == 9, "Posted redraw did not poll before its scene refresh");
+			++idleWaits;
+		}
+		*event = {};
+		event->type = SDL_EVENT_USER;
+		return true;
+	}
+
+	// Preserve the event and timeout behavior of the other redraw scenarios
 	if (pollEvent(event))
 		return true;
 	if (scenario == "caret") {
@@ -217,8 +252,14 @@ public:
 	{
 		gpu = device.handle();
 		this->player = &player;
+		mainWindowID = player.mainWindow()->id();
 		player.clearColor() = {0, 0, 0, 1};
 		installPresentation(player);
+		if (scenario == "posted-init") {
+			player.postRedraw();
+			player.postRedraw();
+			require(!player.continuousRedrawRequested(), "Posting a redraw changed the continuous redraw count");
+		}
 		if (scenario == "cameras") {
 			planar.init(device, player);
 			orbit.init(device, player);
@@ -259,10 +300,17 @@ public:
 		++results.resizes;
 	}
 
-	/// Request a scene refresh from an input callback after the first four iterations.
-	void onEvent (const fcg::Event &event, fcg::EventContext&, fcg::Player &player) override {
+	/// Request immediate or posted scene refreshes from synthetic input callbacks.
+	void onEvent (const fcg::Event &event, fcg::EventContext&, fcg::Player &player) override
+	{
 		if (event.type() == fcg::EventType::DropComplete)
-			player.requireSceneRedraw();
+		{
+			if (scenario == "posted") {
+				player.postRedraw();
+				player.postRedraw();
+			} else
+				player.requireSceneRedraw();
+		}
 	}
 
 	/// Build drawable widgets on every iteration and request refreshes from GUI and overlay callbacks.
@@ -281,6 +329,10 @@ public:
 			player.requireSceneRedraw();
 			player.requireSceneRedraw();
 		}
+		if (scenario == "posted" && step == 11) {
+			player.postRedraw();
+			player.postRedraw();
+		}
 		auto *draw = ImGui::GetForegroundDrawList();
 		draw->AddRectFilled(ImVec2(0, 0), ImVec2(8, 8), IM_COL32_WHITE);
 		draw->AddCallback([] (const ImDrawList*, const ImDrawCmd *command) {
@@ -288,12 +340,45 @@ public:
 			++probe.results.overlays;
 			if (scenario == "requests" && step == 13)
 				probe.player->requireSceneRedraw();
+			if (scenario == "posted" && step == 6) {
+				probe.player->postRedraw();
+				probe.player->postRedraw();
+			}
 		}, this);
 	}
 
 	/// Advance bounded scenarios without using continuous redraw to drive GUI-only frames.
 	void update (fcg::Device &device, fcg::Player &player, float) override
 	{
+		// Post from quiet updates, renew in a posted frame, and retain refreshes through unavailable images
+		if (scenario == "posted" && (step == 2 || step == 3)) {
+			player.postRedraw();
+			player.postRedraw();
+		}
+		if (scenario == "posted-unavailable" && step == 2) {
+			player.postRedraw();
+			unavailableImages = 6;
+		}
+		if (scenario.starts_with("posted") && scenario != "posted-continuous")
+			require(!player.continuousRedrawRequested(), "Posting a redraw changed the continuous redraw count");
+
+		// Keep posted requests independent of multiple balanced continuous redraw requests
+		if (scenario == "posted-continuous")
+		{
+			if (step == 1) {
+				player.pushContinuousRedraw();
+				player.pushContinuousRedraw();
+				player.postRedraw();
+			}
+			if (step == 2) {
+				player.popContinuousRedraw();
+				player.postRedraw();
+			}
+			if (step == 3)
+				player.popContinuousRedraw();
+			require(player.continuousRedrawRequested() == (step < 3), "Posted redraw unbalanced continuous requests");
+		}
+
 		// Apply scene, presentation and input changes at distinguishable iterations
 		if (scenario == "requests")
 		{
@@ -350,7 +435,8 @@ public:
 
 		// Drive GUI-only iterations with explicit events, leaving late requests to wake the loop themselves
 		const bool wake = scenario == "requests" ? step < 9 || step == 14
-			: scenario == "caret" ? step < 4 : scenario == "unavailable" ? step < 2 || step >= 9 : true;
+			: scenario == "caret" ? step < 4 : scenario == "unavailable" ? step < 2 || step >= 9
+			: !scenario.starts_with("posted");
 		if (wake) {
 			SDL_Event event{};
 			event.type = SDL_EVENT_USER;
@@ -361,7 +447,9 @@ public:
 			queuedEvent = event;
 		}
 		const auto finalStep = scenario == "requests" ? 15u : scenario == "unavailable" ? 10u
-			: scenario == "attachments" ? 6u : scenario == "continuous" ? 5u : scenario == "cameras" ? 14u : 20u;
+			: scenario == "attachments" ? 6u : scenario == "continuous" ? 5u : scenario == "cameras" ? 14u
+			: scenario == "posted" ? 14u : scenario == "posted-init" ? 3u : scenario == "posted-unavailable" ? 10u
+			: scenario == "posted-continuous" ? 4u : 20u;
 		if (step == finalStep || (scenario == "caret" && periodicWaits >= 2))
 			player.requestClose();
 	}
@@ -381,6 +469,10 @@ public:
 		SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
 		if (scenario == "requests" && (step == 10 || step == 11))
 			player.requireSceneRedraw();
+		if (scenario == "posted" && step == 4) {
+			player.postRedraw();
+			player.postRedraw();
+		}
 	}
 
 
@@ -396,6 +488,12 @@ private:
 			return std::array{1u, 2u, 2u, 3u, 4u, 4u, 4u, 4u, 4u, 5u, 6u, 7u, 8u, 9u, 9u}.at(step - 1);
 		if (scenario == "continuous")
 			return std::array{1u, 2u, 3u, 3u, 3u}.at(step - 1);
+		if (scenario == "posted")
+			return std::array{1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 9u, 10u, 11u, 11u, 11u}.at(step - 1);
+		if (scenario == "posted-unavailable")
+			return step == 1 ? 1u : step < 9 ? 2u : 3u;
+		if (scenario == "posted-continuous")
+			return step < 3 ? step : 3u;
 		if (scenario == "attachments")
 			return std::array{1u, 1u, 2u, 3u, 3u, 3u}.at(step - 1);
 		if (scenario == "cameras")
@@ -420,6 +518,10 @@ private:
 				checkBackground(context.scene, step == 5);
 			if (scenario == "requests" && step == 12)
 				this->player->requireSceneRedraw();
+			if (scenario == "posted" && step == 5) {
+				this->player->postRedraw();
+				this->player->postRedraw();
+			}
 			const fcg::FullscreenTextureBinding binding{&context.scene, &context.sceneSampler};
 			const auto &gamma = std::as_const(*this->player).gammaCorrection();
 			const std::span<const std::byte> uniforms[]{std::as_bytes(std::span(&gamma, 1))};
@@ -555,7 +657,8 @@ auto main (int argc, char **argv) -> int
 		scenario = argv[1];
 		require(scenario == "requests" || scenario == "caret" || scenario == "unavailable"
 			|| scenario == "attachments" || scenario == "continuous" || scenario == "cameras"
-			|| scenario == "failure", "Unknown scene redraw scenario");
+			|| scenario == "failure" || scenario == "posted" || scenario == "posted-init"
+			|| scenario == "posted-unavailable" || scenario == "posted-continuous", "Unknown scene redraw scenario");
 		Results results;
 		bool failed = false;
 		try {
@@ -570,7 +673,7 @@ auto main (int argc, char **argv) -> int
 				&& results.overlays == 0, "Failed scene pass did not stop presentation and finish its frame");
 			return 0;
 		}
-		require(!failed && submissions == step - (scenario == "unavailable" ? 6u : 0u),
+		require(!failed && submissions == step - (scenario == "unavailable" || scenario == "posted-unavailable" ? 6u : 0u),
 			"Drawable frame completion count is wrong");
 		require(results.overlays == submissions && results.presentations == submissions - (scenario == "requests" ? 1u : 0u),
 			"GUI-only frames skipped presentation or GUI overlay rendering");
@@ -583,6 +686,10 @@ auto main (int argc, char **argv) -> int
 		}
 		if (scenario == "attachments")
 			require(results.recreations == 2 && results.resizes > 0, "Attachment changes were not exercised");
+		if (scenario.starts_with("posted"))
+			require(idleWaits == (scenario == "posted" ? 3u : 1u), "Posted redraw did not return to event waiting");
+		if (scenario == "posted-unavailable")
+			require(unavailableWaits == 2 && results.renders == 3, "Unavailable posted redraw was lost or kept polling");
 		return 0;
 	}
 	catch (const std::exception &error) {

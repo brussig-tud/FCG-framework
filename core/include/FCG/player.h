@@ -296,7 +296,8 @@ public:
 
 	/// \brief Check whether at least one continuous redraw request is active.
 	///
-	/// \return \c true if the main loop currently runs continuously, \c false if it waits for events.
+	/// \return
+	/// 	\c true if at least one \ref pushContinuousRedraw "continuous redraw request" is active, \c false otherwise.
 	[[nodiscard]] auto continuousRedrawRequested () const -> bool;
 
 	/// \brief Check whether closing the application was requested.
@@ -397,6 +398,19 @@ public:
 	///
 	/// \pre Call on the main thread.
 	void requireSceneRedraw () noexcept;
+
+	/// \brief Schedule a scene refresh in the next iteration without waiting for events.
+	///
+	/// Call from an applet callback to run another iteration as soon as possible, polling events instead of waiting.
+	/// Calling before scene rendering also refreshes the current drawable frame. Repeated calls within an iteration
+	/// are combined into one request; calling again during the posted iteration schedules another iteration.
+	/// Requests from initialization apply to the first iteration. Each request completes automatically.
+	///
+	/// If the posted iteration has no window image, the scene refresh remains pending until a drawable frame is
+	/// available, but subsequent iterations may wait for events. Continuous redraw requests are counted separately.
+	///
+	/// \pre Call on the main thread.
+	void postRedraw () noexcept;
 
 	/// \brief Add a continuous redraw request.
 	///
@@ -585,6 +599,9 @@ private:
 
 	/// Whether the complete scene must be rendered at the next drawable opportunity.
 	bool sceneRedrawRequired = true;
+
+	/// Whether the next iteration must poll events and refresh the scene; consumed before that iteration's callbacks.
+	bool redrawPosted = false;
 
 	/// The current clear color of the main window viewport, in linear RGBA space.
 	glm::fvec4 m_clearColor = {0.0097f, 0.0331f, 0.1329f, 1.0f};

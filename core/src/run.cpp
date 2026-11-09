@@ -262,8 +262,8 @@ FCG_FRAMEWORK_EXPORT auto run (
 				SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Player: startup complete.");
 			}
 
-			// The main loop – runs until the window is closed. By default it blocks while waiting for events; while at
-			// least one applet requests continuous redraws, the next iteration is instead started as soon as possible.
+			// The main loop – runs until the window is closed. By default it blocks while waiting for events; while
+			// an applet posts a redraw or requests continuous redraws, the next iteration starts as soon as possible.
 			// ImGui is immediate-mode, so input events processed in one frame only manifest in the next frame (and
 			// the resulting layout settles one frame after that) – hence every event burst is followed by additional
 			// redraws, tracked via the pending redraws counter. It is initialized to 2 so the first frames are drawn
@@ -274,6 +274,11 @@ FCG_FRAMEWORK_EXPORT auto run (
 			{
 				// Freeze selection before any callbacks can queue another request
 				const auto cameraSelection = std::exchange(player.pendingCamera, std::nullopt);
+
+				// Transfer posted work to this iteration before callbacks can post another iteration
+				const bool redrawPosted = std::exchange(player.redrawPosted, false);
+				if (redrawPosted)
+					player.requireSceneRedraw();
 
 				// Retain the last animation frame even if callbacks release continuous redraw during this iteration
 				if (player.continuousRedrawRequested())
@@ -359,6 +364,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 
 				// Event handling
 				if (   player.continuousRedrawRequested() || pendingRedraws > 0
+					|| redrawPosted || player.redrawPosted
 					|| player.pendingSceneFormat || player.pendingCamera
 					|| (player.frame && player.sceneRedrawRequired))
 				{
@@ -439,7 +445,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 					auto endPass = [](Frame *frame) { frame->endRenderPass(); };
 
 					// Refresh the retained scene only when requested or while animating
-					if (player.sceneRedrawRequired || player.continuousRedrawRequested())
+					if (player.sceneRedrawRequired || player.redrawPosted || player.continuousRedrawRequested())
 					{
 						auto *renderPass = player.frame->beginRenderPass(player.clearColor());
 						if (!renderPass)

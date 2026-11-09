@@ -69,6 +69,10 @@ public:
 		if (ImGui::ColorEdit3("Background", &player.clearColor().r))
 			player.requireSceneRedraw();
 		// [scene_redraw]
+		// [post_redraw]
+		if (ImGui::Button("Refresh this frame and the next"))
+			player.postRedraw();
+		// [post_redraw]
 		ImGui::End();
 	}
 	// [builtin_gamma]
