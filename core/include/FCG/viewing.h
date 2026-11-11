@@ -149,19 +149,19 @@ struct CameraParameters
 	////
 	// Types
 
-	/// Optical parameters of a camera. All scalar values must be finite.
+	/// \brief Optical parameters of a camera. All scalar values must be finite.
 	struct Intrinsics
 	{
 		////
 		// Types
 
-		/// Selects a perspective projection, described by its vertical field-of-view angle.
+		/// \brief Selects a perspective projection, described by its vertical field-of-view angle.
 		struct PerspectiveFov {
 			/// The full vertical field-of-view angle in degrees, strictly between 0 and 180.
 			float angle;
 		};
 
-		/// Selects an orthographic projection, described by the full vertical extent of the view volume.
+		/// \brief Selects an orthographic projection, described by the full vertical extent of the view volume.
 		struct OrthoExtend {
 			/// The full vertical height of the view volume in world units, strictly positive.
 			float size;
@@ -178,7 +178,7 @@ struct CameraParameters
 		////
 		// Fields
 
-		/// The projection type and its vertical field of view.
+		/// \brief The projection type and its vertical field of view.
 		FovY fovY;
 
 		/// \brief
@@ -190,12 +190,14 @@ struct CameraParameters
 		/// <tt>\ref fcg::Camera::setFocalLength "Camera::setFocalLength"</tt>.
 		float f;
 
-		/// The distance of the near clipping plane from the eye along the viewing direction, in world units.
-		/// Must be strictly positive.
+		/// \brief The distance of the near clipping plane from the eye along the viewing direction, in world units.
+		///
+		/// \pre Must be strictly positive.
 		float zNear;
 
-		/// The distance of the far clipping plane from the eye along the viewing direction, in world units.
-		/// Must be greater than \c zNear.
+		/// \brief The distance of the far clipping plane from the eye along the viewing direction, in world units.
+		///
+		/// \pre Must be greater than \c zNear.
 		float zFar;
 
 
@@ -211,8 +213,7 @@ struct CameraParameters
 		/// 	Both viewport dimensions are positive, <tt>0 < zNear < zFar</tt>, and the perspective angle is in
 		/// 	(0, 180) or the orthographic size is positive.
 		///
-		/// \param viewportSize
-		/// 	The drawable viewport dimensions in pixels, e.g. \c Player::viewportSize.
+		/// \param viewportSize The drawable viewport dimensions in pixels, e.g. \c Player::viewportSize.
 		///
 		/// \return The projection matrix.
 		[[nodiscard]] inline auto projectionMatrix (const glm::uvec2 &viewportSize) const -> glm::mat4
@@ -253,8 +254,7 @@ struct CameraParameters
 		///
 		/// \pre \c diameter is finite and positive. For a perspective projection, \c f is finite and positive.
 		///
-		/// \param diameter
-		/// 	The requested full vertical height at the focus distance, in world units.
+		/// \param diameter The requested full vertical height at the focus distance, in world units.
 		inline void setFovYForFrustumDiameterAtFocus (float diameter) {
 			if (auto *perspective = std::get_if<PerspectiveFov>(&fovY))
 				perspective->angle = glm::degrees(2.f * glm::atan(.5f * diameter / f));
@@ -268,8 +268,7 @@ struct CameraParameters
 		///
 		/// \pre \c diameter is finite and positive, and the perspective angle is in (0, 180).
 		///
-		/// \param diameter
-		/// 	The requested full vertical height at the focus distance, in world units.
+		/// \param diameter The requested full vertical height at the focus distance, in world units.
 		///
 		/// \throws std::logic_error
 		/// 	If the projection is orthographic, whose view height does not depend on the focus distance. The
@@ -288,10 +287,10 @@ struct CameraParameters
 		////
 		// Fields
 
-		/// The eye position in world space.
+		/// \brief The eye position in world space.
 		glm::vec3 eye;
 
-		/// The viewing direction in world space. The framework's cameras keep it normalized.
+		/// \brief The viewing direction in world space. The framework's cameras keep it normalized.
 		glm::vec3 dir;
 
 		/// \brief
@@ -321,10 +320,10 @@ struct CameraParameters
 	////
 	// Fields
 
-	/// The intrinsic camera parameters, describing its optics.
+	/// \brief The intrinsic camera parameters, describing its optics.
 	Intrinsics intrinsics;
 
-	/// The extrinsic camera parameters, describing its world-space position and orientation.
+	/// \brief The extrinsic camera parameters, describing its world-space position and orientation.
 	Extrinsics extrinsics;
 
 
@@ -510,8 +509,7 @@ public:
 
 	/// \brief Compute the projection matrix of the current optics for the given viewport.
 	///
-	/// \param viewportSize
-	/// 	The drawable viewport dimensions in pixels. Both must be positive.
+	/// \param viewportSize The drawable viewport dimensions in pixels. Both must be positive.
 	///
 	/// \return
 	/// 	The projection matrix as computed by
@@ -537,8 +535,7 @@ public:
 	///
 	/// The camera may clamp the angle or size to its supported range.
 	///
-	/// \param fovY
-	/// 	The perspective angle in degrees or the orthographic view height in world units.
+	/// \param fovY The perspective angle in degrees or the orthographic view height in world units.
 	///
 	/// \throws std::invalid_argument
 	/// 	If the value is not finite or the camera does not support the requested projection type.
@@ -550,8 +547,7 @@ public:
 	/// <tt>\ref CameraParameters::Intrinsics::f "CameraParameters::Intrinsics::f"</tt>. The camera may clamp the
 	/// value to a minimum.
 	///
-	/// \param f
-	/// 	The new focus distance in world units.
+	/// \param f The new focus distance in world units.
 	///
 	/// \throws std::invalid_argument
 	/// 	If \c f is not finite or the resulting focal point cannot be represented.
@@ -562,8 +558,7 @@ public:
 	/// The camera may clamp the value to a minimum, and moves the far plane outward if necessary to keep it beyond
 	/// the near plane.
 	///
-	/// \param zNear
-	/// 	The new near clipping distance from the eye, in world units.
+	/// \param zNear The new near clipping distance from the eye, in world units.
 	///
 	/// \throws std::invalid_argument
 	/// 	If \c zNear is not finite or no greater finite far clipping distance is representable as a
@@ -574,8 +569,7 @@ public:
 	///
 	/// The value is clamped to stay greater than the near clipping distance.
 	///
-	/// \param zFar
-	/// 	The new far clipping distance from the eye, in world units.
+	/// \param zFar The new far clipping distance from the eye, in world units.
 	///
 	/// \throws std::invalid_argument
 	/// 	If \c zFar is not finite.
@@ -583,8 +577,7 @@ public:
 
 	/// \brief Set the world-space eye position, keeping orientation and focus distance.
 	///
-	/// \param eye
-	/// 	The new eye position.
+	/// \param eye The new eye position.
 	///
 	/// \throws std::invalid_argument
 	/// 	If \c eye is not finite or the resulting pose or focal point cannot be represented.
@@ -596,8 +589,7 @@ public:
 	/// normalized, keeping the eye and focus distance. Cameras may snap an accepted direction to a supported axis;
 	/// the up vector is projected against that stored direction.
 	///
-	/// \param dir
-	/// 	The new viewing direction in world space.
+	/// \param dir The new viewing direction in world space.
 	///
 	/// \throws std::invalid_argument
 	/// 	If \c dir is zero or not finite, the cross product of the normalized axes has length below
@@ -609,8 +601,7 @@ public:
 	/// The input is normalized, projected onto the viewing plane and normalized again. The eye, viewing direction
 	/// and focus distance stay unchanged.
 	///
-	/// \param up
-	/// 	The new up vector in world space.
+	/// \param up The new up vector in world space.
 	///
 	/// \throws std::invalid_argument
 	/// 	If \c up is zero or not finite, the cross product of the normalized axes has length below
@@ -653,11 +644,11 @@ public:
 
 	/// \brief Make the given world-space point the focal point.
 	///
-	/// How this is achieved depends on the camera, e.g. turning toward the point or panning to it; see the
-	/// implementing class.
+	/// How this is achieved depends on the kind of camera, 3D cameras are expected to turn toward the point, while
+	/// planar cameras can only translate the eye (essentially making this synonymous with
+	/// <tt>translateToFocalPoint</tt>).
 	///
-	/// \param focalPoint
-	/// 	The new focal point in world space.
+	/// \param focalPoint The new focal point in world space.
 	///
 	/// \throws std::invalid_argument
 	/// 	If \c focalPoint is not finite or cannot be reached under the camera's constraints.
@@ -665,8 +656,7 @@ public:
 
 	/// \brief Move the eye so that the given point becomes the focal point, keeping orientation and focus distance.
 	///
-	/// \param focalPoint
-	/// 	The new focal point in world space.
+	/// \param focalPoint The new focal point in world space.
 	///
 	/// \throws std::invalid_argument
 	/// 	If \c focalPoint is not finite or cannot be reached under the camera's constraints.
@@ -690,8 +680,7 @@ public:
 	/// For a perspective camera, the angle changes; for an orthographic camera, the view height is set directly. The
 	/// diameter is first clamped to at least 0.001, and the result is then subject to the clamping of \c setFovY.
 	///
-	/// \param diameter
-	/// 	The requested full vertical height at the focus distance, in world units.
+	/// \param diameter The requested full vertical height at the focus distance, in world units.
 	///
 	/// \throws std::invalid_argument
 	/// 	If \c diameter is not finite, or if \c setFovY rejects the result.
@@ -706,8 +695,7 @@ public:
 	/// 	For orbit cameras, an extreme resulting focus distance can destabilize mouse navigation: single-precision
 	/// 	arithmetic can lose the small offsets needed to calculate a valid viewing pose.
 	///
-	/// \param diameter
-	/// 	The requested full vertical height at the focus distance, in world units.
+	/// \param diameter The requested full vertical height at the focus distance, in world units.
 	///
 	/// \throws std::invalid_argument
 	/// 	If \c diameter is not finite, or if \c setFocalLength rejects the result.
@@ -749,8 +737,7 @@ public:
 	/// 	For orbit cameras, an extreme resulting focus distance can destabilize mouse navigation: single-precision
 	/// 	arithmetic can lose the small offsets needed to calculate a valid viewing pose.
 	///
-	/// \param diameter
-	/// 	The requested full vertical height at the focus distance, in world units.
+	/// \param diameter The requested full vertical height at the focus distance, in world units.
 	///
 	/// \throws std::invalid_argument
 	/// 	If \c diameter is not finite, a computed setter argument cannot be represented in single precision, or
@@ -774,7 +761,8 @@ public:
 	///
 	/// \param radius The sphere radius in world units.
 	/// \param distance
-	/// 	The positive distance from the original eye to the sphere center along the viewing direction, in world units.
+	/// 	The positive distance from the original eye to the sphere center along the viewing direction, in world
+	/// 	units.
 	///
 	/// \throws std::invalid_argument
 	/// 	If a size or distance is nonfinite, \p distance is nonpositive, a computed setter argument cannot be
