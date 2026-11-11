@@ -30,6 +30,7 @@ if(FCG_SDL_IMAGE_BUILT_HERE AND SDL3_BINARY_DIR)
         "-DTEST_C_COMPILER=${CMAKE_C_COMPILER}"
         "-DTEST_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
         "-DTEST_GENERATOR=${CMAKE_GENERATOR}"
+        "-DTEST_CONFIG=$<CONFIG>"
         "-DTEST_WEBP=${WebP_FOUND}"
         ${dependency_sources}
         -P "${CMAKE_CURRENT_LIST_DIR}/run.cmake"

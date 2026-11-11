@@ -7,11 +7,18 @@ function(run)
     endif()
 endfunction()
 
+# Leave the build tool's default configuration in use when the parent has no selected configuration
+set(config_args)
+if(NOT "${TEST_CONFIG}" STREQUAL "")
+    list(APPEND config_args --config "${TEST_CONFIG}")
+endif()
+
+# Match the parent configuration when linking its prebuilt libraries into fixture consumers
 set(common "-DFCG_SOURCE=${FCG_SOURCE}" "-DIMAGE_DEPENDENCY_SOURCE=${IMAGE_DEPENDENCY_SOURCE}"
     "-DCPM_fcg_stb_SOURCE=${CPM_fcg_stb_SOURCE}"
     "-DMESH_DEPENDENCY_MANIFEST=${MESH_DEPENDENCY_MANIFEST}"
     "-DSDL3_DIR=${SDL3_DIR}" "-DCMAKE_C_COMPILER=${TEST_C_COMPILER}" "-DCMAKE_CXX_COMPILER=${TEST_CXX_COMPILER}"
-    "-DTEST_BACKEND_SHARED=${TEST_BACKEND_SHARED}" "-DCMAKE_BUILD_TYPE=Debug"
+    "-DTEST_BACKEND_SHARED=${TEST_BACKEND_SHARED}" "-DCMAKE_BUILD_TYPE=${TEST_CONFIG}"
     "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
     "-DGLM_SOURCE=${GLM_SOURCE}" "-DIMGUI_SOURCE=${IMGUI_SOURCE}" "-DIMGUI_LIBRARY=${IMGUI_LIBRARY}"
     "-DIMGUI_RUNTIME=${IMGUI_RUNTIME}" "-DIMGUI_SHARED=${IMGUI_SHARED}"
@@ -83,10 +90,10 @@ foreach(shared OFF ON)
     set(binary "${TEST_BINARY}/minimal-${shared}")
     run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${binary}" -G "${TEST_GENERATOR}"
         ${common} -DMODE=minimal "-DFRAMEWORK_SHARED=${shared}")
-    run("${CMAKE_COMMAND}" --build "${binary}" --target backend-consumer Extras --config Debug --parallel)
-    include("${binary}/consumer-Debug.cmake")
+    run("${CMAKE_COMMAND}" --build "${binary}" --target backend-consumer Extras ${config_args} --parallel)
+    include("${binary}/consumer-${TEST_CONFIG}.cmake")
     run("${consumer}")
-    run("${CMAKE_COMMAND}" --install "${binary}" --config Debug --prefix "${binary}/prefix")
+    run("${CMAKE_COMMAND}" --install "${binary}" ${config_args} --prefix "${binary}/prefix")
     file(GLOB exports "${binary}/prefix/lib/cmake/Fixture/*.cmake")
     foreach(export IN LISTS exports)
         file(READ "${export}" contents)
@@ -100,8 +107,8 @@ if(TEST_WEBP)
     foreach(mode normal cache)
         run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${TEST_BINARY}/${mode}" -G "${TEST_GENERATOR}"
             ${common} "-DMODE=${mode}" -DFRAMEWORK_SHARED=OFF)
-        run("${CMAKE_COMMAND}" --build "${TEST_BINARY}/${mode}" --target optional-codec --config Debug --parallel)
-        include("${TEST_BINARY}/${mode}/consumer-Debug.cmake")
+        run("${CMAKE_COMMAND}" --build "${TEST_BINARY}/${mode}" --target optional-codec ${config_args} --parallel)
+        include("${TEST_BINARY}/${mode}/consumer-${TEST_CONFIG}.cmake")
         run("${consumer}" "${FCG_SOURCE}/libs/image/tests/fixtures/colors.webp")
     endforeach()
 else()
@@ -115,10 +122,10 @@ if(TEST_LIBAVIF_SOURCE AND TEST_LIBAOM_SOURCE)
         run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${binary}" -G "${TEST_GENERATOR}"
             ${common} "-DMODE=${mode}" "-DFRAMEWORK_SHARED=${shared}"
             "-DTEST_LIBAVIF_SOURCE=${TEST_LIBAVIF_SOURCE}" "-DTEST_LIBAOM_SOURCE=${TEST_LIBAOM_SOURCE}")
-        run("${CMAKE_COMMAND}" --build "${binary}" --target optional-codec Extras --config Debug --parallel)
-        include("${binary}/consumer-Debug.cmake")
+        run("${CMAKE_COMMAND}" --build "${binary}" --target optional-codec Extras ${config_args} --parallel)
+        include("${binary}/consumer-${TEST_CONFIG}.cmake")
         run("${consumer}" "${IMAGE_DEPENDENCY_SOURCE}/test/sample.avif" 23 42 AVIF)
-        run("${CMAKE_COMMAND}" --install "${binary}" --config Debug --prefix "${binary}/prefix")
+        run("${CMAKE_COMMAND}" --install "${binary}" ${config_args} --prefix "${binary}/prefix")
     endforeach()
 endif()
 if(TEST_LIBTIFF_SOURCE)
@@ -129,10 +136,10 @@ if(TEST_LIBTIFF_SOURCE)
         run("${CMAKE_COMMAND}" -S "${TEST_SOURCE}" -B "${binary}" -G "${TEST_GENERATOR}"
             ${common} "-DMODE=${mode}" "-DFRAMEWORK_SHARED=${shared}"
             "-DTEST_LIBTIFF_SOURCE=${TEST_LIBTIFF_SOURCE}")
-        run("${CMAKE_COMMAND}" --build "${binary}" --target optional-codec Extras --config Debug --parallel)
-        include("${binary}/consumer-Debug.cmake")
-        if(EXISTS "${binary}/tiff-runtime-Debug.cmake" AND NOT CMAKE_HOST_WIN32)
-            include("${binary}/tiff-runtime-Debug.cmake")
+        run("${CMAKE_COMMAND}" --build "${binary}" --target optional-codec Extras ${config_args} --parallel)
+        include("${binary}/consumer-${TEST_CONFIG}.cmake")
+        if(EXISTS "${binary}/tiff-runtime-${TEST_CONFIG}.cmake" AND NOT CMAKE_HOST_WIN32)
+            include("${binary}/tiff-runtime-${TEST_CONFIG}.cmake")
             if(CMAKE_HOST_APPLE)
                 set(tiff_loader_path "DYLD_LIBRARY_PATH=${tiff_runtime_dir}:$ENV{DYLD_LIBRARY_PATH}")
             else()
@@ -143,7 +150,7 @@ if(TEST_LIBTIFF_SOURCE)
         else()
             run("${consumer}" "${IMAGE_DEPENDENCY_SOURCE}/test/sample.tif" 23 42 TIFF)
         endif()
-        run("${CMAKE_COMMAND}" --install "${binary}" --config Debug --prefix "${binary}/prefix")
+        run("${CMAKE_COMMAND}" --install "${binary}" ${config_args} --prefix "${binary}/prefix")
         file(GLOB exports "${binary}/prefix/lib/cmake/Fixture/*.cmake")
         foreach(export IN LISTS exports)
             file(READ "${export}" contents)
