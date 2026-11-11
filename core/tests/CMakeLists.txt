@@ -13,6 +13,14 @@ target_link_libraries(gui-scaling-smoke PRIVATE Core)
 add_test(NAME gui-scaling-smoke COMMAND gui-scaling-smoke)
 set_tests_properties(gui-scaling-smoke PROPERTIES TIMEOUT 10)
 
+# GUI layout convergence at startup and after an event, without input masking premature waits.
+add_executable(gui-settling-smoke gui/settling.cpp)
+target_compile_definitions(gui-settling-smoke PRIVATE FCG_FRAMEWORK_STATIC_DEFINE)
+target_link_libraries(gui-settling-smoke PRIVATE Core)
+add_test(NAME gui-settling-smoke COMMAND gui-settling-smoke)
+set_tests_properties(gui-settling-smoke PROPERTIES TIMEOUT 60
+	FAIL_REGULAR_EXPRESSION "Validation (Error|Warning|Performance Warning);VUID-")
+
 # Public GUI unit conversions, custom arithmetic and frame geometry through the real runtime.
 add_executable(gui-units-smoke gui/units.cpp)
 target_link_libraries(gui-units-smoke PRIVATE Core)

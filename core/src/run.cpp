@@ -5,6 +5,7 @@
 //
 
 // C++ STL
+#include <cstddef>
 #include <cstdlib>
 #include <exception>
 #include <memory>
@@ -17,6 +18,9 @@
 
 // SDL3
 #include <SDL3/SDL.h>
+
+// Dear ImGui
+#include <imgui.h>
 
 // Local includes
 #include "FCG/run.h"
@@ -36,6 +40,67 @@
 
 // Anonymous namespace begin
 namespace {
+
+/// Number of GUI frames between layout-convergence checks after startup, input or a geometry change.
+constexpr unsigned guiSettleFrames = 2;
+
+/// Compare submitted GUI geometry without treating changing text colors or texture contents as layout changes.
+class GuiLayout
+{
+public:
+
+	////
+	// Methods
+
+	/// Retain this checkpoint's layout and report whether it differs from the preceding checkpoint.
+	[[nodiscard]] auto changed () -> bool
+	{
+		// Serialize only initialized geometry fields; draw callbacks and font-atlas updates are not layout
+		current.clear();
+		const auto append = [this] (const auto &value) {
+			const auto bytes = std::as_bytes(std::span(&value, 1));
+			current.insert(current.end(), bytes.begin(), bytes.end());
+		};
+		if (const auto *data = ImGui::GetDrawData())
+		{
+			append(data->DisplayPos);
+			append(data->DisplaySize);
+			append(data->FramebufferScale);
+			append(data->CmdLists.Size);
+			for (const auto *list : data->CmdLists)
+			{
+				append(list->VtxBuffer.Size);
+				for (const auto &vertex : list->VtxBuffer)
+					append(vertex.pos);
+				append(list->IdxBuffer.Size);
+				const auto indices = std::as_bytes(std::span(list->IdxBuffer.Data, list->IdxBuffer.Size));
+				current.insert(current.end(), indices.begin(), indices.end());
+				append(list->CmdBuffer.Size);
+				for (const auto &command : list->CmdBuffer) {
+					append(command.ClipRect);
+					append(command.VtxOffset);
+					append(command.IdxOffset);
+					append(command.ElemCount);
+				}
+			}
+		}
+		const bool result = current != previous;
+		previous.swap(current);
+		return result;
+	}
+
+
+private:
+
+	////
+	// Fields
+
+	/// Geometry from the preceding convergence check, independent of ImGui's reused draw buffers.
+	std::vector<std::byte> previous;
+
+	/// Reused storage for the current frame's geometry.
+	std::vector<std::byte> current;
+};
 
 /// Handle a single SDL event: feed it to the GUI, dispatch main-window input events to the applets unless the GUI
 /// captures them, and react to close requests and Escape.
@@ -264,11 +329,12 @@ FCG_FRAMEWORK_EXPORT auto run (
 
 			// The main loop – runs until the window is closed. By default it blocks while waiting for events; while
 			// an applet posts a redraw or requests continuous redraws, the next iteration starts as soon as possible.
-			// ImGui is immediate-mode, so input events processed in one frame only manifest in the next frame (and
-			// the resulting layout settles one frame after that) – hence every event burst is followed by additional
-			// redraws, tracked via the pending redraws counter. It is initialized to 2 so the first frames are drawn
-			// right after startup instead of only after some external event unblocks the loop.
-			unsigned pendingRedraws = 2;
+			// Input processing and layout can span several ImGui frames. After each event burst, let four frames
+			// settle before comparing GUI geometry with the preceding checkpoint. Renew the budget if it changed:
+			// wrapped text in proportional tables measures content using the preceding frame's column widths.
+			// Start with the same budget so layout can begin without an external event.
+			unsigned pendingRedraws = guiSettleFrames;
+			GuiLayout guiLayout;
 			auto lastFrameTime = std::chrono::high_resolution_clock::now();
 			while (!player.shouldClose())
 			{
@@ -290,7 +356,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 				// Requests made in callbacks are applied only between iterations, even without a drawable image.
 				const bool sceneFormatChanged = player.applySceneFormat();
 				if (sceneFormatChanged) {
-					pendingRedraws = 2;
+					pendingRedraws = guiSettleFrames;
 					player.requireSceneRedraw();
 				}
 
@@ -351,7 +417,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 				const auto *previousCamera = player.currentCamera;
 				player.applyCameraSelection(cameraSelection);
 				if (player.currentCamera != previousCamera)
-					pendingRedraws = 2;
+					pendingRedraws = guiSettleFrames;
 				player.prepareCameraPipelines();
 				if (sceneFormatChanged)
 					for (auto *applet : player.otherApplets)
@@ -378,7 +444,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 						handledAnyEvent = true;
 					}
 					if (handledAnyEvent)
-						pendingRedraws = 2;
+						pendingRedraws = guiSettleFrames;
 					else if (pendingRedraws > 0)
 						--pendingRedraws;
 				}
@@ -396,7 +462,7 @@ FCG_FRAMEWORK_EXPORT auto run (
 						while (SDL_PollEvent(&event))
 							handleEvent(event, *window, *gui, player, player.otherApplets,
 								player.currentCamera ? player.currentCamera->applet : nullptr);
-						pendingRedraws = 2; // ImGui reacts to input with one frame latency, schedule follow-up redraws
+						pendingRedraws = guiSettleFrames;
 					}
 					else if (waitTimeoutMs < 0)
 					{
@@ -439,6 +505,11 @@ FCG_FRAMEWORK_EXPORT auto run (
 
 				// Finalize GUI uploads before scene rendering and presentation
 				gui->prepareRender(player.frame);
+
+				// Compare geometry only after the settle budget has been consumed
+				if (pendingRedraws == 0 && guiLayout.changed())
+					pendingRedraws = guiSettleFrames;
+
 				if (player.frame)
 				{
 					// Common logic to both scene render and overlay pass guards

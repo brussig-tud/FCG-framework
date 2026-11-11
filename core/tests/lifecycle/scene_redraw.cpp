@@ -93,12 +93,11 @@ auto waitEvent (SDL_Event *event, int timeout) -> bool
 	// Check exact idle boundaries so a premature wait cannot be hidden by a synthetic wakeup
 	if (scenario == "posted" || scenario == "posted-init" || scenario == "posted-continuous")
 	{
-		const auto expectedStep = scenario == "posted" ? std::array{7u, 10u, 13u}.at(idleWaits)
-			: scenario == "posted-init" ? 2u : 3u;
+		const auto expectedStep = scenario == "posted" ? std::array{8u, 13u, 18u}.at(idleWaits) : 8u;
 		require(step == expectedStep && timeout == -1, "Posted redraw waited at an unexpected iteration");
 		++idleWaits;
 		*event = {};
-		event->type = scenario == "posted" && step == 7 ? SDL_EVENT_DROP_COMPLETE : SDL_EVENT_USER;
+		event->type = scenario == "posted" && step == 8 ? SDL_EVENT_DROP_COMPLETE : SDL_EVENT_USER;
 		if (event->type == SDL_EVENT_DROP_COMPLETE)
 			event->drop.windowID = mainWindowID;
 		return true;
@@ -107,10 +106,10 @@ auto waitEvent (SDL_Event *event, int timeout) -> bool
 	{
 		require(timeout == -1, "Posted redraw unexpectedly used a timed wait");
 		if (noImage) {
-			require(step == 3 || step == 6, "Unavailable posted redraw waited at an unexpected iteration");
+			require(step == 8 || step == 13, "Unavailable posted redraw waited at an unexpected iteration");
 			++unavailableWaits;
 		} else {
-			require(step == 9, "Posted redraw did not poll before its scene refresh");
+			require(step == 18, "Posted redraw did not poll before its scene refresh");
 			++idleWaits;
 		}
 		*event = {};
@@ -250,6 +249,7 @@ public:
 	/// Set a distinguishable background and install real sRGB presentation.
 	void init (fcg::Device &device, fcg::Player &player) override
 	{
+		ImGui::GetIO().IniFilename = nullptr;
 		gpu = device.handle();
 		this->player = &player;
 		mainWindowID = player.mainWindow()->id();
@@ -317,13 +317,15 @@ public:
 	void gui (fcg::Device&, fcg::Player &player) override
 	{
 		++step;
+		// Keep this scheduling probe's GUI geometry constant; layout convergence is covered by gui-settling-smoke
+		ImGui::SetNextWindowSize(ImVec2(320, 160));
 		ImGui::Begin("Redraw probe");
 		if (scenario == "caret") {
 			if (step == 1)
 				ImGui::SetKeyboardFocusHere();
 			ImGui::InputText("Editor", text.data(), text.size());
 		}
-		ImGui::Text("Iteration %u", step);
+		ImGui::TextUnformatted("Retained scene");
 		ImGui::End();
 		if (scenario == "requests" && step == 2) {
 			player.requireSceneRedraw();
@@ -357,7 +359,7 @@ public:
 		}
 		if (scenario == "posted-unavailable" && step == 2) {
 			player.postRedraw();
-			unavailableImages = 6;
+			unavailableImages = 12;
 		}
 		if (scenario.starts_with("posted") && scenario != "posted-continuous")
 			require(!player.continuousRedrawRequested(), "Posting a redraw changed the continuous redraw count");
@@ -406,7 +408,7 @@ public:
 		if (scenario == "unavailable")
 		{
 			if (step == 2)
-				unavailableImages = 6;
+				unavailableImages = 12;
 			if (step == 3 || step == 4)
 				player.requireSceneRedraw();
 			if (step == 4) {
@@ -435,7 +437,7 @@ public:
 
 		// Drive GUI-only iterations with explicit events, leaving late requests to wake the loop themselves
 		const bool wake = scenario == "requests" ? step < 9 || step == 14
-			: scenario == "caret" ? step < 4 : scenario == "unavailable" ? step < 2 || step >= 9
+			: scenario == "caret" ? step < 4 : scenario == "unavailable" ? step < 2 || step >= 15
 			: !scenario.starts_with("posted");
 		if (wake) {
 			SDL_Event event{};
@@ -446,10 +448,10 @@ public:
 			}
 			queuedEvent = event;
 		}
-		const auto finalStep = scenario == "requests" ? 15u : scenario == "unavailable" ? 10u
+		const auto finalStep = scenario == "requests" ? 15u : scenario == "unavailable" ? 16u
 			: scenario == "attachments" ? 6u : scenario == "continuous" ? 5u : scenario == "cameras" ? 14u
-			: scenario == "posted" ? 14u : scenario == "posted-init" ? 3u : scenario == "posted-unavailable" ? 10u
-			: scenario == "posted-continuous" ? 4u : 20u;
+			: scenario == "posted" || scenario == "posted-unavailable" ? 19u : scenario == "posted-init" ? 9u
+			: scenario == "posted-continuous" ? 9u : 20u;
 		if (step == finalStep || (scenario == "caret" && periodicWaits >= 2))
 			player.requestClose();
 	}
@@ -489,16 +491,16 @@ private:
 		if (scenario == "continuous")
 			return std::array{1u, 2u, 3u, 3u, 3u}.at(step - 1);
 		if (scenario == "posted")
-			return std::array{1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 9u, 10u, 11u, 11u, 11u}.at(step - 1);
+			return step >= 12 ? 11u : std::array{1u, 2u, 3u, 4u, 5u, 6u, 7u, 7u, 8u, 9u, 10u}.at(step - 1);
 		if (scenario == "posted-unavailable")
-			return step == 1 ? 1u : step < 9 ? 2u : 3u;
+			return step == 1 ? 1u : step < 15 ? 2u : 3u;
 		if (scenario == "posted-continuous")
 			return step < 3 ? step : 3u;
 		if (scenario == "attachments")
 			return std::array{1u, 1u, 2u, 3u, 3u, 3u}.at(step - 1);
 		if (scenario == "cameras")
 			return std::array{1u, 2u, 2u, 3u, 4u, 5u, 5u, 6u, 7u, 7u, 8u, 8u, 9u, 9u}.at(step - 1);
-		return scenario == "unavailable" && step >= 9 ? 2u : 1u;
+		return scenario == "unavailable" && step >= 15 ? 2u : 1u;
 	}
 
 	/// Install a recorder that checks rendering decisions before sampling the scene.
@@ -673,7 +675,7 @@ auto main (int argc, char **argv) -> int
 				&& results.overlays == 0, "Failed scene pass did not stop presentation and finish its frame");
 			return 0;
 		}
-		require(!failed && submissions == step - (scenario == "unavailable" || scenario == "posted-unavailable" ? 6u : 0u),
+		require(!failed && submissions == step - (scenario == "unavailable" || scenario == "posted-unavailable" ? 12u : 0u),
 			"Drawable frame completion count is wrong");
 		require(results.overlays == submissions && results.presentations == submissions - (scenario == "requests" ? 1u : 0u),
 			"GUI-only frames skipped presentation or GUI overlay rendering");
