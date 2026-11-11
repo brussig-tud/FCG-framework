@@ -93,11 +93,13 @@ auto waitEvent (SDL_Event *event, int timeout) -> bool
 	// Check exact idle boundaries so a premature wait cannot be hidden by a synthetic wakeup
 	if (scenario == "posted" || scenario == "posted-init" || scenario == "posted-continuous")
 	{
-		const auto expectedStep = scenario == "posted" ? std::array{8u, 13u, 18u}.at(idleWaits) : 8u;
+		// Startup takes two two-frame rounds; the posted callback chain extends polling through step 7.
+		// Each wakeup then adds its GUI frame and two follow-up frames before waiting again.
+		const auto expectedStep = scenario == "posted" ? std::array{7u, 10u, 13u}.at(idleWaits) : 4u;
 		require(step == expectedStep && timeout == -1, "Posted redraw waited at an unexpected iteration");
 		++idleWaits;
 		*event = {};
-		event->type = scenario == "posted" && step == 8 ? SDL_EVENT_DROP_COMPLETE : SDL_EVENT_USER;
+		event->type = scenario == "posted" && step == 7 ? SDL_EVENT_DROP_COMPLETE : SDL_EVENT_USER;
 		if (event->type == SDL_EVENT_DROP_COMPLETE)
 			event->drop.windowID = mainWindowID;
 		return true;
@@ -105,11 +107,13 @@ auto waitEvent (SDL_Event *event, int timeout) -> bool
 	if (scenario == "posted-unavailable")
 	{
 		require(timeout == -1, "Posted redraw unexpectedly used a timed wait");
+		// Startup settles at step 4; each synthetic wakeup adds one GUI frame and two follow-ups
 		if (noImage) {
-			require(step == 8 || step == 13, "Unavailable posted redraw waited at an unexpected iteration");
+			require(step == std::array{4u, 7u, 10u, 13u}.at(unavailableWaits),
+				"Unavailable posted redraw waited at an unexpected iteration");
 			++unavailableWaits;
 		} else {
-			require(step == 18, "Posted redraw did not poll before its scene refresh");
+			require(step == 16, "Posted redraw did not poll before its scene refresh");
 			++idleWaits;
 		}
 		*event = {};
@@ -450,8 +454,8 @@ public:
 		}
 		const auto finalStep = scenario == "requests" ? 15u : scenario == "unavailable" ? 16u
 			: scenario == "attachments" ? 6u : scenario == "continuous" ? 5u : scenario == "cameras" ? 14u
-			: scenario == "posted" || scenario == "posted-unavailable" ? 19u : scenario == "posted-init" ? 9u
-			: scenario == "posted-continuous" ? 9u : 20u;
+			: scenario == "posted" ? 14u : scenario == "posted-unavailable" ? 17u : scenario == "posted-init" ? 5u
+			: scenario == "posted-continuous" ? 5u : 20u;
 		if (step == finalStep || (scenario == "caret" && periodicWaits >= 2))
 			player.requestClose();
 	}
@@ -491,7 +495,7 @@ private:
 		if (scenario == "continuous")
 			return std::array{1u, 2u, 3u, 3u, 3u}.at(step - 1);
 		if (scenario == "posted")
-			return step >= 12 ? 11u : std::array{1u, 2u, 3u, 4u, 5u, 6u, 7u, 7u, 8u, 9u, 10u}.at(step - 1);
+			return std::array{1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 9u, 10u, 11u, 11u, 11u}.at(step - 1);
 		if (scenario == "posted-unavailable")
 			return step == 1 ? 1u : step < 15 ? 2u : 3u;
 		if (scenario == "posted-continuous")
@@ -691,7 +695,7 @@ auto main (int argc, char **argv) -> int
 		if (scenario.starts_with("posted"))
 			require(idleWaits == (scenario == "posted" ? 3u : 1u), "Posted redraw did not return to event waiting");
 		if (scenario == "posted-unavailable")
-			require(unavailableWaits == 2 && results.renders == 3, "Unavailable posted redraw was lost or kept polling");
+			require(unavailableWaits == 4 && results.renders == 3, "Unavailable posted redraw was lost or kept polling");
 		return 0;
 	}
 	catch (const std::exception &error) {

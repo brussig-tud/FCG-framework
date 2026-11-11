@@ -329,10 +329,10 @@ FCG_FRAMEWORK_EXPORT auto run (
 
 			// The main loop – runs until the window is closed. By default it blocks while waiting for events; while
 			// an applet posts a redraw or requests continuous redraws, the next iteration starts as soon as possible.
-			// Input processing and layout can span several ImGui frames. After each event burst, let four frames
-			// settle before comparing GUI geometry with the preceding checkpoint. Renew the budget if it changed:
-			// wrapped text in proportional tables measures content using the preceding frame's column widths.
-			// Start with the same budget so layout can begin without an external event.
+			// Input processing and layout can span several ImGui frames. At startup and after each event burst, allow
+			// two frames before comparing GUI geometry with the preceding checkpoint. Changed geometry renews the
+			// budget for another two frames, so settling may take several rounds: wrapped text in proportional tables
+			// measures content using the preceding frame's column widths.
 			unsigned pendingRedraws = guiSettleFrames;
 			GuiLayout guiLayout;
 			auto lastFrameTime = std::chrono::high_resolution_clock::now();
