@@ -173,6 +173,18 @@ bool finiteMatrix (in mat3 value) {
 	return finiteVector(value[0]) && finiteVector(value[1]) && finiteVector(value[2]);
 }
 
+/// Reports whether an ellipsoid lies safely outside an unnormalized inward-facing eye-space plane.
+bool outsideFrustumPlane (in vec4 plane, in vec3 center, in mat3 sphereToEye)
+{
+	// Evaluate the center and the ellipsoid's exact extent along the plane normal
+	float centerValue = dot(plane.xyz, center) + plane.w;
+	float radius = length(transpose(sphereToEye) * plane.xyz);
+	float tolerance = 1e-5 * max(1.0, dot(abs(plane.xyz), abs(center)) + abs(plane.w) + radius);
+
+	// Retain boundary cases and skip rejection when intermediate arithmetic is nonfinite
+	return finiteVector(vec3(centerValue, radius, tolerance)) && centerValue + radius < -tolerance;
+}
+
 /// The shader entry point.
 void main ()
 {
@@ -208,6 +220,18 @@ void main ()
 	eyeToSphere = inverseScale * transpose(rotation) * mat3(viewing.invModelview);
 	if (!finiteVector(eyeCenter) || !finiteMatrix(sphereToEye) || !finiteMatrix(eyeToSphere))
 		return;
+
+	// Reject outside ellipsoids before an eye-plane crossing can expand their proxy to the full viewport
+	mat4 rows = transpose(viewing.projection);
+	if (outsideFrustumPlane(rows[3] + rows[0], eyeCenter, sphereToEye)
+		|| outsideFrustumPlane(rows[3] - rows[0], eyeCenter, sphereToEye)
+		|| outsideFrustumPlane(rows[3] + rows[1], eyeCenter, sphereToEye)
+		|| outsideFrustumPlane(rows[3] - rows[1], eyeCenter, sphereToEye)
+		|| outsideFrustumPlane(rows[2], eyeCenter, sphereToEye)
+		|| outsideFrustumPlane(rows[3] - rows[2], eyeCenter, sphereToEye))
+		return;
+
+	// Read the color for surviving instances
 	color = fetchAttribute(3, instance, 4);
 
 	// Build Gumhold's silhouette circle in unit-sphere coordinates for an external perspective eye

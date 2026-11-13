@@ -303,6 +303,21 @@ void assign (fcg::PrimitiveAttributes &attributes, const Ellipsoid &shape)
 	}));
 }
 
+/// Places one visible unit sphere among 256 offscreen spheres beside the camera.
+[[nodiscard]] auto offscreenPopulation (bool crossingEyePlane) -> std::vector<glm::vec4>
+{
+	// Alternate offscreen depths around the eye plane or keep every sphere in front of it
+	constexpr unsigned count = 256;
+	std::vector<glm::vec4> positions{{0, 0, -4, 1}};
+	positions.reserve(count + 1);
+	for (unsigned i = 0; i < count; ++i) {
+		const float angle = glm::radians(360.f) * i / count;
+		const float z = crossingEyePlane ? (i % 2 == 0 ? -.5f : .5f) : -4.f;
+		positions.emplace_back(100.f * std::cos(angle), 100.f * std::sin(angle), z, 1);
+	}
+	return positions;
+}
+
 /// Solve an ordinary quadratic in double precision, independently of both shader intersection paths.
 auto reference (
 	const Ellipsoid &shape, const glm::mat4 &modelview, const glm::mat4 &projection,
@@ -511,6 +526,110 @@ void analytic (fcg::Device &device)
 	(void)scene.render([&] (auto *commands, auto *pass) {
 		check(renderer.draw(attributes, state, commands, pass, {}, {.count = 0}));
 	});
+}
+
+/// Check frustum boundaries and batches of invisible eye-plane crossings against independent surface intersections.
+void frustumCulling (fcg::Device &device)
+{
+	// Keep exit surfaces visible when a boundary clips the front surface
+	Scene scene(device);
+	auto renderer = take(fcg::EllipsoidRenderer::create(device, scene.target(), {.cullMode = SDL_GPU_CULLMODE_NONE}));
+	fcg::PrimitiveAttributes attributes(device);
+	fcg::RenderState state(device);
+	Ellipsoid shape;
+	const auto draw = [&] (const std::string &label, bool expectVisible)
+	{
+		assign(attributes, shape);
+		const auto image = scene.render([&] (auto *commands, auto *pass) {
+			check(renderer.draw(attributes, state, commands, pass));
+		});
+		verify(image, shape, state, label, SDL_GPU_CULLMODE_NONE);
+		const bool visible = std::any_of(image.colors.begin(), image.colors.end(), [] (const auto &pixel) {
+			return pixel[3] != 0;
+		});
+		require(visible == expectVisible, label + ": boundary scene has unexpected reference coverage");
+	};
+
+	// Exercise each plane with rotated axes, including a reflected and sheared modelview
+	glm::mat4 affine(1);
+	affine[0][0] = -1.3f;
+	affine[1][0] = .4f;
+	affine[1][1] = .7f;
+	affine[2][2] = 1.1f;
+	affine[3] = {.2f, -.1f, -.3f, 1};
+	const std::array projections{
+		glm::perspectiveRH_ZO(glm::radians(60.f), 1.f, 1.f, 10.f),
+		glm::frustumRH_ZO(-.6f, 1.f, -.8f, .6f, 1.f, 10.f),
+		glm::orthoRH_ZO(-2.f, 2.f, -2.f, 2.f, 1.f, 10.f)
+	};
+	for (std::size_t camera = 0; camera < projections.size(); ++camera)
+		for (const bool transformed : {false, true})
+		{
+			// Locate the six boundaries at a depth where each side plane is visible
+			const auto projection = projections[camera];
+			const auto rows = glm::transpose(projection);
+			const std::array planes{rows[3] + rows[0], rows[3] - rows[0], rows[3] + rows[1],
+				rows[3] - rows[1], rows[2], rows[3] - rows[2]};
+			const auto modelview = transformed ? affine : glm::mat4(1);
+			state.loadProjectionMatrix(projection);
+			state.loadModelviewMatrix(modelview);
+			shape.extent = {.8f, .55f, 1.1f};
+			shape.orientation = glm::angleAxis(.71f, glm::normalize(glm::vec3(.2f, 1, .4f)));
+			auto basis = glm::mat3(modelview) * glm::mat3_cast(shape.orientation);
+			for (unsigned axis = 0; axis < 3; ++axis)
+				basis[axis] *= shape.extent[axis];
+
+			// Compare centered crossings, visible tips with outside centers, and wholly outside surfaces
+			for (unsigned plane = 0; plane < planes.size(); ++plane)
+			{
+				glm::vec3 anchor(0, 0, plane == 4 ? -1.f : -10.f);
+				if (plane < 4) {
+					auto clip = projection * glm::vec4(0, 0, -4, 1);
+					clip[plane / 2] = (plane % 2 == 0 ? -1.f : 1.f) * clip.w;
+					const auto eye = glm::inverse(projection) * clip;
+					anchor = glm::vec3(eye) / eye.w;
+				}
+				const auto normal = glm::normalize(glm::vec3(planes[plane]));
+				const float radius = glm::length(glm::transpose(basis) * normal);
+				for (const float offset : {0.f, .75f, 2.f})
+				{
+					shape.position = glm::inverse(modelview) * glm::vec4(anchor - offset * radius * normal, 1);
+					draw("frustum camera " + std::to_string(camera) + (transformed ? " affine" : " rotated")
+						+ " plane " + std::to_string(plane) + " offset " + std::to_string(offset), offset < 1);
+				}
+			}
+		}
+
+	// Invisible spheres beside the eye must stay empty on both sides of the eye plane
+	state.loadModelviewMatrix(glm::mat4(1));
+	state.loadProjectionMatrix(glm::perspectiveRH_ZO(glm::radians(60.f), 1.f, .1f, 100.f));
+	shape = {};
+	for (const glm::vec2 lateral : {glm::vec2(100, 0), glm::vec2(-100, 0), glm::vec2(0, 100), glm::vec2(0, -100)})
+		for (const float z : {-.5f, 0.f, .5f}) {
+			shape.position = {lateral.x, lateral.y, z, 1};
+			draw("offscreen eye-plane sphere " + std::to_string(lateral.x) + "," + std::to_string(lateral.y)
+				+ "," + std::to_string(z), false);
+		}
+
+	// Both benchmark populations must produce exactly the visible sphere's image and depth
+	shape = {};
+	assign(attributes, shape);
+	const auto visibleOnly = scene.render([&] (auto *commands, auto *pass) {
+		check(renderer.draw(attributes, state, commands, pass));
+	});
+	verify(visibleOnly, shape, state, "visible sphere before offscreen batch", SDL_GPU_CULLMODE_NONE);
+	for (const bool crossing : {false, true})
+	{
+		const auto positions = offscreenPopulation(crossing);
+		check(attributes.setAttributes([&] (fcg::PrimitiveAttributes::Update &update) {
+			update.set<A::Position>(std::span(positions));
+		}));
+		const auto image = scene.render([&] (auto *commands, auto *pass) {
+			check(renderer.draw(attributes, state, commands, pass));
+		});
+		require(image.colors == visibleOnly.colors, "Offscreen population changed visible color");
+		require(image.depths == visibleOnly.depths, "Offscreen population changed visible depth");
+	}
 }
 
 /// Check depth interaction with rasterized geometry in either submission order.
@@ -882,17 +1001,20 @@ void benchmark (fcg::Device &device)
 	fcg::RenderState state(device);
 	fcg::DrawOptions options;
 	options.lighting.enabled = true;
-	for (int workload = 0; workload < 3; ++workload)
+	for (int workload = 0; workload < 5; ++workload)
 	{
-		// Separate setup-heavy small glyphs from overlapping large glyphs and orthographic bounds
-		const Uint32 width = workload == 0 ? 100 : 3;
+		// Compare visible glyphs with offscreen populations in front of and across the eye plane
 		std::vector<glm::vec4> positions;
-		for (Uint32 y = 0; y < width; ++y)
-			for (Uint32 x = 0; x < width; ++x)
-				positions.emplace_back(4.f * (x + .5f) / width - 2, 4.f * (y + .5f) / width - 2, -4, 1);
+		if (workload < 3) {
+			const Uint32 width = workload == 0 ? 100 : 3;
+			for (Uint32 y = 0; y < width; ++y)
+				for (Uint32 x = 0; x < width; ++x)
+					positions.emplace_back(4.f * (x + .5f) / width - 2, 4.f * (y + .5f) / width - 2, -4, 1);
+		} else
+			positions = offscreenPopulation(workload == 4);
 		check(attributes.setAttributes([&] (fcg::PrimitiveAttributes::Update &update) {
 			update.set<A::Position>(std::span(positions));
-			update.set<A::Extent>(glm::vec3(workload == 0 ? .015f : 1.5f));
+			update.set<A::Extent>(glm::vec3(workload == 0 ? .015f : workload < 3 ? 1.5f : 1.f));
 		}));
 		state.loadProjectionMatrix(workload == 2 ? glm::orthoRH_ZO(-2.f,2.f,-2.f,2.f,.1f,100.f)
 			: glm::perspectiveRH_ZO(glm::radians(60.f), 1.f, .1f, 100.f));
@@ -927,8 +1049,10 @@ void benchmark (fcg::Device &device)
 			require(completed, SDL_GetError());
 		}
 		const double milliseconds = 250.0 * (SDL_GetPerformanceCounter() - start) / SDL_GetPerformanceFrequency();
-		std::cout << "1024x1024 completion benchmark: " << positions.size() << (workload == 0 ? " small" : " large")
-			<< (workload == 2 ? " orthographic" : " perspective") << " ellipsoids, " << milliseconds << " ms/frame\n";
+		const auto label = workload == 0 ? "small perspective" : workload == 1 ? "large perspective"
+			: workload == 2 ? "large orthographic" : workload == 3 ? "offscreen in front" : "offscreen crossing eye plane";
+		std::cout << "1024x1024 completion benchmark: " << positions.size() << " " << label
+			<< " ellipsoids, " << milliseconds << " ms/frame\n";
 	}
 }
 
@@ -954,6 +1078,7 @@ auto main () -> int
 		auto device = fcg::Device::create();
 		require(device.has_value(), SDL_GetError());
 		analytic(*device);
+		frustumCulling(*device);
 		interoperability(*device);
 		textures(*device);
 		multisampling(*device);
